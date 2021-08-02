@@ -1213,7 +1213,7 @@ payment_partial_capture_limit_success(C) ->
     ?payment_state(?payment(PaymentID)) =
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
-    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF1, _} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     % do a partial capture
@@ -1446,7 +1446,7 @@ payment_partial_capture_success(C) ->
     ?payment_state(?payment(PaymentID)) =
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
-    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF1, _} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     % do a partial capture
@@ -1565,14 +1565,19 @@ payment_w_crypto_currency_success(C) ->
     PayCash = 2000,
     InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
     PaymentParams = make_crypto_currency_payment_params(),
-    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID,
+        owner_id = PartyID,
+        shop_id = ShopID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
-    ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
-    ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
-    ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
+    {CF, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    CFContext = construct_ta_context(PartyID, ShopID, Route),
+    ?cash(PayCash, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF, CFContext),
+    ?cash(40, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF, CFContext),
+    ?cash(90, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF, CFContext).
 
 -spec payment_bank_card_category_condition(config()) -> _ | no_return().
 payment_bank_card_category_condition(C) ->
@@ -1589,8 +1594,9 @@ payment_bank_card_category_condition(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
-    ?cash(200, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF).
+    {CF, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    CFContext = construct_ta_context(cfg(party_id, C), cfg(shop_id, C), Route),
+    ?cash(200, <<"RUB">>) = get_cashflow_volume({merchant, settlement}, {system, settlement}, CF, CFContext).
 
 -spec payment_w_mobile_commerce(config()) -> _ | no_return().
 payment_w_mobile_commerce(C) ->
@@ -1969,15 +1975,16 @@ payment_adjustment_success(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF1, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
-    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
-    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
-    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
+    CFContext = construct_ta_context(cfg(party_id, C), cfg(shop_id, C), Route),
+    PrvAccount1 = get_deprecated_cashflow_account({provider, settlement}, CF1, CFContext),
+    SysAccount1 = get_deprecated_cashflow_account({system, settlement}, CF1, CFContext),
+    MrcAccount1 = get_deprecated_cashflow_account({merchant, settlement}, CF1, CFContext),
     %% update terminal cashflow
     ok = update_payment_terms_cashflow(?prv(100), get_payment_adjustment_provider_cashflow(actual)),
     %% update merchant fees
@@ -2013,10 +2020,10 @@ payment_adjustment_success(C) ->
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     %% verify that cash deposited correctly everywhere
-    #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} = Adjustment,
-    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
-    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
-    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    #domain_InvoicePaymentAdjustment{new_cash_flow = DCF2} = Adjustment,
+    PrvAccount2 = get_deprecated_cashflow_account({provider, settlement}, DCF2, CFContext),
+    SysAccount2 = get_deprecated_cashflow_account({system, settlement}, DCF2, CFContext),
+    MrcAccount2 = get_deprecated_cashflow_account({merchant, settlement}, DCF2, CFContext),
     500 = MrcDiff = maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1),
     -500 = PrvDiff = maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1),
     SysDiff = MrcDiff + PrvDiff - 20,
@@ -2117,7 +2124,7 @@ payment_adjustment_captured_partial(C) ->
     ?payment_state(?payment(PaymentID)) =
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
-    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF1, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     % do a partial capture
@@ -2126,9 +2133,10 @@ payment_adjustment_captured_partial(C) ->
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
     % get balances
-    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
-    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
-    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
+    CFContext = construct_ta_context(cfg(party_id, C), cfg(shop_id, C), Route),
+    PrvAccount1 = get_deprecated_cashflow_account({provider, settlement}, CF1, CFContext),
+    SysAccount1 = get_deprecated_cashflow_account({system, settlement}, CF1, CFContext),
+    MrcAccount1 = get_deprecated_cashflow_account({merchant, settlement}, CF1, CFContext),
     % update terminal cashflow
     ok = update_payment_terms_cashflow(?prv(100), get_payment_adjustment_provider_cashflow(actual)),
     % update merchant fees
@@ -2139,9 +2147,9 @@ payment_adjustment_captured_partial(C) ->
     #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} =
         ?adjustment_reason(AdjReason) =
         hg_client_invoicing:get_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
-    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
-    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
-    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    PrvAccount2 = get_deprecated_cashflow_account({provider, settlement}, CF2, CFContext),
+    SysAccount2 = get_deprecated_cashflow_account({system, settlement}, CF2, CFContext),
+    MrcAccount2 = get_deprecated_cashflow_account({merchant, settlement}, CF2, CFContext),
     Context = #{operation_amount => Cash},
     #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
     #domain_Cash{amount = MrcAmount2} = hg_cashflow:compute_volume(?merchant_to_system_share_3, Context),
@@ -2177,15 +2185,16 @@ payment_adjustment_captured_from_failed(C) ->
     ?invalid_payment_status(?pending()) =
         hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, AdjustmentParams, Client),
     PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
-    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF1, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     {failed, PaymentID, {failure, _Failure}} =
         await_payment_process_failure(InvoiceID, PaymentID, Client, 3),
     [?invoice_status_changed(?invoice_cancelled(<<"overdue">>))] = next_event(InvoiceID, Client),
     % get balances
-    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
-    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
-    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
+    CFContext = construct_ta_context(cfg(party_id, C), cfg(shop_id, C), Route),
+    PrvAccount1 = get_deprecated_cashflow_account({provider, settlement}, CF1, CFContext),
+    SysAccount1 = get_deprecated_cashflow_account({system, settlement}, CF1, CFContext),
+    MrcAccount1 = get_deprecated_cashflow_account({merchant, settlement}, CF1, CFContext),
     % update terminal cashflow
     ok = update_payment_terms_cashflow(?prv(100), get_payment_adjustment_provider_cashflow(actual)),
     % update merchant fees
@@ -2213,12 +2222,12 @@ payment_adjustment_captured_from_failed(C) ->
 
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
-    #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} =
+    #domain_InvoicePaymentAdjustment{new_cash_flow = DCF2} =
         ?adjustment_reason(AdjReason) =
         hg_client_invoicing:get_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
-    PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
-    SysAccount2 = get_cashflow_account({system, settlement}, CF2),
-    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
+    PrvAccount2 = get_deprecated_cashflow_account({provider, settlement}, DCF2, CFContext),
+    SysAccount2 = get_deprecated_cashflow_account({system, settlement}, DCF2, CFContext),
+    MrcAccount2 = get_deprecated_cashflow_account({merchant, settlement}, DCF2, CFContext),
     Context = #{operation_amount => CaptureCost},
     #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
     MrcDiff = CaptureAmount - MrcAmount1,
@@ -2242,14 +2251,15 @@ payment_adjustment_failed_from_captured(C) ->
     PaymentParams = make_payment_params(),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
-    CF1 = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF1, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     % get balances
-    PrvAccount1 = get_cashflow_account({provider, settlement}, CF1),
-    SysAccount1 = get_cashflow_account({system, settlement}, CF1),
-    MrcAccount1 = get_cashflow_account({merchant, settlement}, CF1),
+    CFContext = construct_ta_context(cfg(party_id, C), cfg(shop_id, C), Route),
+    PrvAccount1 = get_deprecated_cashflow_account({provider, settlement}, CF1, CFContext),
+    SysAccount1 = get_deprecated_cashflow_account({system, settlement}, CF1, CFContext),
+    MrcAccount1 = get_deprecated_cashflow_account({merchant, settlement}, CF1, CFContext),
     % update terminal cashflow
     ok = update_payment_terms_cashflow(?prv(100), get_payment_adjustment_provider_cashflow(actual)),
     % update merchant fees
@@ -2266,9 +2276,9 @@ payment_adjustment_failed_from_captured(C) ->
     ),
     % verify that cash deposited correctly everywhere
     % new cash flow must be calculated using initial domain and party revisions
-    PrvAccount2 = get_cashflow_account({provider, settlement}, CF1),
-    SysAccount2 = get_cashflow_account({system, settlement}, CF1),
-    MrcAccount2 = get_cashflow_account({merchant, settlement}, CF1),
+    PrvAccount2 = get_deprecated_cashflow_account({provider, settlement}, CF1, CFContext),
+    SysAccount2 = get_deprecated_cashflow_account({system, settlement}, CF1, CFContext),
+    MrcAccount2 = get_deprecated_cashflow_account({merchant, settlement}, CF1, CFContext),
     Context = #{operation_amount => ?cash(Amount, <<"RUB">>)},
     #domain_Cash{amount = MrcAmount1} = hg_cashflow:compute_volume(?merchant_to_system_share_1, Context),
     MrcDiff = Amount - MrcAmount1,
@@ -2346,18 +2356,32 @@ update_payment_terms_cashflow(ProviderRef, CashFlow) ->
         }}
     ).
 
-get_cashflow_account(Type, CF) ->
+construct_ta_context(Party, Shop, Route) ->
+    #{
+        party => Party,
+        shop => Shop,
+        route => Route
+    }.
+
+get_deprecated_cashflow_account(Type, CF, CFContext) ->
+    ID = get_deprecated_cashflow_account_id(Type, CF, CFContext),
+    hg_accounting:get_balance(ID).
+
+get_deprecated_cashflow_account_id(Type, CF, CFContext) ->
+    Account = convert_transaction_account(Type, CFContext),
     [ID] = [
         V
         || #domain_FinalCashFlowPosting{
                destination = #domain_FinalCashFlowAccount{
                    account_id = V,
-                   account_type = T
+                   account_type = T,
+                   transaction_account = A
                }
            } <- CF,
-           T == Type
+           T == Type,
+           A == Account
     ],
-    hg_accounting:get_balance(ID).
+    ID.
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
@@ -2390,7 +2414,7 @@ external_account_posting(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, InvoicingClient),
-    CF = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
+    {CF, Route} = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
     ] = next_event(InvoiceID, InvoicingClient),
@@ -2406,6 +2430,8 @@ external_account_posting(C) ->
                details = <<"Kek">>
            } <- CF
     ],
+    CFContext = construct_ta_context(PartyID, ShopID, Route),
+    AssistAccountID = get_deprecated_cashflow_account_id({external, outcome}, CF, CFContext),
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
     } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
@@ -2427,7 +2453,7 @@ terminal_cashflow_overrides_provider(C) ->
         InvoicingClient
     ),
     _ = next_event(InvoiceID, InvoicingClient),
-    CF = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
+    {CF, Route} = await_payment_cash_flow(InvoiceID, PaymentID, InvoicingClient),
     _ = next_event(InvoiceID, InvoicingClient),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, InvoicingClient),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
@@ -2441,6 +2467,8 @@ terminal_cashflow_overrides_provider(C) ->
                details = <<"Kek">>
            } <- CF
     ],
+    CFContext = construct_ta_context(PartyID, ShopID, Route),
+    AssistAccountID = get_deprecated_cashflow_account_id({external, outcome}, CF, CFContext),
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
     } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
@@ -4495,27 +4523,67 @@ rounding_cashflow_volume(C) ->
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
-    CF = await_payment_cash_flow(InvoiceID, PaymentID, Client),
+    {CF, Route} = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     PaymentID = await_payment_process_finish(InvoiceID, PaymentID, Client),
-    ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF),
-    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF),
-    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {system, subagent}, CF),
-    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF),
+    CFContext = construct_ta_context(cfg(party_id, C), cfg(shop_id, C), Route),
+    ?cash(0, <<"RUB">>) = get_cashflow_volume({provider, settlement}, {merchant, settlement}, CF, CFContext),
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {provider, settlement}, CF, CFContext),
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {system, subagent}, CF, CFContext),
+    ?cash(1, <<"RUB">>) = get_cashflow_volume({system, settlement}, {external, outcome}, CF, CFContext),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client).
 
-get_cashflow_volume(Source, Destination, CF) ->
+get_cashflow_volume(Source, Destination, CF, CFContext) ->
+    TAS = convert_transaction_account(Source, CFContext),
+    TAD = convert_transaction_account(Destination, CFContext),
     [Volume] = [
         V
         || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{account_type = S},
-               destination = #domain_FinalCashFlowAccount{account_type = D},
+               source = #domain_FinalCashFlowAccount{
+                   account_type = ST,
+                   transaction_account = SA
+               },
+               destination = #domain_FinalCashFlowAccount{
+                   account_type = DT,
+                   transaction_account = DA
+               },
                volume = V
            } <- CF,
-           S == Source,
-           D == Destination
+           ST == Source,
+           DT == Destination,
+           SA == TAS,
+           DA == TAD
     ],
     Volume.
+
+convert_transaction_account({merchant, Type}, #{party := Party, shop := Shop}) ->
+    {merchant, #domain_MerchantTransactionAccount{
+        type = Type,
+        owner = #domain_MerchantTransactionAccountOwner{
+            party_id = Party,
+            shop_id = Shop
+        }
+    }};
+convert_transaction_account({provider, Type}, #{route := Route}) ->
+    #domain_PaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    } = Route,
+    {provider, #domain_ProviderTransactionAccount{
+        type = Type,
+        owner = #domain_ProviderTransactionAccountOwner{
+            provider_ref = ProviderRef,
+            terminal_ref = TerminalRef
+        }
+    }};
+convert_transaction_account({system, Type}, _Context) ->
+    {system, #domain_SystemTransactionAccount{
+        type = Type
+    }};
+convert_transaction_account({external, Type}, _Context) ->
+    {external, #domain_ExternalTransactionAccount{
+        type = Type
+    }}.
 
 %%
 
@@ -5314,12 +5382,12 @@ await_payment_started(InvoiceID, PaymentID, Client) ->
 await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
     [
         ?payment_ev(PaymentID, ?risk_score_changed(_)),
-        ?payment_ev(PaymentID, ?route_changed(_))
+        ?payment_ev(PaymentID, ?route_changed(Route))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(CashFlow))
     ] = next_event(InvoiceID, Client),
-    CashFlow.
+    {CashFlow, Route}.
 
 await_payment_cash_flow(RS, Route, InvoiceID, PaymentID, Client) ->
     [
