@@ -36,6 +36,15 @@ services:
       timeout: 1s
       retries: 20
 
+  limiter:
+    image: dr2.rbkmoney.com/rbkmoney/limiter:c5572a9a22b3fea68213f32276b5272605aebec8
+    command: /opt/limiter/bin/limiter foreground
+    depends_on:
+      machinegun:
+        condition: service_healthy
+      shumway:
+        condition: service_healthy
+
   shumway:
     image: dr2.rbkmoney.com/rbkmoney/shumway:658c9aec229b5a70d745a49cb938bb1a132b5ca2
     restart: unless-stopped
@@ -50,6 +59,19 @@ services:
       - --management.metrics.export.statsd.enabled=false
     depends_on:
       - shumway-db
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
+
+  party-management:
+    image: dr2.rbkmoney.com/rbkmoney/party-management:45184ecf6e36fa5f72b7bc3d65c143f2dc8055dc
+    command: /opt/party-management/bin/party-management foreground
+    depends_on:
+      - machinegun
+      - dominant
+      - shumway
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s

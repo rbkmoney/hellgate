@@ -21,12 +21,6 @@
 -export([process_call/2]).
 -export([process_repair/2]).
 
-%% Event provider callbacks
-
--behaviour(hg_event_provider).
-
--export([publish_event/2]).
-
 %% API
 
 -export([get/1]).
@@ -317,12 +311,6 @@ update_field({details, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{details = V};
 update_field({context, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{context = V}.
-
-%% Event provider
-
--spec publish_event(tpl_id(), hg_machine:event_payload()) -> hg_event_provider:public_event().
-publish_event(ID, Payload) ->
-    {{invoice_template_id, ID}, ?ev(unmarshal_event_payload(Payload))}.
 
 %% Marshaling
 
