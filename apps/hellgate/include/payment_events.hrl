@@ -10,7 +10,7 @@
         payment = Payment,
         risk_score = undefined,
         route = undefined,
-        cash_flow = undefined
+        deprecated_cash_flow = undefined
     }}
 ).
 
@@ -19,7 +19,7 @@
         payment = Payment,
         risk_score = RiskScore,
         route = Route,
-        cash_flow = CashFlow
+        deprecated_cash_flow = CashFlow
     }}
 ).
 
@@ -280,7 +280,7 @@
 
 -define(chargeback_cash_flow_changed(CashFlow),
     {invoice_payment_chargeback_cash_flow_changed, #payproc_InvoicePaymentChargebackCashFlowChanged{
-        cash_flow = CashFlow
+        deprecated_cash_flow = CashFlow
     }}
 ).
 
@@ -328,7 +328,7 @@
 -define(refund_created(Refund, CashFlow, TrxInfo),
     {invoice_payment_refund_created, #payproc_InvoicePaymentRefundCreated{
         refund = Refund,
-        cash_flow = CashFlow,
+        deprecated_cash_flow = CashFlow,
         transaction_info = TrxInfo
     }}
 ).
