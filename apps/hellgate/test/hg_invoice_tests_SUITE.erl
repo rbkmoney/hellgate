@@ -5090,7 +5090,9 @@ start_payment_ev(InvoiceID, Client) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?risk_score_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?route_changed(Route))
     ] = next_event(InvoiceID, Client),
     Route.
@@ -5111,7 +5113,9 @@ await_payment_started(InvoiceID, PaymentID, Client) ->
 
 await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?risk_score_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?route_changed(_))
     ] = next_event(InvoiceID, Client),
     [
@@ -5121,7 +5125,9 @@ await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
 
 await_payment_cash_flow(RS, Route, InvoiceID, PaymentID, Client) ->
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(RS)),
+        ?payment_ev(PaymentID, ?risk_score_changed(RS))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?route_changed(Route))
     ] = next_event(InvoiceID, Client),
     [
@@ -5131,7 +5137,9 @@ await_payment_cash_flow(RS, Route, InvoiceID, PaymentID, Client) ->
 
 await_payment_rollback(InvoiceID, PaymentID, Client) ->
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?risk_score_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?route_changed(_, _)),
         ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
     ] = next_event(InvoiceID, Client),

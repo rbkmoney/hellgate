@@ -263,6 +263,10 @@ get_party_revision(#st{activity = Activity}) ->
 get_payment(#st{payment = Payment}) ->
     Payment.
 
+-spec get_risk_score(st()) -> risk_score().
+get_risk_score(#st{risk_score = RiskScore}) ->
+    RiskScore.
+
 -spec get_route(st()) -> route().
 get_route(#st{route = Route}) ->
     Route.
@@ -788,9 +792,9 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
             Routes
     end.
 
--spec check_risk_score(risk_score()) -> ok | no_return().
+-spec check_risk_score(risk_score()) -> ok | {error, risk_score_is_too_high}.
 check_risk_score(fatal) ->
-    throw(risk_score_is_too_high);
+    {error, risk_score_is_too_high};
 check_risk_score(_RiskScore) ->
     ok.
 
@@ -1756,7 +1760,8 @@ process_timeout(St) ->
 
 -spec process_timeout(activity(), action(), st()) -> machine_result().
 process_timeout({payment, risk_scoring}, Action, St) ->
-    %% There are two processing_accounter steps here (scoring, routing)
+    process_risk_score(Action, St);
+process_timeout({payment, routing}, Action, St) ->
     process_routing(Action, St);
 process_timeout({payment, cash_flow_building}, Action, St) ->
     process_cash_flow_building(Action, St);
@@ -1821,9 +1826,8 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
     throw(invalid_callback).
 
 %%
-
--spec process_routing(action(), st()) -> machine_result().
-process_routing(Action, St) ->
+-spec process_risk_score(action(), st()) -> machine_result().
+process_risk_score(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
@@ -1843,29 +1847,53 @@ process_routing(Action, St) ->
     ),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
-    VS4 = VS3#{risk_score => RiskScore},
-    Events0 = [?risk_score_changed(RiskScore)],
+    Events = [?risk_score_changed(RiskScore)],
+    case check_risk_score(RiskScore) of
+        ok ->
+            {next, {Events, hg_machine_action:set_timeout(0, Action)}};
+        {error, risk_score_is_too_high = Reason} ->
+            logger:info("No route found, reason = ~p, varset: ~p", [Reason, VS3]),
+            handle_choose_route_error(Reason, Events, St, Action)
+    end.
+
+-spec process_routing(action(), st()) -> machine_result().
+process_routing(Action, St) ->
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    CreatedAt = get_payment_created_at(Payment),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
+    RiskScore = get_risk_score(St),
+    VS0 = reconstruct_payment_flow(Payment, #{risk_score => RiskScore}),
+    #{payment_tool := PaymentTool} = VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
+    VS2 = collect_refund_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.refunds,
+        PaymentTool,
+        VS1
+    ),
+    VS3 = collect_chargeback_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
+        VS2
+    ),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     try
-        _ = check_risk_score(RiskScore),
         Payer = get_payment_payer(St),
         Routes =
             case get_predefined_route(Payer) of
                 {ok, PaymentRoute} ->
                     [hg_routing:to_route(PaymentRoute)];
                 undefined ->
-                    gather_routes(PaymentInstitution, VS4, Revision, St)
+                    gather_routes(PaymentInstitution, VS3, Revision, St)
             end,
         Events = handle_gathered_route_result(
-            filter_limit_overflow_routes(Routes, VS4, St),
+            filter_limit_overflow_routes(Routes, VS3, St),
             [hg_routing:from_route(R) || R <- Routes]
         ),
-        {next, {Events0 ++ Events, hg_machine_action:set_timeout(0, Action)}}
+        {next, {Events, hg_machine_action:set_timeout(0, Action)}}
     catch
-        throw:risk_score_is_too_high = Reason ->
-            logger:info("No route found, reason = ~p, varset: ~p", [Reason, VS4]),
-            handle_choose_route_error(Reason, Events0, St, Action);
         throw:{no_route_found, Reason} ->
-            handle_choose_route_error(Reason, Events0, St, Action)
+            handle_choose_route_error(Reason, [], St, Action)
     end.
 
 handle_gathered_route_result({ok, UnOverflowRoutes}, Routes) ->
