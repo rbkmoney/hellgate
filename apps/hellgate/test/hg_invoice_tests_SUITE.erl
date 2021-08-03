@@ -560,7 +560,7 @@ end_per_suite(C) ->
 -define(invoice_state(Invoice, Payments), #payproc_Invoice{invoice = Invoice, payments = Payments}).
 -define(payment_state(Payment), #payproc_InvoicePayment{payment = Payment}).
 -define(payment_route(Route), #payproc_InvoicePayment{route = Route}).
--define(payment_cashflow(CashFlow), #payproc_InvoicePayment{deprecated_cash_flow = CashFlow}).
+-define(payment_cashflow(CashFlow), #payproc_InvoicePayment{cash_flow = CashFlow}).
 -define(payment_last_trx(Trx), #payproc_InvoicePayment{last_transaction_info = Trx}).
 -define(invoice_w_status(Status), #domain_Invoice{status = Status}).
 -define(invoice_w_revision(Revision), #domain_Invoice{party_revision = Revision}).
@@ -5822,7 +5822,7 @@ get_payment_cost(InvoiceID, PaymentID, Client) ->
 
 get_payment_cashflow_mapped(InvoiceID, PaymentID, Client) ->
     #payproc_InvoicePayment{
-        deprecated_cash_flow = CashFlow
+        cash_flow = CashFlow
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     [
         {Source, Dest, Volume}
