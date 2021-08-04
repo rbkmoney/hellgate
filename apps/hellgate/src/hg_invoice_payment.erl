@@ -1886,8 +1886,8 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, [], St, Action)
     end.
 
-handle_gathered_route_result({ok, UnOverflowRoutes}, Routes, Revision) ->
-    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(UnOverflowRoutes),
+handle_gathered_route_result({ok, RoutesNoOverflow}, Routes, Revision) ->
+    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
     _ = log_route_choice_meta(ChoiceMeta, Revision),
     [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
 handle_gathered_route_result({error, not_found}, Routes, _) ->
@@ -2544,8 +2544,8 @@ filter_limit_overflow_routes(Routes, VS, St) ->
     case get_limit_overflow_routes(Routes, VS, St, RejectedContext) of
         {[], _RejectedRoutesOut} ->
             {error, not_found};
-        {UnOverflowedRoutes, _} ->
-            {ok, UnOverflowedRoutes}
+        {RoutesNoOverflow, _} ->
+            {ok, RoutesNoOverflow}
     end.
 
 get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
@@ -2553,18 +2553,18 @@ get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
     lists:foldl(
-        fun(Route, {UnOverflowedRoutesIn, RejectedIn}) ->
+        fun(Route, {RoutesNoOverflowIn, RejectedIn}) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
                 {ok, _} ->
-                    {[Route | UnOverflowedRoutesIn], RejectedIn};
+                    {[Route | RoutesNoOverflowIn], RejectedIn};
                 {error, {limit_overflow, IDs}} ->
                     PRef = hg_routing:provider_ref(Route),
                     TRef = hg_routing:terminal_ref(Route),
                     RejectedOut = [{PRef, TRef, {'LimitOverflow', IDs}} | RejectedIn],
-                    {UnOverflowedRoutesIn, RejectedOut}
+                    {RoutesNoOverflowIn, RejectedOut}
             end
         end,
         {[], RejectedRoutes},

@@ -20,7 +20,7 @@
 -export([get_logger_metadata/2]).
 
 -export([from_payment_route/1]).
--export([from_route_refs/4]).
+-export([new/4]).
 -export([to_payment_route/1]).
 -export([provider_ref/1]).
 -export([terminal_ref/1]).
@@ -121,24 +121,24 @@
 -export_type([varset/0]).
 
 -define(DEFAULT_ROUTE_WEIGHT, 0).
+% Set value like in protocol
+% https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
+-define(DEFAULT_ROUTE_PRIORITY, 1000).
 
 -spec from_payment_route(payment_route()) -> route().
 from_payment_route(Route) ->
     ?route(ProviderRef, TerminalRef) = Route,
-    % Set value like in protocol
-    % https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
-    DefaultPriority = 1000,
     #{
         provider_ref => ProviderRef,
         terminal_ref => TerminalRef,
         weight => ?DEFAULT_ROUTE_WEIGHT,
-        priority => DefaultPriority
+        priority => ?DEFAULT_ROUTE_PRIORITY
     }.
 
--spec from_route_refs(provider_ref(), terminal_ref(), integer() | undefined, integer()) -> route().
-from_route_refs(ProviderRef, TerminalRef, undefined, Priority) ->
-    from_route_refs(ProviderRef, TerminalRef, ?DEFAULT_ROUTE_WEIGHT, Priority);
-from_route_refs(ProviderRef, TerminalRef, Weight, Priority) ->
+-spec new(provider_ref(), terminal_ref(), integer() | undefined, integer()) -> route().
+new(ProviderRef, TerminalRef, undefined, Priority) ->
+    new(ProviderRef, TerminalRef, ?DEFAULT_ROUTE_WEIGHT, Priority);
+new(ProviderRef, TerminalRef, Weight, Priority) ->
     #{
         provider_ref => ProviderRef,
         terminal_ref => TerminalRef,
@@ -736,6 +736,9 @@ unmarshal(_, Other) ->
 
 -spec test() -> _.
 
+-define(prv(ID), #domain_ProviderRef{id = ID}).
+-define(trm(ID), #domain_TerminalRef{id = ID}).
+
 -spec record_comparsion_test() -> _.
 record_comparsion_test() ->
     Bigger =
@@ -762,39 +765,60 @@ record_comparsion_test() ->
 
 -spec balance_routes_test() -> list().
 balance_routes_test() ->
-    Route = #{
-        terminal_ref => #domain_TerminalRef{id = 1},
-        priority => 1000
-    },
+    % Route = #{
+    %     terminal_ref => #domain_TerminalRef{id = 1},
+    %     priority => 1000
+    % },
     Status = {{alive, 0.0}, {normal, 0.0}},
     WithWeight = [
-        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 1}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 2}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 1}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
+        {new(?prv(1), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 2, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+
+        % {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 1}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 2}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 1}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
 
     Result1 = [
-        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 1}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
+        {new(?prv(1), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        % {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 1}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
     Result2 = [
-        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 1}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
+        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        % {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 1}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
     Result3 = [
-        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
+        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        % {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 3}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 4}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 5}, weight => 0}, Status}
     ],
     [
         ?assertEqual(Result1, lists:reverse(calc_random_condition(0.0, 0.2, WithWeight, []))),
@@ -804,19 +828,23 @@ balance_routes_test() ->
 
 -spec balance_routes_with_default_weight_test() -> list().
 balance_routes_with_default_weight_test() ->
-    Route = #{
-        terminal_ref => #domain_TerminalRef{id = 1},
-        weight => 0,
-        priority => 1000
-    },
+    % Route = #{
+    %     terminal_ref => #domain_TerminalRef{id = 1},
+    %     weight => 0,
+    %     priority => 1000
+    % },
     Status = {{alive, 0.0}, {normal, 0.0}},
     Routes = [
-        {Route#{provider_ref => #domain_ProviderRef{id = 1}}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 2}}, Status}
+        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        % {Route#{provider_ref => #domain_ProviderRef{id = 1}}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 2}}, Status}
     ],
     Result = [
-        {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
-        {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status}
+        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        % {Route#{provider_ref => #domain_ProviderRef{id = 1}, weight => 0}, Status},
+        % {Route#{provider_ref => #domain_ProviderRef{id = 2}, weight => 0}, Status}
     ],
     [
         ?assertEqual(Result, set_routes_random_condition(Routes))

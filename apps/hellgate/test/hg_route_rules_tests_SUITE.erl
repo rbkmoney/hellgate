@@ -1,3 +1,4 @@
+% Whitebox tests suite
 -module(hg_route_rules_tests_SUITE).
 
 -include("hg_ct_domain.hrl").
