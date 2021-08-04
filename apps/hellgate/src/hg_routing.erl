@@ -19,8 +19,9 @@
 
 -export([get_logger_metadata/2]).
 
--export([to_route/1]).
--export([from_route/1]).
+-export([from_payment_route/1]).
+-export([from_route_refs/4]).
+-export([to_payment_route/1]).
 -export([provider_ref/1]).
 -export([terminal_ref/1]).
 %%
@@ -119,20 +120,34 @@
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
--spec to_route(payment_route()) -> route().
-to_route(Route) ->
+-define(DEFAULT_ROUTE_WEIGHT, 0).
+
+-spec from_payment_route(payment_route()) -> route().
+from_payment_route(Route) ->
     ?route(ProviderRef, TerminalRef) = Route,
+    % Set value like in protocol
+    % https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
     DefaultPriority = 1000,
     #{
         provider_ref => ProviderRef,
         terminal_ref => TerminalRef,
+        weight => ?DEFAULT_ROUTE_WEIGHT,
         priority => DefaultPriority
     }.
 
--spec from_route(route() | scored_route()) -> payment_route().
-from_route(#{provider_ref := _, terminal_ref := _} = Route) ->
-    ?route(provider_ref(Route), terminal_ref(Route));
-from_route({_Scores, Route}) ->
+-spec from_route_refs(provider_ref(), terminal_ref(), integer() | undefined, integer()) -> route().
+from_route_refs(ProviderRef, TerminalRef, undefined, Priority) ->
+    from_route_refs(ProviderRef, TerminalRef, ?DEFAULT_ROUTE_WEIGHT, Priority);
+from_route_refs(ProviderRef, TerminalRef, Weight, Priority) ->
+    #{
+        provider_ref => ProviderRef,
+        terminal_ref => TerminalRef,
+        weight => Weight,
+        priority => Priority
+    }.
+
+-spec to_payment_route(route()) -> payment_route().
+to_payment_route(#{provider_ref := _, terminal_ref := _} = Route) ->
     ?route(provider_ref(Route), terminal_ref(Route)).
 
 -spec provider_ref(route()) -> provider_ref().
@@ -147,9 +162,9 @@ terminal_ref(#{terminal_ref := Ref}) ->
 priority(#{priority := Priority}) ->
     Priority.
 
--spec weight(route()) -> integer() | undefined.
+-spec weight(route()) -> integer().
 weight(Route) ->
-    maps:get(weight, Route, undefined).
+    maps:get(weight, Route).
 
 -spec set_weight(integer(), route()) -> route().
 set_weight(Weight, Route) ->
@@ -159,18 +174,19 @@ set_weight(Weight, Route) ->
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([route()]) -> {payment_route(), route_choice_meta()}.
+-spec choose_route([route()]) -> {route(), route_choice_meta()}.
 choose_route(Routes) ->
     FailRatedRoutes = gather_fail_rates(Routes),
     choose_rated_route(FailRatedRoutes).
 
--spec choose_rated_route([fail_rated_route()]) -> {payment_route(), route_choice_meta()}.
+-spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
 choose_rated_route(FailRatedRoutes) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes),
-    {ChosenRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RouteChoiceMeta = get_route_choice_meta(ChosenRoute, IdealRoute),
-    {from_route(ChosenRoute), RouteChoiceMeta}.
+    {ChosenScoredRoute, IdealRoute} = find_best_routes(ScoredRoutes),
+    RouteChoiceMeta = get_route_choice_meta(ChosenScoredRoute, IdealRoute),
+    {_, Route} = ChosenScoredRoute,
+    {Route, RouteChoiceMeta}.
 
 -spec find_best_routes([scored_route()]) -> {Chosen :: scored_route(), Ideal :: scored_route()}.
 find_best_routes([Route]) ->
@@ -291,21 +307,9 @@ balance_route_groups(RouteGroups) ->
     ).
 
 set_routes_random_condition(Routes) ->
-    NewRoutes = lists:map(
-        fun(FailRatedRoute) ->
-            {Route, ProviderStatus} = FailRatedRoute,
-            case undefined =:= weight(Route) of
-                true ->
-                    {set_weight(0, Route), ProviderStatus};
-                false ->
-                    FailRatedRoute
-            end
-        end,
-        Routes
-    ),
-    Summary = get_summary_weight(NewRoutes),
+    Summary = get_summary_weight(Routes),
     Random = rand:uniform() * Summary,
-    lists:reverse(calc_random_condition(0.0, Random, NewRoutes, [])).
+    lists:reverse(calc_random_condition(0.0, Random, Routes, [])).
 
 get_summary_weight(FailRatedRoutes) ->
     lists:foldl(
@@ -798,10 +802,11 @@ balance_routes_test() ->
         ?assertEqual(Result3, lists:reverse(calc_random_condition(0.0, 4.0, WithWeight, [])))
     ].
 
--spec balance_routes_without_weight_test() -> list().
-balance_routes_without_weight_test() ->
+-spec balance_routes_with_default_weight_test() -> list().
+balance_routes_with_default_weight_test() ->
     Route = #{
         terminal_ref => #domain_TerminalRef{id = 1},
+        weight => 0,
         priority => 1000
     },
     Status = {{alive, 0.0}, {normal, 0.0}},

@@ -85,23 +85,12 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
                 weight = Weight
             } = Candidate,
             #domain_Terminal{
-                name = TerminalName,
                 provider_ref = ProviderRef
             } = hg_domain:get(Revision, {terminal, TerminalRef}),
-            #domain_Provider{
-                name = ProviderName
-            } = hg_domain:get(Revision, {provider, ProviderRef}),
             try
                 {_, _Terminal} = hg_routing:acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
                 % TODO: It looks ugly, but this module will merged with hg_routing
-                Route = genlib_map:compact(#{
-                    provider_ref => ProviderRef,
-                    provider_name => ProviderName,
-                    terminal_ref => TerminalRef,
-                    terminal_name => TerminalName,
-                    weight => Weight,
-                    priority => Priority
-                }),
+                Route = hg_routing:from_route_refs(ProviderRef, TerminalRef, Weight, Priority),
                 {[Route | Accepted], Rejected}
             catch
                 {rejected, Reason} ->

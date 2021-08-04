@@ -382,12 +382,12 @@ prefer_alive(_C) ->
     Result1 = hg_routing:choose_rated_route(FailRatedRoutes1),
     Result2 = hg_routing:choose_rated_route(FailRatedRoutes2),
 
-    {#domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, Meta0} = Result0,
-    {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, Meta1} = Result1,
-    {#domain_PaymentRoute{provider = ?prv(23), terminal = ?trm(23)}, Meta2} = Result2,
+    {#{provider_ref := ?prv(21), terminal_ref := ?trm(21)}, Meta0} = Result0,
+    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, Meta1} = Result1,
+    {#{provider_ref := ?prv(23), terminal_ref := ?trm(23)}, Meta2} = Result2,
 
-    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 23}} = Meta0,
-    #{reject_reason := availability_condition, preferable_route := #{provider_ref := 23}} = Meta1,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta0,
+    #{reject_reason := availability_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta1,
     false = maps:is_key(reject_reason, Meta2),
 
     ok.
@@ -437,12 +437,12 @@ prefer_normal_conversion(_C) ->
     Result1 = hg_routing:choose_rated_route(FailRatedRoutes1),
     Result2 = hg_routing:choose_rated_route(FailRatedRoutes2),
 
-    {#domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, Meta0} = Result0,
-    {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, Meta1} = Result1,
-    {#domain_PaymentRoute{provider = ?prv(23), terminal = ?trm(23)}, Meta2} = Result2,
+    {#{provider_ref := ?prv(21), terminal_ref := ?trm(21)}, Meta0} = Result0,
+    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, Meta1} = Result1,
+    {#{provider_ref := ?prv(23), terminal_ref := ?trm(23)}, Meta2} = Result2,
 
-    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 23}} = Meta0,
-    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := 23}} = Meta1,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta0,
+    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta1,
     false = maps:is_key(reject_reason, Meta2),
 
     ok.
@@ -481,9 +481,9 @@ prefer_higher_availability(_C) ->
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
 
-    {#domain_PaymentRoute{provider = ?prv(21), terminal = ?trm(21)}, #{
+    {#{provider_ref := ?prv(21), terminal_ref := ?trm(21)}, #{
         reject_reason := availability,
-        preferable_route := #{provider_ref := 23}
+        preferable_route := #{provider_ref := ?prv(23)}
     }} = Result,
 
     ok.
@@ -521,9 +521,9 @@ prefer_higher_conversion(_C) ->
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
-    {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, #{
+    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, #{
         reject_reason := conversion,
-        preferable_route := #{provider_ref := 23}
+        preferable_route := #{provider_ref := ?prv(23)}
     }} = Result,
     ok.
 
@@ -562,7 +562,7 @@ prefer_weight_over_availability(_C) ->
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
 
-    {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, _Meta} = Result,
+    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, _Meta} = Result,
     ok.
 
 -spec prefer_weight_over_conversion(config()) -> test_return().
@@ -597,7 +597,7 @@ prefer_weight_over_conversion(_C) ->
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
-    {#domain_PaymentRoute{provider = ?prv(22), terminal = ?trm(22)}, _Meta} = Result,
+    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, _Meta} = Result,
     ok.
 
 -spec gathers_fail_rated_routes(config()) -> test_return().
@@ -637,16 +637,16 @@ sort_routes(Routes) ->
 -spec terminal_priority_for_shop(config()) -> test_return().
 terminal_priority_for_shop(C) ->
     {
-        #domain_PaymentRoute{
-            provider = ?prv(41),
-            terminal = ?trm(41)
+        #{
+            provider_ref := ?prv(41),
+            terminal_ref := ?trm(41)
         },
         _Meta0
     } = terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C),
     {
-        #domain_PaymentRoute{
-            provider = ?prv(42),
-            terminal = ?trm(42)
+        #{
+            provider_ref := ?prv(42),
+            terminal_ref := ?trm(42)
         },
         _Meta1
     } = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C).

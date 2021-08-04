@@ -241,13 +241,14 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         check_risk_score(RiskScore),
         NonFailRatedRoutes = gather_routes(PaymentInstitution, VS1, Revision),
         {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(NonFailRatedRoutes),
+        ChoosenPaymentRoute = hg_routing:to_payment_route(ChoosenRoute),
         _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)),
-        RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, ChoosenRoute, VS, Revision),
+        RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, ChoosenPaymentRoute, VS, Revision),
         {ok, {Changes, Action}} = start_session(),
         StartChanges = [
             ?recurrent_payment_tool_has_created(RecPaymentTool2),
             ?recurrent_payment_tool_risk_score_changed(RiskScore),
-            ?recurrent_payment_tool_route_changed(ChoosenRoute)
+            ?recurrent_payment_tool_route_changed(ChoosenPaymentRoute)
         ],
         handle_result(#{
             changes => StartChanges ++ Changes,

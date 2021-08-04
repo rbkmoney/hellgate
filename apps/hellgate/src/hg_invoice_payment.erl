@@ -1871,13 +1871,13 @@ process_routing(Action, St) ->
         Routes =
             case get_predefined_route(Payer) of
                 {ok, PaymentRoute} ->
-                    [hg_routing:to_route(PaymentRoute)];
+                    [hg_routing:from_payment_route(PaymentRoute)];
                 undefined ->
                     gather_routes(PaymentInstitution, VS4, Revision, St)
             end,
         Events = handle_gathered_route_result(
             filter_limit_overflow_routes(Routes, VS4, St),
-            [hg_routing:from_route(R) || R <- Routes],
+            [hg_routing:to_payment_route(R) || R <- Routes],
             Revision
         ),
         {next, {Events, hg_machine_action:set_timeout(0, Action)}}
@@ -1889,7 +1889,7 @@ process_routing(Action, St) ->
 handle_gathered_route_result({ok, UnOverflowRoutes}, Routes, Revision) ->
     {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(UnOverflowRoutes),
     _ = log_route_choice_meta(ChoiceMeta, Revision),
-    [?route_changed(ChoosenRoute, Routes)];
+    [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
 handle_gathered_route_result({error, not_found}, Routes, _) ->
     Failure =
         {failure,
@@ -2554,7 +2554,7 @@ get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
     Invoice = get_invoice(get_opts(St)),
     lists:foldl(
         fun(Route, {UnOverflowedRoutesIn, RejectedIn}) ->
-            PaymentRoute = hg_routing:from_route(Route),
+            PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
@@ -2577,7 +2577,7 @@ hold_limit_routes(Routes, VS, St) ->
     Invoice = get_invoice(get_opts(St)),
     lists:foreach(
         fun(Route) ->
-            PaymentRoute = hg_routing:from_route(Route),
+            PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             ok = hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment)
