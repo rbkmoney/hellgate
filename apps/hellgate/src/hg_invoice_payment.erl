@@ -806,8 +806,8 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
 
 % Other payers has predefined routes
 
-log_route_choice_meta(ChoiceMeta) ->
-    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)).
+log_route_choice_meta(ChoiceMeta, Revision) ->
+    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)).
 
 log_misconfigurations(RejectContext) ->
     RejectedProviders = maps:get(rejected_providers, RejectContext),
@@ -1831,20 +1831,9 @@ process_risk_score(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
-    CreatedAt = get_payment_created_at(Payment),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     VS0 = reconstruct_payment_flow(Payment, #{}),
-    #{payment_tool := PaymentTool} = VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
-    VS2 = collect_refund_varset(
-        MerchantTerms#domain_PaymentsServiceTerms.refunds,
-        PaymentTool,
-        VS1
-    ),
-    VS3 = collect_chargeback_varset(
-        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
-        VS2
-    ),
+    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
     Events = [?risk_score_changed(RiskScore)],
@@ -1852,7 +1841,7 @@ process_risk_score(Action, St) ->
         ok ->
             {next, {Events, hg_machine_action:set_timeout(0, Action)}};
         {error, risk_score_is_too_high = Reason} ->
-            logger:info("No route found, reason = ~p, varset: ~p", [Reason, VS3]),
+            logger:info("No route found, reason = ~p, varset: ~p", [Reason, VS1]),
             handle_choose_route_error(Reason, Events, St, Action)
     end.
 
@@ -1863,18 +1852,18 @@ process_routing(Action, St) ->
     Payment = get_payment(St),
     CreatedAt = get_payment_created_at(Payment),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
-    RiskScore = get_risk_score(St),
-    VS0 = reconstruct_payment_flow(Payment, #{risk_score => RiskScore}),
-    #{payment_tool := PaymentTool} = VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
-    VS2 = collect_refund_varset(
+    VS0 = #{risk_score => get_risk_score(St)},
+    VS1 = reconstruct_payment_flow(Payment, VS0),
+    #{payment_tool := PaymentTool} = VS2 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS1),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS2),
+    VS3 = collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
         PaymentTool,
-        VS1
-    ),
-    VS3 = collect_chargeback_varset(
-        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
         VS2
+    ),
+    VS4 = collect_chargeback_varset(
+        MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
+        VS3
     ),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     try
@@ -1884,11 +1873,12 @@ process_routing(Action, St) ->
                 {ok, PaymentRoute} ->
                     [hg_routing:to_route(PaymentRoute)];
                 undefined ->
-                    gather_routes(PaymentInstitution, VS3, Revision, St)
+                    gather_routes(PaymentInstitution, VS4, Revision, St)
             end,
         Events = handle_gathered_route_result(
-            filter_limit_overflow_routes(Routes, VS3, St),
-            [hg_routing:from_route(R) || R <- Routes]
+            filter_limit_overflow_routes(Routes, VS4, St),
+            [hg_routing:from_route(R) || R <- Routes],
+            Revision
         ),
         {next, {Events, hg_machine_action:set_timeout(0, Action)}}
     catch
@@ -1896,11 +1886,11 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, [], St, Action)
     end.
 
-handle_gathered_route_result({ok, UnOverflowRoutes}, Routes) ->
+handle_gathered_route_result({ok, UnOverflowRoutes}, Routes, Revision) ->
     {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(UnOverflowRoutes),
-    _ = log_route_choice_meta(ChoiceMeta),
+    _ = log_route_choice_meta(ChoiceMeta, Revision),
     [?route_changed(ChoosenRoute, Routes)];
-handle_gathered_route_result({error, not_found}, Routes) ->
+handle_gathered_route_result({error, not_found}, Routes, _) ->
     Failure =
         {failure,
             payproc_errors:construct(

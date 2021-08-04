@@ -17,7 +17,7 @@
 -export([marshal/1]).
 -export([unmarshal/1]).
 
--export([get_logger_metadata/1]).
+-export([get_logger_metadata/2]).
 
 -export([to_route/1]).
 -export([from_route/1]).
@@ -72,9 +72,7 @@
 
 -type route() :: #{
     provider_ref := dmsl_domain_thrift:'ProviderRef'(),
-    provider_name => binary(),
     terminal_ref := dmsl_domain_thrift:'TerminalRef'(),
-    terminal_name => binary(),
     weight => integer(),
     priority := integer()
 }.
@@ -83,16 +81,9 @@
 
 -type scored_route() :: {route_scores(), route()}.
 
--type route_info() :: #{
-    provider_ref => integer(),
-    provider_name => binary(),
-    terminal_ref => integer(),
-    terminal_name => binary()
-}.
-
 -type route_choice_meta() :: #{
-    chosen_route => route_info(),
-    preferable_route => route_info(),
+    chosen_route => route(),
+    preferable_route => route(),
     % Contains one of the field names defined in #route_scores{}
     reject_reason => atom()
 }.
@@ -152,14 +143,6 @@ provider_ref(#{provider_ref := Ref}) ->
 terminal_ref(#{terminal_ref := Ref}) ->
     Ref.
 
--spec provider_name(route()) -> binary() | undefined.
-provider_name(Route) ->
-    maps:get(provider_name, Route, undefined).
-
--spec terminal_name(route()) -> binary() | undefined.
-terminal_name(Route) ->
-    maps:get(terminal_name, Route, undefined).
-
 -spec priority(route()) -> integer().
 priority(#{priority := Priority}) ->
     Priority.
@@ -177,11 +160,6 @@ gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
 -spec choose_route([route()]) -> {payment_route(), route_choice_meta()}.
-choose_route([Route]) ->
-    RouteChoiceMeta = #{
-        chosen_route => export_route_info(Route)
-    },
-    {?route(provider_ref(Route), terminal_ref(Route)), RouteChoiceMeta};
 choose_route(Routes) ->
     FailRatedRoutes = gather_fail_rates(Routes),
     choose_rated_route(FailRatedRoutes).
@@ -230,43 +208,43 @@ set_ideal_score({RouteScores, PT}) ->
 
 get_route_choice_meta({_, SameRoute}, {_, SameRoute}) ->
     #{
-        chosen_route => export_route_info(SameRoute)
+        chosen_route => SameRoute
     };
 get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
     #{
-        chosen_route => export_route_info(ChosenRoute),
-        preferable_route => export_route_info(IdealRoute),
+        chosen_route => ChosenRoute,
+        preferable_route => IdealRoute,
         reject_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
--spec export_route_info(route()) -> route_info().
-export_route_info(Route) ->
-    ProviderRef = provider_ref(Route),
-    TerminalRef = terminal_ref(Route),
-    genlib_map:compact(#{
-        provider_ref => ProviderRef#domain_ProviderRef.id,
-        provider_name => provider_name(Route),
-        terminal_ref => TerminalRef#domain_TerminalRef.id,
-        terminal_name => terminal_name(Route)
-    }).
+-spec get_logger_metadata(route_choice_meta(), hg_domain:revision()) -> LoggerFormattedMetadata :: map().
+get_logger_metadata(RouteChoiceMeta, Revision) ->
+    #{route_choice_metadata => format_logger_metadata(RouteChoiceMeta, Revision)}.
 
--spec get_logger_metadata(route_choice_meta()) -> LoggerFormattedMetadata :: map().
-get_logger_metadata(RouteChoiceMeta) ->
-    #{route_choice_metadata => format_logger_metadata(RouteChoiceMeta)}.
-
-format_logger_metadata(RouteChoiceMeta) ->
+format_logger_metadata(RouteChoiceMeta, Revision) ->
     maps:fold(
         fun(K, V, Acc) ->
-            Acc ++ format_logger_metadata(K, V)
+            Acc ++ format_logger_metadata(K, V, Revision)
         end,
         [],
         RouteChoiceMeta
     ).
 
-format_logger_metadata(reject_reason, Reason) ->
+format_logger_metadata(reject_reason, Reason, _) ->
     [{reject_reason, Reason}];
-format_logger_metadata(Route, RouteInfo) when Route =:= chosen_route; Route =:= preferable_route ->
-    [{Route, maps:to_list(RouteInfo)}].
+format_logger_metadata(Meta, Route, Revision) when Meta =:= chosen_route; Meta =:= preferable_route ->
+    RouteInfo = add_route_name(Route, Revision),
+    [{Meta, maps:to_list(RouteInfo)}].
+
+add_route_name(Route, Revision) ->
+    ProviderRef = provider_ref(Route),
+    TerminalRef = terminal_ref(Route),
+    #domain_Provider{name = PName} = hg_domain:get(Revision, {provider, ProviderRef}),
+    #domain_Terminal{name = TName} = hg_domain:get(Revision, {terminal, TerminalRef}),
+    genlib_map:compact(Route#{
+        provider_name => PName,
+        terminal_name => TName
+    }).
 
 map_route_switch_reason(SameScores, SameScores) ->
     unknown;
