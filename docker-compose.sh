@@ -65,6 +65,19 @@ services:
       timeout: 1s
       retries: 20
 
+  party-management:
+    image: dr2.rbkmoney.com/rbkmoney/party-management:45184ecf6e36fa5f72b7bc3d65c143f2dc8055dc
+    command: /opt/party-management/bin/party-management foreground
+    depends_on:
+      - machinegun
+      - dominant
+      - shumway
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
+
   shumway-db:
     image: dr2.rbkmoney.com/rbkmoney/postgres:9.6
     environment:
