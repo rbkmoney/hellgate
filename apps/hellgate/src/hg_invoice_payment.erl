@@ -149,8 +149,7 @@
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
     latest_change_at :: undefined | hg_datetime:timestamp(),
-    clock :: undefined | hg_accounting_new:clock(),
-    adjustment_clock :: undefined | hg_accounting_new:clock()
+    clock :: undefined | hg_accounting_new:clock()
 }).
 
 -record(refund_st, {
@@ -1683,9 +1682,9 @@ finalize_adjustment_cashflow(Intent, Adjustment, St, Options = #{timestamp := Ti
     Plan = get_adjustment_cashflow_plan(Adjustment),
     case Intent of
         capture ->
-            commit(PlanID, Plan, Timestamp, St#st.adjustment_clock);
+            commit(PlanID, Plan, Timestamp, St#st.clock);
         cancel ->
-            rollback(PlanID, Plan, Timestamp, St#st.adjustment_clock)
+            rollback(PlanID, Plan, Timestamp, St#st.clock)
     end.
 
 get_adjustment_cashflow_plan(#domain_InvoicePaymentAdjustment{
@@ -3364,9 +3363,10 @@ try_get_adjustment(ID, #st{adjustments = As}) ->
 set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
     St#st{adjustments = lists:keystore(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
 
-set_adjustment_clock(St = #st{activity = {adjustment_new, _}}, ?adjustment_clock_update(Clock)) ->
-    St#st{adjustment_clock = Clock};
-set_adjustment_clock(St = #st{activity = {adjustment_pending, _}}, ?adjustment_clock_update(Clock)) ->
+set_adjustment_clock(St = #st{activity = {AdjustmentActivity, _}}, ?adjustment_clock_update(Clock)) when
+    AdjustmentActivity =:= adjustment_new;
+    AdjustmentActivity =:= adjustment_pending
+->
     St#st{clock = Clock};
 set_adjustment_clock(St = #st{}, _) ->
     St.
