@@ -6208,9 +6208,9 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
 
         hg_ct_fixture:construct_payment_method(?pmt(mobile, ?mob(<<"mts-ref">>))),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"visa">>))),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"mastercard">>))),
-        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"jcb">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"visa-ref">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"mastercard-ref">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"jcb-ref">>))),
 
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, visa)),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card_deprecated, mastercard)),
@@ -7309,9 +7309,9 @@ construct_domain_fixture() ->
         }},
         {terminal, ?terminal_obj(?trm(14), ?prv(7))},
 
-        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"visa">>), <<"visa payment system">>),
-        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"mastercard">>), <<"mastercard payment system">>),
-        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"jcb">>), <<"jcb payment system">>),
+        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"visa-ref">>), <<"visa payment system">>),
+        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"mastercard-ref">>), <<"mastercard payment system">>),
+        hg_ct_fixture:construct_payment_system(?pmt_sys(<<"jcb-ref">>), <<"jcb payment system">>),
         hg_ct_fixture:construct_mobile_operator(?mob(<<"mts-ref">>), <<"mts mobile operator">>)
     ].
 

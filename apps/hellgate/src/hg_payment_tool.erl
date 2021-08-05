@@ -117,9 +117,8 @@ unmarshal(
     BankName = genlib_map:get(<<"bank_name">>, V),
     MD = genlib_map:get(<<"metadata">>, V),
     IsCVVEmpty = genlib_map:get(<<"is_cvv_empty">>, V),
-    #domain_BankCard{
+    BCard = #domain_BankCard{
         token = unmarshal(str, Token),
-        payment_system_deprecated = unmarshal(payment_system, PaymentSystem),
         bin = unmarshal(str, Bin),
         last_digits = unmarshal(str, MaskedPan),
         token_provider_deprecated = unmarshal({T, token_provider}, TokenProvider),
@@ -127,7 +126,8 @@ unmarshal(
         bank_name = unmarshal({T, bank_name}, BankName),
         metadata = unmarshal({T, metadata}, MD),
         is_cvv_empty = unmarshal({T, boolean}, IsCVVEmpty)
-    };
+    },
+    set_payment_system(BCard, PaymentSystem);
 unmarshal(payment_terminal = T, TerminalType) ->
     #domain_PaymentTerminal{
         terminal_type_deprecated = unmarshal({T, type}, TerminalType)
@@ -167,12 +167,12 @@ unmarshal(payment_tool, [2, TerminalType]) ->
         terminal_type_deprecated = unmarshal({payment_terminal, type}, TerminalType)
     }};
 unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
-    {bank_card, #domain_BankCard{
+    BCard = #domain_BankCard{
         token = unmarshal(str, Token),
-        payment_system_deprecated = unmarshal(payment_system, PaymentSystem),
         bin = unmarshal(str, Bin),
         last_digits = unmarshal(str, MaskedPan)
-    }};
+    },
+    {bank_card, set_payment_system(BCard, PaymentSystem)};
 unmarshal(payment_method, <<"card">>) ->
     bank_card;
 unmarshal(payment_method, <<"payterm">>) ->
@@ -183,30 +183,6 @@ unmarshal(payment_method, <<"crypto_currency">>) ->
     crypto_currency;
 unmarshal(payment_method, <<"mobile_commerce">>) ->
     mobile_commerce;
-unmarshal(payment_system, <<"visa">>) ->
-    visa;
-unmarshal(payment_system, <<"mastercard">>) ->
-    mastercard;
-unmarshal(payment_system, <<"visaelectron">>) ->
-    visaelectron;
-unmarshal(payment_system, <<"maestro">>) ->
-    maestro;
-unmarshal(payment_system, <<"forbrugsforeningen">>) ->
-    forbrugsforeningen;
-unmarshal(payment_system, <<"dankort">>) ->
-    dankort;
-unmarshal(payment_system, <<"amex">>) ->
-    amex;
-unmarshal(payment_system, <<"dinersclub">>) ->
-    dinersclub;
-unmarshal(payment_system, <<"discover">>) ->
-    discover;
-unmarshal(payment_system, <<"unionpay">>) ->
-    unionpay;
-unmarshal(payment_system, <<"jcb">>) ->
-    jcb;
-unmarshal(payment_system, <<"nspkmir">>) ->
-    nspkmir;
 unmarshal({bank_card, token_provider}, <<"applepay">>) ->
     applepay;
 unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
@@ -251,3 +227,22 @@ unmarshal({crypto_currency, currency}, <<"zcash">>) ->
     zcash;
 unmarshal(_, Other) ->
     Other.
+
+set_payment_system(BCard, PSysBin) when is_binary(PSysBin) ->
+    {Field, Value} =
+        case PSysBin of
+            <<"visa">> -> {#domain_BankCard.payment_system_deprecated, visa};
+            <<"mastercard">> -> {#domain_BankCard.payment_system_deprecated, mastercard};
+            <<"visaelectron">> -> {#domain_BankCard.payment_system_deprecated, visaelectron};
+            <<"maestro">> -> {#domain_BankCard.payment_system_deprecated, maestro};
+            <<"forbrugsforeningen">> -> {#domain_BankCard.payment_system_deprecated, forbrugsforeningen};
+            <<"dankort">> -> {#domain_BankCard.payment_system_deprecated, dankort};
+            <<"amex">> -> {#domain_BankCard.payment_system_deprecated, amex};
+            <<"dinersclub">> -> {#domain_BankCard.payment_system_deprecated, dinersclub};
+            <<"discover">> -> {#domain_BankCard.payment_system_deprecated, discover};
+            <<"unionpay">> -> {#domain_BankCard.payment_system_deprecated, unionpay};
+            <<"jcb">> -> {#domain_BankCard.payment_system_deprecated, jcb};
+            <<"nspkmir">> -> {#domain_BankCard.payment_system_deprecated, nspkmir};
+            PSysRef -> {#domain_BankCard.payment_system, #domain_PaymentSystemRef{id = PSysRef}}
+        end,
+    setelement(Field, BCard, Value).
