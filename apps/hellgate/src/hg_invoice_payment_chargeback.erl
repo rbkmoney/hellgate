@@ -270,8 +270,8 @@ merge_change(?chargeback_target_status_changed(Status), State) ->
     set_target_status(Status, State);
 merge_change(?chargeback_status_changed(Status), State) ->
     set_target_status(undefined, set_status(Status, State));
-merge_change(?chargeback_clock_update(Clock), State) ->
-    set_clock(Clock, State);
+merge_change(?chargeback_clock_update(_), State) ->
+    State;
 merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
     set_cash_flow(CashFlow, State).
 
@@ -358,7 +358,7 @@ update_cash_flow(State, Action, Opts) ->
 -spec hold_cash_flow(state(), payment_state(), action(), opts()) -> result() | no_return().
 hold_cash_flow(State, PaymentSt, Action, Opts) ->
     CashFlowPlan = get_current_plan(State),
-    Clock = prepare_cash_flow(get_clock(State, PaymentSt), State, CashFlowPlan, Opts),
+    Clock = prepare_cash_flow(get_clock(PaymentSt), State, CashFlowPlan, Opts),
     {[?chargeback_clock_update(Clock)], Action}.
 
 -spec finalise(state(), payment_state(), action(), opts()) -> result() | no_return().
@@ -369,7 +369,7 @@ finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts
     Status =:= ?chargeback_status_accepted();
     Status =:= ?chargeback_status_cancelled()
 ->
-    Clock = commit_cash_flow(get_clock(State, PaymentSt), State, Opts),
+    Clock = commit_cash_flow(get_clock(PaymentSt), State, Opts),
     {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action}.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
@@ -624,11 +624,9 @@ get_current_plan(#chargeback_st{cash_flow_plans = Plans} = State) ->
     #{Stage := Plan} = Plans,
     Plan.
 
--spec get_clock(state(), payment_state()) -> clock().
-get_clock(#chargeback_st{clock = undefined}, PaymentSt) ->
-    hg_invoice_payment:get_clock(PaymentSt);
-get_clock(#chargeback_st{clock = Clock}, _PaymentSt) ->
-    Clock.
+-spec get_clock(payment_state()) -> clock().
+get_clock(PaymentSt) ->
+    hg_invoice_payment:get_clock(PaymentSt).
 
 -spec get_reverted_previous_stage(state()) -> [batch()].
 get_reverted_previous_stage(State) ->
@@ -708,10 +706,6 @@ set_cash_flow(CashFlow, #chargeback_st{cash_flow_plans = Plans} = State) ->
     Stage = get_stage(State),
     Plan = build_updated_plan(CashFlow, State),
     State#chargeback_st{cash_flow_plans = Plans#{Stage := Plan}, cash_flow = CashFlow}.
-
--spec set_clock(clock(), state()) -> state().
-set_clock(Clock, #chargeback_st{} = State) ->
-    State#chargeback_st{clock = Clock}.
 
 -spec set_target_status(status() | undefined, state()) -> state().
 set_target_status(TargetStatus, #chargeback_st{} = State) ->

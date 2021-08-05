@@ -3205,7 +3205,7 @@ save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
 merge_chargeback_change(Change, ChargebackState) ->
     hg_invoice_payment_chargeback:merge_change(Change, ChargebackState).
 
-set_chargeback_clock(St = #st{activity = {chargeback, _, finalising_accounter}}, ?chargeback_clock_update(Clock)) ->
+set_chargeback_clock(St = #st{}, ?chargeback_clock_update(Clock)) ->
     St#st{clock = Clock};
 set_chargeback_clock(St = #st{}, _) ->
     St.
