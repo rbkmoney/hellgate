@@ -157,8 +157,7 @@
     cash_flow :: undefined | cash_flow(),
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
-    failure :: undefined | failure(),
-    clock :: undefined | hg_accounting_new:clock()
+    failure :: undefined | failure()
 }).
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
@@ -1388,12 +1387,7 @@ prepare_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
         Clock
     ).
 
-commit_refund_cashflow(RefundSt, St) ->
-    Clock =
-        case RefundSt#refund_st.clock of
-            undefined -> St#st.clock;
-            RefundClock -> RefundClock
-        end,
+commit_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting_new:commit(
         construct_refund_plan_id(RefundSt, St),
@@ -1402,12 +1396,7 @@ commit_refund_cashflow(RefundSt, St) ->
         Clock
     ).
 
-rollback_refund_cashflow(RefundSt, St) ->
-    Clock =
-        case RefundSt#refund_st.clock of
-            undefined -> St#st.clock;
-            RefundClock -> RefundClock
-        end,
+rollback_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
     hg_accounting_new:rollback(
         construct_refund_plan_id(RefundSt, St),
@@ -3213,14 +3202,16 @@ merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?refund_rollback_started(Failure), RefundSt) ->
     RefundSt#refund_st{failure = Failure};
-merge_refund_change(?refund_clock_update(Clock), RefundSt) ->
-    RefundSt#refund_st{clock = Clock};
+merge_refund_change(?refund_clock_update(_), RefundSt) ->
+    RefundSt;
 merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
     add_refund_session(create_session(?refunded(), undefined), St);
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
     update_refund_session(merge_session_change(Change, get_refund_session(St), #{}), St).
 
 set_refund_clock(St = #st{activity = {Activity, _}}, ?refund_clock_update(Clock)) when
+    Activity =:= refund_new;
+    Activity =:= refund_session;
     Activity =:= refund_accounter;
     Activity =:= refund_failure
 ->
