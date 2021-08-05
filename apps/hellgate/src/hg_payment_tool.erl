@@ -103,6 +103,17 @@ unmarshal(PaymentTool) ->
 unmarshal(payment_tool, [3, PMV, V]) ->
     PaymentMethod = payment_method(PMV),
     {PaymentMethod, unmarshal(PaymentMethod, V)};
+unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
+    {bank_card, unmarshal(bank_card, BankCard)};
+unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
+    BCard = #domain_BankCard{
+        token = unmarshal(str, Token),
+        bin = unmarshal(str, Bin),
+        last_digits = unmarshal(str, MaskedPan)
+    },
+    {bank_card, set_payment_system(BCard, PaymentSystem)};
+unmarshal(payment_tool, [2, TerminalType]) when is_binary(TerminalType) ->
+    {payment_terminal, unmarshal(payment_terminal, TerminalType)};
 unmarshal(
     bank_card = T,
     #{
@@ -123,7 +134,7 @@ unmarshal(
         last_digits = unmarshal(str, MaskedPan),
         token_provider_deprecated = unmarshal({T, token_provider}, TokenProvider),
         issuer_country = unmarshal({T, issuer_country}, IssuerCountry),
-        bank_name = unmarshal({T, bank_name}, BankName),
+        bank_name = unmarshal(str, BankName),
         metadata = unmarshal({T, metadata}, MD),
         is_cvv_empty = unmarshal({T, boolean}, IsCVVEmpty)
     },
@@ -178,17 +189,6 @@ unmarshal(mobile_commerce, #{
             BinRef -> {#domain_MobileCommerce.operator, #domain_MobileOperatorRef{id = BinRef}}
         end,
     setelement(Field, PTool, Value);
-unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
-    {bank_card, unmarshal(bank_card, BankCard)};
-unmarshal(payment_tool, [2, TerminalType]) ->
-    {payment_terminal, unmarshal(payment_terminal, TerminalType)};
-unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
-    BCard = #domain_BankCard{
-        token = unmarshal(str, Token),
-        bin = unmarshal(str, Bin),
-        last_digits = unmarshal(str, MaskedPan)
-    },
-    {bank_card, set_payment_system(BCard, PaymentSystem)};
 unmarshal({bank_card, token_provider}, <<"applepay">>) ->
     applepay;
 unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
@@ -197,8 +197,6 @@ unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
     samsungpay;
 unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
     binary_to_existing_atom(unmarshal(str, Residence), utf8);
-unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
-    unmarshal(str, Name);
 unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
     maps:map(fun(_, V) -> hg_msgpack_marshalling:marshal(V) end, MD);
 unmarshal({bank_card, boolean}, <<"true">>) ->
