@@ -101,7 +101,7 @@ unmarshal(PaymentTool) ->
     unmarshal(payment_tool, PaymentTool).
 
 unmarshal(payment_tool, [3, PMV, V]) ->
-    PaymentMethod = unmarshal(payment_method, PMV),
+    PaymentMethod = payment_method(PMV),
     {PaymentMethod, unmarshal(PaymentMethod, V)};
 unmarshal(
     bank_card = T,
@@ -128,20 +128,36 @@ unmarshal(
         is_cvv_empty = unmarshal({T, boolean}, IsCVVEmpty)
     },
     set_payment_system(BCard, PaymentSystem);
-unmarshal(payment_terminal = T, TerminalType) ->
-    #domain_PaymentTerminal{
-        terminal_type_deprecated = unmarshal({T, type}, TerminalType)
-    };
-unmarshal(digital_wallet = T, #{
+unmarshal(payment_terminal, TerminalType) ->
+    case TerminalType of
+        <<"euroset">> -> #domain_PaymentTerminal{terminal_type_deprecated = euroset};
+        <<"wechat">> -> #domain_PaymentTerminal{terminal_type_deprecated = wechat};
+        <<"alipay">> -> #domain_PaymentTerminal{terminal_type_deprecated = alipay};
+        <<"zotapay">> -> #domain_PaymentTerminal{terminal_type_deprecated = zotapay};
+        <<"qps">> -> #domain_PaymentTerminal{terminal_type_deprecated = qps};
+        <<"uzcard">> -> #domain_PaymentTerminal{terminal_type_deprecated = uzcard};
+        PSrvRef -> #domain_PaymentTerminal{payment_service = #domain_PaymentServiceRef{id = PSrvRef}}
+    end;
+unmarshal(digital_wallet, #{
     <<"provider">> := Provider,
     <<"id">> := ID
-}) ->
-    #domain_DigitalWallet{
-        provider_deprecated = unmarshal({T, provider}, Provider),
-        id = unmarshal(str, ID)
-    };
-unmarshal(crypto_currency = T, CC) ->
-    {crypto_currency_deprecated, unmarshal({T, currency}, CC)};
+}) when is_binary(Provider) ->
+    {Field, Value} =
+        case Provider of
+            <<"qiwi">> -> {#domain_DigitalWallet.provider_deprecated, qiwi};
+            PSrvRef -> {#domain_DigitalWallet.payment_service, #domain_PaymentServiceRef{id = PSrvRef}}
+        end,
+    setelement(Field, #domain_DigitalWallet{id = unmarshal(str, ID)}, Value);
+unmarshal(crypto_currency, CC) when is_binary(CC) ->
+    case CC of
+        <<"bitcoin">> -> {crypto_currency_deprecated, bitcoin};
+        <<"litecoin">> -> {crypto_currency_deprecated, litecoin};
+        <<"bitcoin_cash">> -> {crypto_currency_deprecated, bitcoin_cash};
+        <<"ripple">> -> {crypto_currency_deprecated, ripple};
+        <<"ethereum">> -> {crypto_currency_deprecated, ethereum};
+        <<"zcash">> -> {crypto_currency_deprecated, zcash};
+        CryptoCurRef -> {crypto_currency, #domain_CryptoCurrencyRef{id = CryptoCurRef}}
+    end;
 unmarshal(mobile_commerce, #{
     <<"operator">> := Operator,
     <<"phone">> := #{cc := CC, ctn := Ctn}
@@ -152,20 +168,20 @@ unmarshal(mobile_commerce, #{
             ctn = unmarshal(str, Ctn)
         }
     },
-    case Operator of
-        <<"mts">> -> PTool#domain_MobileCommerce{operator_deprecated = mts};
-        <<"megafone">> -> PTool#domain_MobileCommerce{operator_deprecated = megafone};
-        <<"yota">> -> PTool#domain_MobileCommerce{operator_deprecated = yota};
-        <<"tele2">> -> PTool#domain_MobileCommerce{operator_deprecated = tele2};
-        <<"beeline">> -> PTool#domain_MobileCommerce{operator_deprecated = beeline};
-        BinRef -> PTool#domain_MobileCommerce{operator = #domain_MobileOperatorRef{id = BinRef}}
-    end;
+    {Field, Value} =
+        case Operator of
+            <<"mts">> -> {#domain_MobileCommerce.operator_deprecated, mts};
+            <<"megafone">> -> {#domain_MobileCommerce.operator_deprecated, megafone};
+            <<"yota">> -> {#domain_MobileCommerce.operator_deprecated, yota};
+            <<"tele2">> -> {#domain_MobileCommerce.operator_deprecated, tele2};
+            <<"beeline">> -> {#domain_MobileCommerce.operator_deprecated, beeline};
+            BinRef -> {#domain_MobileCommerce.operator, #domain_MobileOperatorRef{id = BinRef}}
+        end,
+    setelement(Field, PTool, Value);
 unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
     {bank_card, unmarshal(bank_card, BankCard)};
 unmarshal(payment_tool, [2, TerminalType]) ->
-    {payment_terminal, #domain_PaymentTerminal{
-        terminal_type_deprecated = unmarshal({payment_terminal, type}, TerminalType)
-    }};
+    {payment_terminal, unmarshal(payment_terminal, TerminalType)};
 unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
     BCard = #domain_BankCard{
         token = unmarshal(str, Token),
@@ -173,16 +189,6 @@ unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedP
         last_digits = unmarshal(str, MaskedPan)
     },
     {bank_card, set_payment_system(BCard, PaymentSystem)};
-unmarshal(payment_method, <<"card">>) ->
-    bank_card;
-unmarshal(payment_method, <<"payterm">>) ->
-    payment_terminal;
-unmarshal(payment_method, <<"wallet">>) ->
-    digital_wallet;
-unmarshal(payment_method, <<"crypto_currency">>) ->
-    crypto_currency;
-unmarshal(payment_method, <<"mobile_commerce">>) ->
-    mobile_commerce;
 unmarshal({bank_card, token_provider}, <<"applepay">>) ->
     applepay;
 unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
@@ -195,38 +201,23 @@ unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
     unmarshal(str, Name);
 unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
     maps:map(fun(_, V) -> hg_msgpack_marshalling:marshal(V) end, MD);
-unmarshal({payment_terminal, type}, <<"euroset">>) ->
-    euroset;
-unmarshal({payment_terminal, type}, <<"wechat">>) ->
-    wechat;
-unmarshal({payment_terminal, type}, <<"alipay">>) ->
-    alipay;
-unmarshal({payment_terminal, type}, <<"zotapay">>) ->
-    zotapay;
-unmarshal({payment_terminal, type}, <<"qps">>) ->
-    qps;
-unmarshal({payment_terminal, type}, <<"uzcard">>) ->
-    uzcard;
-unmarshal({digital_wallet, provider}, <<"qiwi">>) ->
-    qiwi;
 unmarshal({bank_card, boolean}, <<"true">>) ->
     true;
 unmarshal({bank_card, boolean}, <<"false">>) ->
     false;
-unmarshal({crypto_currency, currency}, <<"bitcoin">>) ->
-    bitcoin;
-unmarshal({crypto_currency, currency}, <<"litecoin">>) ->
-    litecoin;
-unmarshal({crypto_currency, currency}, <<"bitcoin_cash">>) ->
-    bitcoin_cash;
-unmarshal({crypto_currency, currency}, <<"ripple">>) ->
-    ripple;
-unmarshal({crypto_currency, currency}, <<"ethereum">>) ->
-    ethereum;
-unmarshal({crypto_currency, currency}, <<"zcash">>) ->
-    zcash;
 unmarshal(_, Other) ->
     Other.
+
+payment_method(<<"card">>) ->
+    bank_card;
+payment_method(<<"payterm">>) ->
+    payment_terminal;
+payment_method(<<"wallet">>) ->
+    digital_wallet;
+payment_method(<<"crypto_currency">>) ->
+    crypto_currency;
+payment_method(<<"mobile_commerce">>) ->
+    mobile_commerce.
 
 set_payment_system(BCard, PSysBin) when is_binary(PSysBin) ->
     {Field, Value} =

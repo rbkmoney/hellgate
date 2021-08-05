@@ -33,6 +33,8 @@
 -export([construct_bank_card_category/4]).
 -export([construct_payment_system/2]).
 -export([construct_mobile_operator/2]).
+-export([construct_payment_service/2]).
+-export([construct_crypto_currency/2]).
 
 %%
 
@@ -48,6 +50,8 @@
 -type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRulesetRef'().
 -type payment_system() :: dmsl_domain_thrift:'PaymentSystemRef'().
 -type mobile_operator() :: dmsl_domain_thrift:'MobileOperatorRef'().
+-type payment_service() :: dmsl_domain_thrift:'PaymentServiceRef'().
+-type crypto_currency() :: dmsl_domain_thrift:'CryptoCurrencyRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -96,6 +100,10 @@ construct_category(Ref, Name, Type) ->
 -spec construct_payment_method(dmsl_domain_thrift:'PaymentMethodRef'()) ->
     {payment_method, dmsl_domain_thrift:'PaymentMethodObject'()}.
 construct_payment_method(?pmt(mobile, ?mob(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(_, ?pmt_srv(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(crypto_currency, ?crypta(Name)) = Ref) ->
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(bank_card, ?bank_card(Name)) = Ref) ->
     construct_payment_method(Name, Ref);
@@ -327,6 +335,26 @@ construct_mobile_operator(Ref, Name) ->
     {mobile_operator, #domain_MobileOperatorObject{
         ref = Ref,
         data = #domain_MobileOperator{
+            name = Name
+        }
+    }}.
+
+-spec construct_payment_service(payment_service(), name()) ->
+    {payment_service, dmsl_domain_thrift:'PaymentServiceObject'()}.
+construct_payment_service(Ref, Name) ->
+    {payment_service, #domain_PaymentServiceObject{
+        ref = Ref,
+        data = #domain_PaymentService{
+            name = Name
+        }
+    }}.
+
+-spec construct_crypto_currency(crypto_currency(), name()) ->
+    {crypto_currency, dmsl_domain_thrift:'CryptoCurrencyObject'()}.
+construct_crypto_currency(Ref, Name) ->
+    {crypto_currency, #domain_CryptoCurrencyObject{
+        ref = Ref,
+        data = #domain_CryptoCurrency{
             name = Name
         }
     }}.
