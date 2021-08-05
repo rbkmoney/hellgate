@@ -7,8 +7,6 @@
 %%
 
 -export([has_any_payment_method/2]).
--export([get_possible_methods/1]).
-
 -export([unmarshal/1]).
 
 %%
@@ -67,9 +65,15 @@ get_possible_methods({crypto_currency_deprecated, CC}) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {crypto_currency_deprecated, CC}}
     ]);
-get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator_deprecated = Operator}}) ->
+get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator_deprecated = Operator}}) when
+    Operator /= undefined
+->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {mobile_deprecated, Operator}}
+    ]);
+get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) when Operator /= undefined ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {mobile = Operator}}
     ]).
 
 create_bank_card_payment_method_ref(#domain_BankCard{
@@ -115,7 +119,7 @@ unmarshal(
     IsCVVEmpty = genlib_map:get(<<"is_cvv_empty">>, V),
     #domain_BankCard{
         token = unmarshal(str, Token),
-        payment_system_deprecated = unmarshal({T, payment_system}, PaymentSystem),
+        payment_system_deprecated = unmarshal(payment_system, PaymentSystem),
         bin = unmarshal(str, Bin),
         last_digits = unmarshal(str, MaskedPan),
         token_provider_deprecated = unmarshal({T, token_provider}, TokenProvider),
@@ -138,17 +142,24 @@ unmarshal(digital_wallet = T, #{
     };
 unmarshal(crypto_currency = T, CC) ->
     {crypto_currency_deprecated, unmarshal({T, currency}, CC)};
-unmarshal(mobile_commerce = T, #{
+unmarshal(mobile_commerce, #{
     <<"operator">> := Operator,
     <<"phone">> := #{cc := CC, ctn := Ctn}
 }) ->
-    #domain_MobileCommerce{
-        operator_deprecated = unmarshal({T, operator}, Operator),
+    PTool = #domain_MobileCommerce{
         phone = #domain_MobilePhone{
             cc = unmarshal(str, CC),
             ctn = unmarshal(str, Ctn)
         }
-    };
+    },
+    case Operator of
+        <<"mts">> -> PTool#domain_MobileCommerce{operator_deprecated = mts};
+        <<"megafone">> -> PTool#domain_MobileCommerce{operator_deprecated = megafone};
+        <<"yota">> -> PTool#domain_MobileCommerce{operator_deprecated = yota};
+        <<"tele2">> -> PTool#domain_MobileCommerce{operator_deprecated = tele2};
+        <<"beeline">> -> PTool#domain_MobileCommerce{operator_deprecated = beeline};
+        BinRef -> PTool#domain_MobileCommerce{operator = #domain_MobileOperatorRef{id = BinRef}}
+    end;
 unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
     {bank_card, unmarshal(bank_card, BankCard)};
 unmarshal(payment_tool, [2, TerminalType]) ->
@@ -158,7 +169,7 @@ unmarshal(payment_tool, [2, TerminalType]) ->
 unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
     {bank_card, #domain_BankCard{
         token = unmarshal(str, Token),
-        payment_system_deprecated = unmarshal({bank_card, payment_system}, PaymentSystem),
+        payment_system_deprecated = unmarshal(payment_system, PaymentSystem),
         bin = unmarshal(str, Bin),
         last_digits = unmarshal(str, MaskedPan)
     }};
@@ -172,29 +183,29 @@ unmarshal(payment_method, <<"crypto_currency">>) ->
     crypto_currency;
 unmarshal(payment_method, <<"mobile_commerce">>) ->
     mobile_commerce;
-unmarshal({bank_card, payment_system}, <<"visa">>) ->
+unmarshal(payment_system, <<"visa">>) ->
     visa;
-unmarshal({bank_card, payment_system}, <<"mastercard">>) ->
+unmarshal(payment_system, <<"mastercard">>) ->
     mastercard;
-unmarshal({bank_card, payment_system}, <<"visaelectron">>) ->
+unmarshal(payment_system, <<"visaelectron">>) ->
     visaelectron;
-unmarshal({bank_card, payment_system}, <<"maestro">>) ->
+unmarshal(payment_system, <<"maestro">>) ->
     maestro;
-unmarshal({bank_card, payment_system}, <<"forbrugsforeningen">>) ->
+unmarshal(payment_system, <<"forbrugsforeningen">>) ->
     forbrugsforeningen;
-unmarshal({bank_card, payment_system}, <<"dankort">>) ->
+unmarshal(payment_system, <<"dankort">>) ->
     dankort;
-unmarshal({bank_card, payment_system}, <<"amex">>) ->
+unmarshal(payment_system, <<"amex">>) ->
     amex;
-unmarshal({bank_card, payment_system}, <<"dinersclub">>) ->
+unmarshal(payment_system, <<"dinersclub">>) ->
     dinersclub;
-unmarshal({bank_card, payment_system}, <<"discover">>) ->
+unmarshal(payment_system, <<"discover">>) ->
     discover;
-unmarshal({bank_card, payment_system}, <<"unionpay">>) ->
+unmarshal(payment_system, <<"unionpay">>) ->
     unionpay;
-unmarshal({bank_card, payment_system}, <<"jcb">>) ->
+unmarshal(payment_system, <<"jcb">>) ->
     jcb;
-unmarshal({bank_card, payment_system}, <<"nspkmir">>) ->
+unmarshal(payment_system, <<"nspkmir">>) ->
     nspkmir;
 unmarshal({bank_card, token_provider}, <<"applepay">>) ->
     applepay;
@@ -238,15 +249,5 @@ unmarshal({crypto_currency, currency}, <<"ethereum">>) ->
     ethereum;
 unmarshal({crypto_currency, currency}, <<"zcash">>) ->
     zcash;
-unmarshal({mobile_commerce, operator}, <<"mts">>) ->
-    mts;
-unmarshal({mobile_commerce, operator}, <<"megafone">>) ->
-    megafone;
-unmarshal({mobile_commerce, operator}, <<"yota">>) ->
-    yota;
-unmarshal({mobile_commerce, operator}, <<"tele2">>) ->
-    tele2;
-unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
-    beeline;
 unmarshal(_, Other) ->
     Other.

@@ -6207,7 +6207,7 @@ construct_domain_fixture() ->
         %% categories influents in limits choice
         hg_ct_fixture:construct_category(?cat(8), <<"commit success">>),
 
-        hg_ct_fixture:construct_payment_method(?pmt(mobile, ?mob(<<"mts">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(mobile, ?mob(<<"mts-ref">>))),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"visa">>))),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"mastercard">>))),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"jcb">>))),
@@ -7080,7 +7080,8 @@ construct_domain_fixture() ->
                         payment_methods =
                             {value,
                                 ?ordset([
-                                    ?pmt(mobile_deprecated, mts)
+                                    ?pmt(mobile_deprecated, mts),
+                                    ?pmt(mobile, ?mob(<<"mts-ref">>))
                                 ])},
                         cash_limit =
                             {value,
@@ -7311,7 +7312,7 @@ construct_domain_fixture() ->
         hg_ct_fixture:construct_payment_system(?pmt_sys(<<"visa">>), <<"visa payment system">>),
         hg_ct_fixture:construct_payment_system(?pmt_sys(<<"mastercard">>), <<"mastercard payment system">>),
         hg_ct_fixture:construct_payment_system(?pmt_sys(<<"jcb">>), <<"jcb payment system">>),
-        hg_ct_fixture:construct_mobile_operator(?mob(<<"mts">>), <<"mts mobile operator">>)
+        hg_ct_fixture:construct_mobile_operator(?mob(<<"mts-ref">>), <<"mts mobile operator">>)
     ].
 
 construct_term_set_for_cost(LowerBound, UpperBound) ->
