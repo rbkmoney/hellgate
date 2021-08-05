@@ -29,10 +29,10 @@
     {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{route = Route}}
 ).
 
--define(route_changed(Route, AvailableRoutes),
+-define(route_changed(Route, Candidates),
     {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{
         route = Route,
-        available_routes = AvailableRoutes
+        candidates = Candidates
     }}
 ).
 

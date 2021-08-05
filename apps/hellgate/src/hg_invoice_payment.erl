@@ -132,7 +132,7 @@
     payment :: undefined | payment(),
     risk_score :: undefined | risk_score(),
     route :: undefined | route(),
-    available_routes :: undefined | [route()],
+    candidate_routes :: undefined | [route()],
     cash_flow :: undefined | cash_flow(),
     partial_cash_flow :: undefined | cash_flow(),
     final_cash_flow :: undefined | cash_flow(),
@@ -271,10 +271,10 @@ get_risk_score(#st{risk_score = RiskScore}) ->
 get_route(#st{route = Route}) ->
     Route.
 
--spec get_available_routes(st()) -> [route()].
-get_available_routes(#st{available_routes = undefined}) ->
+-spec get_candidate_routes(st()) -> [route()].
+get_candidate_routes(#st{candidate_routes = undefined}) ->
     [];
-get_available_routes(#st{available_routes = Routes}) ->
+get_candidate_routes(#st{candidate_routes = Routes}) ->
     Routes.
 
 -spec get_adjustments(st()) -> [adjustment()].
@@ -2164,7 +2164,7 @@ process_result({payment, processing_accounter}, Action, St) ->
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure, cash_flow = CashFlow}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    Routes = get_available_routes(St),
+    Routes = get_candidate_routes(St),
     _ = rollback_payment_limits(Routes, St),
     _ = CashFlow /= undefined andalso rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
@@ -2177,7 +2177,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
                 _ = rollback_unused_payment_limits(St),
                 commit_payment_cashflow(St);
             ?cancelled() ->
-                Routes = get_available_routes(St),
+                Routes = get_candidate_routes(St),
                 _ = rollback_payment_limits(Routes, St),
                 rollback_payment_cashflow(St)
         end,
@@ -2603,7 +2603,7 @@ rollback_payment_limits(Routes, St) ->
 
 rollback_unused_payment_limits(St) ->
     Route = get_route(St),
-    Routes = get_available_routes(St),
+    Routes = get_candidate_routes(St),
     UnUsedRoutes = Routes -- [Route],
     rollback_payment_limits(UnUsedRoutes, St).
 
@@ -2964,11 +2964,11 @@ merge_change(Change = ?risk_score_changed(RiskScore), #st{} = St, Opts) ->
         risk_score = RiskScore,
         activity = {payment, routing}
     };
-merge_change(Change = ?route_changed(Route, AvailableRoutes), St, Opts) ->
+merge_change(Change = ?route_changed(Route, Candidates), St, Opts) ->
     _ = validate_transition({payment, routing}, Change, St, Opts),
     St#st{
         route = Route,
-        available_routes = AvailableRoutes,
+        candidate_routes = Candidates,
         activity = {payment, cash_flow_building}
     };
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
