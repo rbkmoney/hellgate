@@ -962,8 +962,7 @@ collect_cash_flow_context(
 get_available_amount(AccountID, Clock) ->
     #{
         min_available_amount := AvailableAmount
-    } =
-        hg_accounting:get_balance(AccountID, Clock),
+    } = hg_accounting:get_balance(AccountID, Clock),
     AvailableAmount.
 
 construct_payment_plan_id(St) ->
@@ -3078,7 +3077,7 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
                 St#st{activity = idle}
         end,
     ChargebackSt = merge_chargeback_change(Event, try_get_chargeback_state(ID, St1)),
-    set_chargeback_clock(set_chargeback_state(ID, ChargebackSt, St1), Event);
+    set_chargeback_clock(Event, set_chargeback_state(ID, ChargebackSt, St1));
 merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
     St1 =
         case Event of
@@ -3205,9 +3204,9 @@ save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
 merge_chargeback_change(Change, ChargebackState) ->
     hg_invoice_payment_chargeback:merge_change(Change, ChargebackState).
 
-set_chargeback_clock(St = #st{}, ?chargeback_clock_update(Clock)) ->
+set_chargeback_clock(?chargeback_clock_update(Clock), St = #st{}) ->
     St#st{clock = Clock};
-set_chargeback_clock(St = #st{}, _) ->
+set_chargeback_clock(_, St = #st{}) ->
     St.
 
 merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
