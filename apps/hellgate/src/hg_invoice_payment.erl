@@ -1702,8 +1702,8 @@ number_plan([NonEmpty | Tail], Number, Acc) ->
 
 plan(_PlanID, [], _Timestamp, Clock) ->
     Clock;
-plan(PlanID, Plan, Timestamp, _Clock) ->
-    hg_accounting_new:plan(PlanID, Plan, Timestamp).
+plan(PlanID, Plan, Timestamp, Clock) ->
+    hg_accounting_new:plan(PlanID, Plan, Timestamp, Clock).
 
 commit(_PlanID, [], _Timestamp, Clock) ->
     Clock;
@@ -3093,7 +3093,7 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
                 St#st{activity = idle}
         end,
     Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
-    St2 = set_adjustment_clock(set_adjustment(ID, Adjustment, St1), Event),
+    St2 = set_adjustment_clock(Event, set_adjustment(ID, Adjustment, St1)),
     % TODO new cashflow imposed implicitly on the payment state? rough
     case get_adjustment_status(Adjustment) of
         ?adjustment_captured(_) ->
@@ -3363,12 +3363,12 @@ try_get_adjustment(ID, #st{adjustments = As}) ->
 set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
     St#st{adjustments = lists:keystore(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
 
-set_adjustment_clock(St = #st{activity = {AdjustmentActivity, _}}, ?adjustment_clock_update(Clock)) when
+set_adjustment_clock(?adjustment_clock_update(Clock), St = #st{activity = {AdjustmentActivity, _}}) when
     AdjustmentActivity =:= adjustment_new;
     AdjustmentActivity =:= adjustment_pending
 ->
     St#st{clock = Clock};
-set_adjustment_clock(St = #st{}, _) ->
+set_adjustment_clock(_, St = #st{}) ->
     St.
 
 merge_session_change(?session_finished(Result), Session, Opts) ->
