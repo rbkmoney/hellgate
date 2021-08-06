@@ -20,18 +20,17 @@ has_any_payment_method(PaymentTool, SupportedMethods) ->
 
 -spec get_possible_methods(t()) -> ordsets:ordset(method()).
 get_possible_methods(
-    {bank_card, #domain_BankCard{payment_system_deprecated = PaymentSystem, is_cvv_empty = true} = BankCard}
-) ->
+    {bank_card, #domain_BankCard{payment_system_deprecated = PS, is_cvv_empty = true} = BankCard}
+) when PS /= undefined ->
     ordsets:from_list([
-        #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}},
+        #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PS}},
         create_payment_method_ref(BankCard)
     ]);
 get_possible_methods(
-    {bank_card,
-        #domain_BankCard{payment_system_deprecated = PaymentSystem, token_provider_deprecated = undefined} = BankCard}
-) ->
+    {bank_card, #domain_BankCard{payment_system_deprecated = PS, token_provider_deprecated = undefined} = BankCard}
+) when PS /= undefined ->
     ordsets:from_list([
-        #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
+        #domain_PaymentMethodRef{id = {bank_card_deprecated, PS}},
         create_payment_method_ref(BankCard)
     ]);
 get_possible_methods(
@@ -41,7 +40,7 @@ get_possible_methods(
             token_provider_deprecated = TokenProvider,
             tokenization_method = TokenizationMethod
         } = BankCard}
-) ->
+) when PaymentSystem /= undefined ->
     ordsets:from_list([
         #domain_PaymentMethodRef{
             id =
@@ -53,10 +52,30 @@ get_possible_methods(
         },
         create_payment_method_ref(BankCard)
     ]);
-get_possible_methods({payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = TerminalType}}) ->
+get_possible_methods({bank_card, #domain_BankCard{payment_system = PS} = BankCard}) when PS /= undefined ->
     ordsets:from_list([
-        #domain_PaymentMethodRef{id = {payment_terminal_deprecated, TerminalType}}
+        #domain_PaymentMethodRef{
+            id =
+                {bank_card, #domain_BankCardPaymentMethod{
+                    payment_system = PS,
+                    is_cvv_empty = BankCard#domain_BankCard.is_cvv_empty,
+                    payment_token = BankCard#domain_BankCard.payment_token,
+                    tokenization_method = BankCard#domain_BankCard.tokenization_method
+                }}
+        }
     ]);
+%% ===== payment_terminal
+get_possible_methods({payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = Type}}) when
+    Type /= undefined
+->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {payment_terminal_deprecated, Type}}
+    ]);
+get_possible_methods({payment_terminal, #domain_PaymentTerminal{payment_service = Srv}}) when Srv /= undefined ->
+    ordsets:from_list([
+        #domain_PaymentMethodRef{id = {payment_terminal, Srv}}
+    ]);
+%% ===== digital_wallet
 get_possible_methods({digital_wallet, #domain_DigitalWallet{provider_deprecated = Provider}}) when
     Provider /= undefined
 ->
@@ -67,6 +86,7 @@ get_possible_methods({digital_wallet, #domain_DigitalWallet{payment_service = PS
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {digital_wallet, PS}}
     ]);
+%% ===== crypto_currency
 get_possible_methods({crypto_currency_deprecated, CC}) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {crypto_currency_deprecated, CC}}
@@ -75,6 +95,7 @@ get_possible_methods({crypto_currency, CC}) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {crypto_currency, CC}}
     ]);
+%% ===== mobile_commerce
 get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator_deprecated = Operator}}) when
     Operator /= undefined
 ->

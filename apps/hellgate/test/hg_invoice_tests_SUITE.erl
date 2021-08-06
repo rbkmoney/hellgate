@@ -505,8 +505,6 @@ create_shop(PartyID, Category, Currency, TemplateRef, PaymentInstitutionRef, {Cl
     ContractParams = hg_ct_helper:make_contract_params(TemplateRef, PaymentInstitutionRef),
     PayoutToolParams = hg_ct_helper:make_payout_tool_params(),
 
-    %    _ = timer:sleep(5000),
-
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
             id = ContractID,
