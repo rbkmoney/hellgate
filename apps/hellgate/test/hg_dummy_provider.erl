@@ -625,6 +625,7 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_de
     | dmsl_domain_thrift:'LegacyTerminalPaymentProvider'()
     | dmsl_domain_thrift:'LegacyDigitalWalletProvider'()
     | dmsl_domain_thrift:'LegacyMobileOperator'()
+    | dmsl_domain_thrift:'MobileOperatorRef'()
     | dmsl_domain_thrift:'LegacyCryptoCurrency'().
 -type payment_tool() :: {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}.
 -type payment_tool_code() ::
@@ -632,8 +633,8 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_de
     | digital_wallet
     | tokenized_bank_card
     | crypto_currency_deprecated
-    | mobile_commerce_failure
-    | mobile_commerce
+    | {mobile_commerce, failure}
+    | {mobile_commerce, success}
     | preauth_3ds_offsite
     | forbidden
     | unexpected_failure
@@ -666,19 +667,16 @@ make_payment_tool(empty_cvv, PSys) ->
             payment_system_deprecated = PSys,
             bin = <<"424242">>,
             last_digits = <<"4242">>,
-            token_provider_deprecated = undefined,
             is_cvv_empty = true
         }},
         <<"SESSION42">>
     };
 make_payment_tool(preauth_3ds, PSys) ->
     make_payment_tool({preauth_3ds, 3}, PSys);
-make_payment_tool({preauth_3ds, Timeout}, PSys) ->
+make_payment_tool({Code, Timeout}, PSys) when Code =:= preauth_3ds orelse Code =:= preauth_3ds_sleep ->
+    Token = atom_to_binary(Code, utf8),
     TimeoutBin = erlang:integer_to_binary(Timeout),
-    make_simple_payment_tool(<<"preauth_3ds:timeout=", TimeoutBin/binary>>, PSys);
-make_payment_tool({preauth_3ds_sleep, Timeout}, PSys) ->
-    TimeoutBin = erlang:integer_to_binary(Timeout),
-    make_simple_payment_tool(<<"preauth_3ds_sleep:timeout=", TimeoutBin/binary>>, PSys);
+    make_simple_payment_tool(<<Token/binary, ":timeout=", TimeoutBin/binary>>, PSys);
 make_payment_tool({scenario, Scenario}, PSys) ->
     BinScenario = encode_failure_scenario(Scenario),
     make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, PSys);
@@ -705,58 +703,55 @@ make_payment_tool(crypto_currency_deprecated, Type) ->
         {crypto_currency_deprecated, Type},
         <<"">>
     };
-make_payment_tool(mobile_commerce_failure, Operator) ->
+make_payment_tool({mobile_commerce, Exp}, Operator = #domain_MobileOperatorRef{}) ->
     {
-        {mobile_commerce, #domain_MobileCommerce{
-            operator_deprecated = Operator,
-            phone = #domain_MobilePhone{
-                cc = <<"777">>,
-                ctn = <<"0000000000">>
-            }
-        }},
+        make_mobile_commerce_payment_tool({#domain_MobileCommerce.operator, Operator}, phone(Exp)),
         <<"">>
     };
-make_payment_tool(mobile_commerce, Operator) ->
+make_payment_tool({mobile_commerce, Exp}, Operator) ->
     {
-        {mobile_commerce, #domain_MobileCommerce{
-            operator_deprecated = Operator,
-            phone = #domain_MobilePhone{
-                cc = <<"7">>,
-                ctn = <<"9876543210">>
-            }
-        }},
+        make_mobile_commerce_payment_tool({#domain_MobileCommerce.operator_deprecated, Operator}, phone(Exp)),
         <<"">>
+    }.
+
+make_mobile_commerce_payment_tool({Field, Operator}, Phone) ->
+    Mob = #domain_MobileCommerce{phone = Phone},
+    {mobile_commerce, setelement(Field, Mob, Operator)}.
+
+phone(success) ->
+    #domain_MobilePhone{
+        cc = <<"7">>,
+        ctn = <<"9876543210">>
+    };
+phone(failure) ->
+    #domain_MobilePhone{
+        cc = <<"777">>,
+        ctn = <<"0000000000">>
     }.
 
 make_simple_payment_tool(Token, PaymentSystem) ->
-    make_simple_payment_tool(Token, PaymentSystem, undefined).
-
-make_simple_payment_tool(Token, PaymentSystem, TokenProvider) ->
-    make_simple_payment_tool(Token, PaymentSystem, TokenProvider, undefined).
+    make_simple_payment_tool(Token, PaymentSystem, undefined, undefined).
 
 make_simple_payment_tool(Token, PaymentSystem, TokenProvider, TokenizationMethod) ->
-    construct_payment_tool_and_session(
-        Token,
-        PaymentSystem,
-        <<"424242">>,
-        <<"4242">>,
-        TokenProvider,
-        <<"SESSION42">>,
-        TokenizationMethod
-    ).
+    {construct_payment_tool(
+            Token,
+            PaymentSystem,
+            <<"424242">>,
+            <<"4242">>,
+            TokenProvider,
+            TokenizationMethod
+        ),
+        <<"SESSION42">>}.
 
-construct_payment_tool_and_session(Token, PaymentSystem, Bin, Pan, TokenProvider, Session, TokenizationMethod) ->
-    {
-        {bank_card, #domain_BankCard{
-            token = Token,
-            payment_system_deprecated = PaymentSystem,
-            bin = Bin,
-            last_digits = Pan,
-            token_provider_deprecated = TokenProvider,
-            tokenization_method = TokenizationMethod
-        }},
-        Session
-    }.
+construct_payment_tool(Token, PaymentSystem, Bin, Pan, TokenProvider, TokenizationMethod) ->
+    {bank_card, #domain_BankCard{
+        token = Token,
+        payment_system_deprecated = PaymentSystem,
+        bin = Bin,
+        last_digits = Pan,
+        token_provider_deprecated = TokenProvider,
+        tokenization_method = TokenizationMethod
+    }}.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.

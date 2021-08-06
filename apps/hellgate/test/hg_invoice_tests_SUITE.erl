@@ -5176,11 +5176,8 @@ make_crypto_currency_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency_deprecated, bitcoin),
     make_payment_params(PaymentTool, Session, instant).
 
-make_mobile_commerce_params(success) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce, mts),
-    make_payment_params(PaymentTool, Session, instant);
-make_mobile_commerce_params(failure) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce_failure, mts),
+make_mobile_commerce_params(Expectation) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({mobile_commerce, Expectation}, mts),
     make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params() ->
