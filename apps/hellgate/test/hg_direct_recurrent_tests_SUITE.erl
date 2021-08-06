@@ -334,7 +334,7 @@ make_payment_params(MakeRecurrent, RecurrentParent) ->
     make_payment_params(instant, MakeRecurrent, RecurrentParent).
 
 make_payment_params(FlowType, MakeRecurrent, RecurrentParent) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent).
 
 make_payment_params(PaymentTool, Session, FlowType, MakeRecurrent, RecurrentParent) ->
@@ -374,7 +374,7 @@ make_recurrent_payment_params(MakeRecurrent, RecurrentParent) ->
     make_recurrent_payment_params(instant, MakeRecurrent, RecurrentParent).
 
 make_recurrent_payment_params(FlowType, MakeRecurrent, RecurrentParent) ->
-    {PaymentTool, _Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {PaymentTool, _Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     make_payment_params(undefined, PaymentTool, undefined, FlowType, MakeRecurrent, RecurrentParent).
 
 make_due_date(LifetimeSeconds) ->
@@ -435,7 +435,7 @@ make_customer_w_rec_tool(PartyID, ShopID, Client) ->
     #payproc_CustomerBinding{id = BindingID} =
         hg_client_customer:start_binding(
             CustomerID,
-            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
+            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, visa)),
             Client
         ),
     ok = wait_for_binding_success(CustomerID, BindingID, Client),

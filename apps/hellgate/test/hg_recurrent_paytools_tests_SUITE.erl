@@ -394,7 +394,7 @@ recurrent_paytool_creation_not_permitted(C) ->
 %%
 
 make_bad_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(forbidden),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(forbidden, visa),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         id = PaytoolID,
@@ -404,7 +404,7 @@ make_bad_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
     }.
 
 make_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         id = PaytoolID,
@@ -414,7 +414,7 @@ make_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
     }.
 
 make_tds_recurrent_paytool_params(PaytoolID, PartyID, ShopID) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds, visa),
     PaymentResource = make_disposable_payment_resource(PaymentTool, Session),
     #payproc_RecurrentPaymentToolParams{
         id = PaytoolID,

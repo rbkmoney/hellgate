@@ -838,14 +838,14 @@ make_payment_params() ->
     make_payment_params(instant).
 
 make_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_tds_payment_params() ->
     make_tds_payment_params(instant).
 
 make_tds_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds, visa),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params(PaymentTool, Session, FlowType) ->

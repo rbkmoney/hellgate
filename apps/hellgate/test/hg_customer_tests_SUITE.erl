@@ -256,7 +256,7 @@ start_binding_w_failure(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(forbidden)
+            hg_dummy_provider:make_payment_tool(forbidden, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -291,7 +291,7 @@ start_binding_w_suspend(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool({preauth_3ds_sleep, 180})
+            hg_dummy_provider:make_payment_tool({preauth_3ds_sleep, 180}, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -330,7 +330,7 @@ start_binding_w_suspend_timeout(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(no_preauth_timeout)
+            hg_dummy_provider:make_payment_tool(no_preauth_timeout, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -364,7 +364,7 @@ start_binding_w_suspend_timeout_default(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(no_preauth_suspend_default)
+            hg_dummy_provider:make_payment_tool(no_preauth_suspend_default, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -398,7 +398,7 @@ start_binding_w_suspend_failure(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(no_preauth_timeout_failure)
+            hg_dummy_provider:make_payment_tool(no_preauth_timeout_failure, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -435,7 +435,7 @@ start_binding(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(no_preauth)
+            hg_dummy_provider:make_payment_tool(no_preauth, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -465,7 +465,7 @@ start_binding_w_tds(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool({preauth_3ds, 30})
+            hg_dummy_provider:make_payment_tool({preauth_3ds, 30}, visa)
         ),
     CustomerBinding = hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client),
     Customer1 = hg_client_customer:get(CustomerID, Client),
@@ -500,13 +500,13 @@ start_two_bindings(C) ->
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID1,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(no_preauth)
+            hg_dummy_provider:make_payment_tool(no_preauth, visa)
         ),
     CustomerBindingParams2 =
         hg_ct_helper:make_customer_binding_params(
             CustomerBindingID2,
             RecPaymentToolID,
-            hg_dummy_provider:make_payment_tool(no_preauth)
+            hg_dummy_provider:make_payment_tool(no_preauth, visa)
         ),
     CustomerBinding1 =
         #payproc_CustomerBinding{id = CustomerBindingID1} =
@@ -536,7 +536,7 @@ start_two_bindings_w_tds(C) ->
     CustomerBindingID2 = hg_utils:unique_id(),
     RecPaymentToolID1 = hg_utils:unique_id(),
     RecPaymentToolID2 = hg_utils:unique_id(),
-    PaymentTool = hg_dummy_provider:make_payment_tool({preauth_3ds, 30}),
+    PaymentTool = hg_dummy_provider:make_payment_tool({preauth_3ds, 30}, visa),
     CustomerBindingParams1 = hg_ct_helper:make_customer_binding_params(
         CustomerBindingID1,
         RecPaymentToolID1,
@@ -600,7 +600,7 @@ start_binding_not_permitted(C) ->
     #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
     ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     CustomerBindingParams =
-        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
+        hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, visa)),
     {exception, #payproc_OperationNotPermitted{}} =
         hg_client_customer:start_binding(CustomerID, CustomerBindingParams, Client).
 

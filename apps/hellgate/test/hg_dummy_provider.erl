@@ -14,7 +14,7 @@
 -export([get_callback_url/0]).
 -export([construct_silent_callback/1]).
 
--export([make_payment_tool/1]).
+-export([make_payment_tool/2]).
 
 %% cowboy http callbacks
 -export([init/2]).
@@ -620,25 +620,50 @@ get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
 get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce.
 
--spec make_payment_tool(PaymenToolCode) -> PaymenTool when
-    PaymenToolCode ::
-        atom() | {scenario, failure_scenario()} | {preauth_3ds, integer()} | {preauth_3ds_sleep, integer()},
-    PaymenTool :: {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}.
-make_payment_tool(no_preauth) ->
-    make_simple_payment_tool(<<"no_preauth">>, visa);
-make_payment_tool(no_preauth_mc) ->
-    make_simple_payment_tool(<<"no_preauth">>, mastercard);
-make_payment_tool(no_preauth_timeout) ->
-    make_simple_payment_tool(<<"no_preauth_timeout">>, visa);
-make_payment_tool(no_preauth_timeout_failure) ->
-    make_simple_payment_tool(<<"no_preauth_timeout_failure">>, visa);
-make_payment_tool(no_preauth_suspend_default) ->
-    make_simple_payment_tool(<<"no_preauth_suspend_default">>, visa);
-make_payment_tool(empty_cvv) ->
+-type payment_system() ::
+    dmsl_domain_thrift:'LegacyBankCardPaymentSystem'()
+    | dmsl_domain_thrift:'LegacyTerminalPaymentProvider'()
+    | dmsl_domain_thrift:'LegacyDigitalWalletProvider'()
+    | dmsl_domain_thrift:'LegacyMobileOperator'()
+    | dmsl_domain_thrift:'LegacyCryptoCurrency'().
+-type payment_tool() :: {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}.
+-type payment_tool_code() ::
+    terminal
+    | digital_wallet
+    | tokenized_bank_card
+    | crypto_currency_deprecated
+    | mobile_commerce_failure
+    | mobile_commerce
+    | preauth_3ds_offsite
+    | forbidden
+    | unexpected_failure
+    | preauth_3ds
+    | no_preauth
+    | no_preauth_timeout
+    | no_preauth_timeout_failure
+    | no_preauth_suspend_default
+    | empty_cvv
+    | {scenario, failure_scenario()}
+    | {preauth_3ds, integer()}
+    | {preauth_3ds_sleep, integer()}.
+
+-spec make_payment_tool(payment_tool_code(), payment_system()) -> payment_tool().
+make_payment_tool(Code, PSys) when
+    Code =:= no_preauth orelse
+        Code =:= no_preauth_timeout orelse
+        Code =:= no_preauth_timeout_failure orelse
+        Code =:= no_preauth_suspend_default orelse
+        Code =:= preauth_3ds_offsite orelse
+        Code =:= forbidden orelse
+        Code =:= unexpected_failure orelse
+        Code =:= unexpected_failure_no_trx
+->
+    make_simple_payment_tool(atom_to_binary(Code, utf8), PSys);
+make_payment_tool(empty_cvv, PSys) ->
     {
         {bank_card, #domain_BankCard{
             token = <<"empty_cvv">>,
-            payment_system_deprecated = visa,
+            payment_system_deprecated = PSys,
             bin = <<"424242">>,
             last_digits = <<"4242">>,
             token_provider_deprecated = undefined,
@@ -646,52 +671,44 @@ make_payment_tool(empty_cvv) ->
         }},
         <<"SESSION42">>
     };
-make_payment_tool(preauth_3ds) ->
-    make_payment_tool({preauth_3ds, 3});
-make_payment_tool({preauth_3ds, Timeout}) ->
+make_payment_tool(preauth_3ds, PSys) ->
+    make_payment_tool({preauth_3ds, 3}, PSys);
+make_payment_tool({preauth_3ds, Timeout}, PSys) ->
     TimeoutBin = erlang:integer_to_binary(Timeout),
-    make_simple_payment_tool(<<"preauth_3ds:timeout=", TimeoutBin/binary>>, visa);
-make_payment_tool(preauth_3ds_offsite) ->
-    make_simple_payment_tool(<<"preauth_3ds_offsite">>, jcb);
-make_payment_tool({preauth_3ds_sleep, Timeout}) ->
+    make_simple_payment_tool(<<"preauth_3ds:timeout=", TimeoutBin/binary>>, PSys);
+make_payment_tool({preauth_3ds_sleep, Timeout}, PSys) ->
     TimeoutBin = erlang:integer_to_binary(Timeout),
-    make_simple_payment_tool(<<"preauth_3ds_sleep:timeout=", TimeoutBin/binary>>, visa);
-make_payment_tool(forbidden) ->
-    make_simple_payment_tool(<<"forbidden">>, visa);
-make_payment_tool(unexpected_failure_no_trx) ->
-    make_simple_payment_tool(<<"unexpected_failure_no_trx">>, visa);
-make_payment_tool(unexpected_failure) ->
-    make_simple_payment_tool(<<"unexpected_failure">>, visa);
-make_payment_tool({scenario, Scenario}) ->
+    make_simple_payment_tool(<<"preauth_3ds_sleep:timeout=", TimeoutBin/binary>>, PSys);
+make_payment_tool({scenario, Scenario}, PSys) ->
     BinScenario = encode_failure_scenario(Scenario),
-    make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, visa);
-make_payment_tool(terminal) ->
+    make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, PSys);
+make_payment_tool(terminal, Type) ->
     {
         {payment_terminal, #domain_PaymentTerminal{
-            terminal_type_deprecated = euroset
+            terminal_type_deprecated = Type
         }},
         <<>>
     };
-make_payment_tool(digital_wallet) ->
+make_payment_tool(digital_wallet, Provider) ->
     {
         {digital_wallet, #domain_DigitalWallet{
-            provider_deprecated = qiwi,
+            provider_deprecated = Provider,
             id = <<"+79876543210">>,
             token = <<"some_token">>
         }},
         <<>>
     };
-make_payment_tool(tokenized_bank_card) ->
-    make_simple_payment_tool(<<"no_preauth">>, visa, applepay, dpan);
-make_payment_tool(crypto_currency_deprecated) ->
+make_payment_tool(tokenized_bank_card, PSys) ->
+    make_simple_payment_tool(<<"no_preauth">>, PSys, applepay, dpan);
+make_payment_tool(crypto_currency_deprecated, Type) ->
     {
-        {crypto_currency_deprecated, bitcoin},
+        {crypto_currency_deprecated, Type},
         <<"">>
     };
-make_payment_tool(mobile_commerce_failure) ->
+make_payment_tool(mobile_commerce_failure, Operator) ->
     {
         {mobile_commerce, #domain_MobileCommerce{
-            operator_deprecated = mts,
+            operator_deprecated = Operator,
             phone = #domain_MobilePhone{
                 cc = <<"777">>,
                 ctn = <<"0000000000">>
@@ -699,10 +716,10 @@ make_payment_tool(mobile_commerce_failure) ->
         }},
         <<"">>
     };
-make_payment_tool(mobile_commerce) ->
+make_payment_tool(mobile_commerce, Operator) ->
     {
         {mobile_commerce, #domain_MobileCommerce{
-            operator_deprecated = mts,
+            operator_deprecated = Operator,
             phone = #domain_MobilePhone{
                 cc = <<"7">>,
                 ctn = <<"9876543210">>

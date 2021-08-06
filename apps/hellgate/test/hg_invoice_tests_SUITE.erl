@@ -1357,7 +1357,7 @@ processing_deadline_reached_test(C) ->
 payment_success_empty_cvv(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, visa),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
@@ -1369,7 +1369,7 @@ payment_success_empty_cvv(C) ->
 payment_success_additional_info(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, visa),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
@@ -1615,7 +1615,7 @@ payment_bank_card_category_condition(C) ->
     Client = cfg(client, C),
     PayCash = 2000,
     InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
-    {{bank_card, BC}, Session} = hg_dummy_provider:make_payment_tool(empty_cvv),
+    {{bank_card, BC}, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, visa),
     BankCard = BC#domain_BankCard{
         category = <<"CORPORATE CARD">>
     },
@@ -1779,7 +1779,7 @@ payments_w_bank_card_issuer_conditions(C) ->
     ),
     %kaz success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
-    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     KazBankCard = BankCard#domain_BankCard{
         issuer_country = kaz,
         metadata = #{<<?MODULE_STRING>> => {obj, #{{str, <<"vsn">>} => {i, 42}}}}
@@ -1794,7 +1794,7 @@ payments_w_bank_card_issuer_conditions(C) ->
     ),
     %rus success
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     RusBankCard = BankCard1#domain_BankCard{
         issuer_country = rus,
         metadata = #{<<?MODULE_STRING>> => {obj, #{{str, <<"vsn">>} => {i, 42}}}}
@@ -1803,7 +1803,7 @@ payments_w_bank_card_issuer_conditions(C) ->
     _SecondPayment = execute_payment(ThirdInvoice, RusPaymentParams, Client),
     %fail with undefined issuer_country
     FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {UndefBankCard, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {UndefBankCard, Session2} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     UndefPaymentParams = make_payment_params(UndefBankCard, Session2, instant),
     %fix me
     ?assertException(
@@ -1827,7 +1827,7 @@ payments_w_bank_conditions(C) ->
     ),
     %bank 1 success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
-    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     TestBankCard = BankCard#domain_BankCard{
         bank_name = <<"TEST BANK">>
     },
@@ -1841,7 +1841,7 @@ payments_w_bank_conditions(C) ->
     ),
     %bank 1 /w different wildcard fail
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     WildBankCard = BankCard1#domain_BankCard{
         bank_name = <<"TESTBANK">>
     },
@@ -1852,7 +1852,7 @@ payments_w_bank_conditions(C) ->
     ),
     %some other bank success
     FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
-    {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     OthrBankCard = BankCard2#domain_BankCard{
         bank_name = <<"SOME OTHER BANK">>
     },
@@ -1860,7 +1860,7 @@ payments_w_bank_conditions(C) ->
     _ThirdPayment = execute_payment(FourthInvoice, OthrPaymentParams, Client),
     %test fallback to bins with undefined bank_name
     FifthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {{bank_card, BankCard3}, Session3} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {{bank_card, BankCard3}, Session3} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     FallbackBankCard = BankCard3#domain_BankCard{
         bin = <<"42424242">>
     },
@@ -3702,7 +3702,7 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
     % Fee          = 450, % 0.045
     ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth_mc),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, mastercard),
     PaymentParams = make_payment_params(PaymentTool, Session, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Cash, Client),
@@ -4609,7 +4609,7 @@ adhoc_repair_working_failed(C) ->
 adhoc_repair_failed_succeeded(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -4650,7 +4650,7 @@ adhoc_repair_force_removal(C) ->
 adhoc_repair_invalid_changes_failed(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -4724,7 +4724,7 @@ adhoc_repair_force_invalid_transition(C) ->
 payment_with_offsite_preauth_success(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite, jcb),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -4742,7 +4742,7 @@ payment_with_offsite_preauth_success(C) ->
 payment_with_offsite_preauth_failed(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite, jcb),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -4829,7 +4829,7 @@ repair_skip_inspector_succeeded(C) ->
 repair_fail_session_succeeded(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -4914,7 +4914,7 @@ repair_complex_succeeded_first(C) ->
 repair_complex_succeeded_second(C) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -5169,29 +5169,29 @@ delete_invoice_tpl(TplID, Config) ->
     hg_client_invoice_templating:delete(TplID, cfg(client_tpl, Config)).
 
 make_terminal_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal, euroset),
     make_payment_params(PaymentTool, Session, instant).
 
 make_crypto_currency_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency_deprecated),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency_deprecated, bitcoin),
     make_payment_params(PaymentTool, Session, instant).
 
 make_mobile_commerce_params(success) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce, mts),
     make_payment_params(PaymentTool, Session, instant);
 make_mobile_commerce_params(failure) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce_failure),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(mobile_commerce_failure, mts),
     make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet, qiwi),
     make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
     make_tds_payment_params(instant).
 
 make_tds_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds, visa),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_customer_payment_params(CustomerID) ->
@@ -5204,22 +5204,22 @@ make_customer_payment_params(CustomerID) ->
     }.
 
 make_tokenized_bank_card_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card, visa),
     make_payment_params(PaymentTool, Session).
 
 make_scenario_payment_params(Scenario) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, visa),
     make_payment_params(PaymentTool, Session, instant).
 
 make_scenario_payment_params(Scenario, FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, visa),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params() ->
     make_payment_params(instant).
 
 make_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params(PaymentTool, Session) ->
@@ -5681,7 +5681,7 @@ make_customer_w_rec_tool(PartyID, ShopID, Client) ->
     #payproc_CustomerBinding{id = BindingID} =
         hg_client_customer:start_binding(
             CustomerID,
-            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth)),
+            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, visa)),
             Client
         ),
     ok = wait_for_binding_success(CustomerID, BindingID, Client),
