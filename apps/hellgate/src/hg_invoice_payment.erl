@@ -961,8 +961,7 @@ collect_cash_flow_context(
 get_available_amount(AccountID, Clock) ->
     #{
         min_available_amount := AvailableAmount
-    } =
-        hg_accounting_new:get_balance(AccountID, Clock),
+    } = hg_accounting_new:get_balance(AccountID, Clock),
     AvailableAmount.
 
 construct_payment_plan_id(St) ->
@@ -3096,7 +3095,7 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
                 St
         end,
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
-    St2 = set_refund_clock(set_refund_state(ID, RefundSt, St1), Event),
+    St2 = set_refund_clock(Event, set_refund_state(ID, RefundSt, St1)),
     case get_refund_status(get_refund(RefundSt)) of
         {S, _} when S == succeeded; S == failed ->
             St2#st{activity = idle};
@@ -3209,14 +3208,14 @@ merge_refund_change(?session_ev(?refunded(), ?session_started()), St) ->
 merge_refund_change(?session_ev(?refunded(), Change), St) ->
     update_refund_session(merge_session_change(Change, get_refund_session(St), #{}), St).
 
-set_refund_clock(St = #st{activity = {Activity, _}}, ?refund_clock_update(Clock)) when
+set_refund_clock(?refund_clock_update(Clock), St = #st{activity = {Activity, _}}) when
     Activity =:= refund_new;
     Activity =:= refund_session;
     Activity =:= refund_accounter;
     Activity =:= refund_failure
 ->
     St#st{clock = Clock};
-set_refund_clock(St = #st{}, _) ->
+set_refund_clock(_, St = #st{}) ->
     St.
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
