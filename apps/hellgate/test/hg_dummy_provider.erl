@@ -20,6 +20,8 @@
 -export([init/2]).
 -export([terminate/3]).
 
+-export_type([payment_tool/0]).
+
 %%
 
 -define(COWBOY_PORT, 9988).
@@ -60,6 +62,9 @@
 -define(recurrent_token_finish_w_failure(Failure),
     {finish, #'prxprv_RecurrentTokenFinishIntent'{status = {failure, Failure}}}
 ).
+
+-define(DEFAULT_SESSION(PaymentTool), {PaymentTool, <<"">>}).
+-define(SESSION42(PaymentTool), {PaymentTool, <<"SESSION42">>}).
 
 -spec get_service_spec() -> hg_proto:service_spec().
 get_service_spec() ->
@@ -165,7 +170,7 @@ generate_token(undefined, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPay
 generate_token(<<"sleeping">>, #prxprv_RecurrentTokenInfo{payment_tool = RecurrentPaytool}, _Opts) ->
     case get_recurrent_paytool_scenario(RecurrentPaytool) of
         {preauth_3ds, Timeout} ->
-            Tag = generate_recurent_tag(),
+            Tag = generate_tag(<<"recurrent">>),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -262,7 +267,7 @@ token_respond(Response, CallbackResult) ->
 process_payment(?processed(), undefined, PaymentInfo, _) ->
     case get_payment_info_scenario(PaymentInfo) of
         {preauth_3ds, Timeout} ->
-            Tag = generate_payment_tag(),
+            Tag = generate_tag(<<"payment">>),
             Uri = get_callback_url(),
             UserInteraction = {
                 'redirect',
@@ -620,19 +625,25 @@ get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
 get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce.
 
+-type tokenized_bank_card_payment_system() ::
+    {dmsl_domain_thrift:'LegacyBankCardPaymentSystem'(), dmsl_domain_thrift:'LegacyBankCardTokenProvider'(),
+        dmsl_domain_thrift:'TokenizationMethod'()}.
 -type payment_system() ::
     dmsl_domain_thrift:'LegacyBankCardPaymentSystem'()
+    | dmsl_domain_thrift:'PaymentServiceRef'()
     | dmsl_domain_thrift:'LegacyTerminalPaymentProvider'()
     | dmsl_domain_thrift:'LegacyDigitalWalletProvider'()
     | dmsl_domain_thrift:'LegacyMobileOperator'()
     | dmsl_domain_thrift:'MobileOperatorRef'()
-    | dmsl_domain_thrift:'LegacyCryptoCurrency'().
+    | dmsl_domain_thrift:'CryptoCurrencyRef'()
+    | dmsl_domain_thrift:'LegacyCryptoCurrency'()
+    | tokenized_bank_card_payment_system().
 -type payment_tool() :: {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}.
 -type payment_tool_code() ::
     terminal
     | digital_wallet
     | tokenized_bank_card
-    | crypto_currency_deprecated
+    | crypto_currency
     | {mobile_commerce, failure}
     | {mobile_commerce, success}
     | preauth_3ds_offsite
@@ -659,60 +670,52 @@ make_payment_tool(Code, PSys) when
         Code =:= unexpected_failure orelse
         Code =:= unexpected_failure_no_trx
 ->
-    make_simple_payment_tool(atom_to_binary(Code, utf8), PSys);
+    ?SESSION42(make_bank_card_payment_tool(atom_to_binary(Code, utf8), PSys));
 make_payment_tool(empty_cvv, PSys) ->
-    {
-        {bank_card, #domain_BankCard{
-            token = <<"empty_cvv">>,
-            payment_system_deprecated = PSys,
-            bin = <<"424242">>,
-            last_digits = <<"4242">>,
-            is_cvv_empty = true
-        }},
-        <<"SESSION42">>
-    };
+    {_, BCard} = make_bank_card_payment_tool(<<"empty_cvv">>, PSys),
+    ?SESSION42({bank_card, BCard#domain_BankCard{is_cvv_empty = true}});
 make_payment_tool(preauth_3ds, PSys) ->
     make_payment_tool({preauth_3ds, 3}, PSys);
 make_payment_tool({Code, Timeout}, PSys) when Code =:= preauth_3ds orelse Code =:= preauth_3ds_sleep ->
     Token = atom_to_binary(Code, utf8),
     TimeoutBin = erlang:integer_to_binary(Timeout),
-    make_simple_payment_tool(<<Token/binary, ":timeout=", TimeoutBin/binary>>, PSys);
+    ?SESSION42(make_bank_card_payment_tool(<<Token/binary, ":timeout=", TimeoutBin/binary>>, PSys));
 make_payment_tool({scenario, Scenario}, PSys) ->
     BinScenario = encode_failure_scenario(Scenario),
-    make_simple_payment_tool(<<"scenario_", BinScenario/binary>>, PSys);
+    ?SESSION42(make_bank_card_payment_tool(<<"scenario_", BinScenario/binary>>, PSys));
+make_payment_tool(terminal, PSrv = #domain_PaymentServiceRef{}) ->
+    ?DEFAULT_SESSION({payment_terminal, #domain_PaymentTerminal{payment_service = PSrv}});
 make_payment_tool(terminal, Type) ->
-    {
-        {payment_terminal, #domain_PaymentTerminal{
-            terminal_type_deprecated = Type
-        }},
-        <<>>
-    };
+    ?DEFAULT_SESSION({payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = Type}});
+make_payment_tool(digital_wallet, PSrv = #domain_PaymentServiceRef{}) ->
+    ?DEFAULT_SESSION(make_digital_wallet_payment_tool({#domain_DigitalWallet.payment_service, PSrv}));
 make_payment_tool(digital_wallet, Provider) ->
-    {
-        {digital_wallet, #domain_DigitalWallet{
-            provider_deprecated = Provider,
-            id = <<"+79876543210">>,
-            token = <<"some_token">>
-        }},
-        <<>>
-    };
-make_payment_tool(tokenized_bank_card, PSys) ->
-    make_simple_payment_tool(<<"no_preauth">>, PSys, applepay, dpan);
-make_payment_tool(crypto_currency_deprecated, Type) ->
-    {
-        {crypto_currency_deprecated, Type},
-        <<"">>
-    };
+    ?DEFAULT_SESSION(make_digital_wallet_payment_tool({#domain_DigitalWallet.provider_deprecated, Provider}));
+make_payment_tool(tokenized_bank_card, {PSys, TokenProvider, TokenizationMethod}) ->
+    {_, BCard} = make_bank_card_payment_tool(<<"no_preauth">>, PSys),
+    ?SESSION42(
+        {bank_card, BCard#domain_BankCard{
+            token_provider_deprecated = TokenProvider,
+            tokenization_method = TokenizationMethod
+        }}
+    );
+make_payment_tool(crypto_currency, Type = #domain_CryptoCurrencyRef{}) ->
+    ?DEFAULT_SESSION({crypto_currency, Type});
+make_payment_tool(crypto_currency, Type) ->
+    ?DEFAULT_SESSION({crypto_currency_deprecated, Type});
 make_payment_tool({mobile_commerce, Exp}, Operator = #domain_MobileOperatorRef{}) ->
-    {
-        make_mobile_commerce_payment_tool({#domain_MobileCommerce.operator, Operator}, phone(Exp)),
-        <<"">>
-    };
+    ?DEFAULT_SESSION(make_mobile_commerce_payment_tool({#domain_MobileCommerce.operator, Operator}, phone(Exp)));
 make_payment_tool({mobile_commerce, Exp}, Operator) ->
-    {
-        make_mobile_commerce_payment_tool({#domain_MobileCommerce.operator_deprecated, Operator}, phone(Exp)),
-        <<"">>
-    }.
+    ?DEFAULT_SESSION(
+        make_mobile_commerce_payment_tool({#domain_MobileCommerce.operator_deprecated, Operator}, phone(Exp))
+    ).
+
+make_digital_wallet_payment_tool({Field, Value}) ->
+    Wallet = #domain_DigitalWallet{
+        id = <<"+79876543210">>,
+        token = <<"some_token">>
+    },
+    {digital_wallet, setelement(Field, Wallet, Value)}.
 
 make_mobile_commerce_payment_tool({Field, Operator}, Phone) ->
     Mob = #domain_MobileCommerce{phone = Phone},
@@ -729,28 +732,12 @@ phone(failure) ->
         ctn = <<"0000000000">>
     }.
 
-make_simple_payment_tool(Token, PaymentSystem) ->
-    make_simple_payment_tool(Token, PaymentSystem, undefined, undefined).
-
-make_simple_payment_tool(Token, PaymentSystem, TokenProvider, TokenizationMethod) ->
-    {construct_payment_tool(
-            Token,
-            PaymentSystem,
-            <<"424242">>,
-            <<"4242">>,
-            TokenProvider,
-            TokenizationMethod
-        ),
-        <<"SESSION42">>}.
-
-construct_payment_tool(Token, PaymentSystem, Bin, Pan, TokenProvider, TokenizationMethod) ->
+make_bank_card_payment_tool(Token, PSys) ->
     {bank_card, #domain_BankCard{
         token = Token,
-        payment_system_deprecated = PaymentSystem,
-        bin = Bin,
-        last_digits = Pan,
-        token_provider_deprecated = TokenProvider,
-        tokenization_method = TokenizationMethod
+        payment_system_deprecated = PSys,
+        bin = <<"424242">>,
+        last_digits = <<"4242">>
     }}.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
@@ -854,12 +841,6 @@ callback_to_hell(Tag, Payload) ->
         {{exception, #'InvalidRequest'{}}, _} ->
             400
     end.
-
-generate_payment_tag() ->
-    generate_tag(<<"payment">>).
-
-generate_recurent_tag() ->
-    generate_tag(<<"recurrent">>).
 
 generate_tag(Prefix) ->
     ID = hg_utils:unique_id(),
