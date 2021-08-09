@@ -237,25 +237,51 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
     VS1 = VS#{risk_score => RiskScore},
     PaymentInstitutionRef = get_payment_institution_ref(Shop, Party),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
+    try
+        check_risk_score(RiskScore),
+        NonFailRatedRoutes = gather_routes(PaymentInstitution, VS1, Revision),
+        {ChosenRoute, ChoiceMeta} = hg_routing:choose_route(NonFailRatedRoutes),
+        ChosenPaymentRoute = hg_routing:to_payment_route(ChosenRoute),
+        _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)),
+        RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, ChosenPaymentRoute, VS, Revision),
+        {ok, {Changes, Action}} = start_session(),
+        StartChanges = [
+            ?recurrent_payment_tool_has_created(RecPaymentTool2),
+            ?recurrent_payment_tool_risk_score_changed(RiskScore),
+            ?recurrent_payment_tool_route_changed(ChosenPaymentRoute)
+        ],
+        handle_result(#{
+            changes => StartChanges ++ Changes,
+            action => Action
+        })
+    catch
+        throw:risk_score_is_too_high = Error ->
+            error(handle_route_error(Error, RecPaymentTool));
+        throw:{no_route_found, {unknown, _}} = Error ->
+            error(handle_route_error(Error, RecPaymentTool))
+    end.
 
+gather_routes(PaymentInstitution, VS, Revision) ->
     Predestination = recurrent_paytool,
-    {Routes, RejectContext} = hg_routing_rule:gather_routes(Predestination, PaymentInstitution, VS1, Revision),
-    FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
-    Route = validate_route(
-        hg_routing:choose_route(FailRatedRoutes, RejectContext, RiskScore),
-        RecPaymentTool
-    ),
-    RecPaymentTool2 = set_minimal_payment_cost(RecPaymentTool, Route, VS, Revision),
-    {ok, {Changes, Action}} = start_session(),
-    StartChanges = [
-        ?recurrent_payment_tool_has_created(RecPaymentTool2),
-        ?recurrent_payment_tool_risk_score_changed(RiskScore),
-        ?recurrent_payment_tool_route_changed(Route)
-    ],
-    handle_result(#{
-        changes => StartChanges ++ Changes,
-        action => Action
-    }).
+    case
+        hg_routing_rule:gather_routes(
+            Predestination,
+            PaymentInstitution,
+            VS,
+            Revision
+        )
+    of
+        {[], RejectContext} ->
+            throw({no_route_found, {unknown, RejectContext}});
+        {Routes, _RejectContext} ->
+            Routes
+    end.
+
+%% TODO uncomment after inspect will implement
+% check_risk_score(fatal) ->
+%     throw(risk_score_is_too_high);
+check_risk_score(_) ->
+    ok.
 
 get_party_shop(Params) ->
     #payproc_RecurrentPaymentToolParams{
@@ -333,19 +359,13 @@ inspect(_RecPaymentTool, _VS) ->
 validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
     RiskScore.
 
-validate_route({ok, Route, ChoiceMeta}, _RecPaymentTool) ->
-    _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta)),
-    Route;
-validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentTool) ->
-    Level =
-        case Reason of
-            risk_score_is_too_high -> info;
-            _ -> error
-        end,
-
+handle_route_error(risk_score_is_too_high = Reason, RecPaymentTool) ->
+    _ = logger:log(info, "No route found, reason = ~p", [Reason], logger:get_process_metadata()),
+    {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}};
+handle_route_error({no_route_found, {Reason, RejectContext}}, RecPaymentTool) ->
     LogFun = fun(Msg, Param) ->
         _ = logger:log(
-            Level,
+            error,
             Msg,
             [Reason, Param],
             logger:get_process_metadata()
@@ -354,7 +374,7 @@ validate_route({error, {no_route_found, {Reason, RejectContext}}}, RecPaymentToo
     _ = LogFun("No route found, reason = ~p, varset: ~p", maps:get(varset, RejectContext)),
     _ = LogFun("No route found, reason = ~p, rejected providers: ~p", maps:get(rejected_providers, RejectContext)),
     _ = LogFun("No route found, reason = ~p, rejected routes: ~p", maps:get(rejected_routes, RejectContext)),
-    error({misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}).
+    {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}.
 
 start_session() ->
     Events = [?session_ev(?session_started())],

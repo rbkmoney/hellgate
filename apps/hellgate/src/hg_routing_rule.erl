@@ -7,7 +7,7 @@
 %%
 -type route_predestination() :: hg_routing:route_predestination().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
--type non_fail_rated_route() :: hg_routing:non_fail_rated_route().
+-type route() :: hg_routing:route().
 -type reject_context() :: hg_routing:reject_context().
 
 -spec gather_routes(
@@ -15,7 +15,7 @@
     payment_institution(),
     hg_routing:varset(),
     hg_domain:revision()
-) -> {[non_fail_rated_route()], reject_context()}.
+) -> {[route()], reject_context()}.
 gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} = PayInst, VS, _) ->
     logger:log(
         warning,
@@ -84,13 +84,15 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
                 priority = Priority,
                 weight = Weight
             } = Candidate,
+            % Looks like overhead, we got Terminal only for provider_ref. Maybe we can remove provider_ref from route().
+            % https://github.com/rbkmoney/hellgate/pull/583#discussion_r682745123
             #domain_Terminal{
                 provider_ref = ProviderRef
             } = hg_domain:get(Revision, {terminal, TerminalRef}),
-            Provider = hg_domain:get(Revision, {provider, ProviderRef}),
             try
-                {_, Terminal} = hg_routing:acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
-                {[{{ProviderRef, Provider}, {TerminalRef, Terminal, {Priority, Weight}}} | Accepted], Rejected}
+                {_, _Terminal} = hg_routing:acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
+                Route = hg_routing:new(ProviderRef, TerminalRef, Weight, Priority),
+                {[Route | Accepted], Rejected}
             catch
                 {rejected, Reason} ->
                     {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]};
@@ -105,12 +107,13 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
 filter_routes({Routes, Rejected}, Prohibitions) ->
     lists:foldr(
         fun(Route, {AccIn, RejectedIn}) ->
-            {{ProviderRef, _}, {TerminalRef, _, _}} = Route,
-            case maps:find(TerminalRef, Prohibitions) of
+            TRef = hg_routing:terminal_ref(Route),
+            case maps:find(TRef, Prohibitions) of
                 error ->
                     {[Route | AccIn], RejectedIn};
                 {ok, Description} ->
-                    RejectedOut = [{ProviderRef, TerminalRef, {'RoutingRule', Description}} | RejectedIn],
+                    PRef = hg_routing:provider_ref(Route),
+                    RejectedOut = [{PRef, TRef, {'RoutingRule', Description}} | RejectedIn],
                     {AccIn, RejectedOut}
             end
         end,
