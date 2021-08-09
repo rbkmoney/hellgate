@@ -336,7 +336,7 @@ get_payment_state(PaymentSession) ->
         adjustments = hg_invoice_payment:get_adjustments(PaymentSession),
         chargebacks = hg_invoice_payment:get_chargebacks(PaymentSession),
         route = hg_invoice_payment:get_route(PaymentSession),
-        deprecated_cash_flow = hg_invoice_payment:get_final_cashflow(PaymentSession),
+        cash_flow = hg_invoice_payment:get_final_cashflow(PaymentSession),
         legacy_refunds = LegacyRefunds,
         refunds = Refunds,
         sessions = hg_invoice_payment:get_sessions(PaymentSession),
