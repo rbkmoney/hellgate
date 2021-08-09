@@ -691,14 +691,15 @@ make_payment_tool(digital_wallet, PSrv = #domain_PaymentServiceRef{}) ->
     ?DEFAULT_SESSION(make_digital_wallet_payment_tool({#domain_DigitalWallet.payment_service, PSrv}));
 make_payment_tool(digital_wallet, Provider) ->
     ?DEFAULT_SESSION(make_digital_wallet_payment_tool({#domain_DigitalWallet.provider_deprecated, Provider}));
-make_payment_tool(tokenized_bank_card, {PSys, TokenProvider, TokenizationMethod}) ->
-    {_, BCard} = make_bank_card_payment_tool(<<"no_preauth">>, PSys),
-    ?SESSION42(
-        {bank_card, BCard#domain_BankCard{
-            token_provider_deprecated = TokenProvider,
-            tokenization_method = TokenizationMethod
-        }}
-    );
+make_payment_tool(tokenized_bank_card, {PSys, Provider, Method}) ->
+    Field =
+        case Provider of
+            #domain_BankCardTokenServiceRef{} -> #domain_BankCard.payment_token;
+            _ -> #domain_BankCard.token_provider_deprecated
+        end,
+    {_, BCard0} = make_bank_card_payment_tool(<<"no_preauth">>, PSys),
+    BCard = setelement(Field, BCard0, Provider),
+    ?SESSION42({bank_card, BCard#domain_BankCard{tokenization_method = Method}});
 make_payment_tool(crypto_currency, Type = #domain_CryptoCurrencyRef{}) ->
     ?DEFAULT_SESSION({crypto_currency, Type});
 make_payment_tool(crypto_currency, Type) ->
@@ -733,12 +734,17 @@ phone(failure) ->
     }.
 
 make_bank_card_payment_tool(Token, PSys) ->
-    {bank_card, #domain_BankCard{
+    Field =
+        case PSys of
+            #domain_PaymentSystemRef{} -> #domain_BankCard.payment_system;
+            _ -> #domain_BankCard.payment_system_deprecated
+        end,
+    BCard = #domain_BankCard{
         token = Token,
-        payment_system_deprecated = PSys,
         bin = <<"424242">>,
         last_digits = <<"4242">>
-    }}.
+    },
+    {bank_card, setelement(Field, BCard, PSys)}.
 
 get_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.

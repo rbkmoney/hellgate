@@ -35,6 +35,7 @@
 -export([construct_mobile_operator/2]).
 -export([construct_payment_service/2]).
 -export([construct_crypto_currency/2]).
+-export([construct_tokenized_service/2]).
 
 %%
 
@@ -52,6 +53,7 @@
 -type mobile_operator() :: dmsl_domain_thrift:'MobileOperatorRef'().
 -type payment_service() :: dmsl_domain_thrift:'PaymentServiceRef'().
 -type crypto_currency() :: dmsl_domain_thrift:'CryptoCurrencyRef'().
+-type tokenized_service() :: dmsl_domain_thrift:'BankCardTokenServiceRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -104,6 +106,8 @@ construct_payment_method(?pmt(mobile, ?mob(Name)) = Ref) ->
 construct_payment_method(?pmt(_, ?pmt_srv(Name)) = Ref) ->
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(crypto_currency, ?crypta(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(bank_card, ?token_bank_card(Name, _)) = Ref) ->
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(bank_card, ?bank_card(Name)) = Ref) ->
     construct_payment_method(Name, Ref);
@@ -355,6 +359,16 @@ construct_crypto_currency(Ref, Name) ->
     {crypto_currency, #domain_CryptoCurrencyObject{
         ref = Ref,
         data = #domain_CryptoCurrency{
+            name = Name
+        }
+    }}.
+
+-spec construct_tokenized_service(tokenized_service(), name()) ->
+    {payment_token, dmsl_domain_thrift:'BankCardTokenServiceObject'()}.
+construct_tokenized_service(Ref, Name) ->
+    {payment_token, #domain_BankCardTokenServiceObject{
+        ref = Ref,
+        data = #domain_BankCardTokenService{
             name = Name
         }
     }}.

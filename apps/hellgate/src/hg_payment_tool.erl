@@ -158,13 +158,15 @@ unmarshal(
         token = unmarshal(str, Token),
         bin = unmarshal(str, Bin),
         last_digits = unmarshal(str, MaskedPan),
-        token_provider_deprecated = unmarshal({T, token_provider}, TokenProvider),
         issuer_country = unmarshal({T, issuer_country}, IssuerCountry),
         bank_name = unmarshal(str, BankName),
         metadata = unmarshal({T, metadata}, MD),
         is_cvv_empty = unmarshal({T, boolean}, IsCVVEmpty)
     },
-    set_payment_system(BCard, PaymentSystem);
+    set_token_provider(
+        set_payment_system(BCard, PaymentSystem),
+        TokenProvider
+    );
 unmarshal(payment_terminal, TerminalType) ->
     case TerminalType of
         <<"euroset">> -> #domain_PaymentTerminal{terminal_type_deprecated = euroset};
@@ -215,12 +217,6 @@ unmarshal(mobile_commerce, #{
             BinRef -> {#domain_MobileCommerce.operator, #domain_MobileOperatorRef{id = BinRef}}
         end,
     setelement(Field, PTool, Value);
-unmarshal({bank_card, token_provider}, <<"applepay">>) ->
-    applepay;
-unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
-    googlepay;
-unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
-    samsungpay;
 unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
     binary_to_existing_atom(unmarshal(str, Residence), utf8);
 unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
@@ -259,5 +255,15 @@ set_payment_system(BCard, PSysBin) when is_binary(PSysBin) ->
             <<"jcb">> -> {#domain_BankCard.payment_system_deprecated, jcb};
             <<"nspkmir">> -> {#domain_BankCard.payment_system_deprecated, nspkmir};
             PSysRef -> {#domain_BankCard.payment_system, #domain_PaymentSystemRef{id = PSysRef}}
+        end,
+    setelement(Field, BCard, Value).
+
+set_token_provider(BCard, TokenProvider) when is_binary(TokenProvider) ->
+    {Field, Value} =
+        case TokenProvider of
+            <<"applepay">> -> {#domain_BankCard.token_provider_deprecated, applepay};
+            <<"googlepay">> -> {#domain_BankCard.token_provider_deprecated, googlepay};
+            <<"samsungpay">> -> {#domain_BankCard.token_provider_deprecated, samsungpay};
+            TSrvRef -> {#domain_BankCard.payment_token, #domain_BankCardTokenServiceRef{id = TSrvRef}}
         end,
     setelement(Field, BCard, Value).

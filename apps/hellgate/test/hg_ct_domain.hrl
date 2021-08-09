@@ -29,7 +29,14 @@
 -define(bc_cat(ID), #domain_BankCardCategoryRef{id = ID}).
 -define(mob(ID), #domain_MobileOperatorRef{id = ID}).
 -define(crypta(ID), #domain_CryptoCurrencyRef{id = ID}).
+-define(token_srv(ID), #domain_BankCardTokenServiceRef{id = ID}).
 -define(bank_card(ID), #domain_BankCardPaymentMethod{payment_system = ?pmt_sys(ID)}).
+-define(token_bank_card(ID, Prv), ?token_bank_card(ID, Prv, dpan)).
+-define(token_bank_card(ID, Prv, Method), #domain_BankCardPaymentMethod{
+    payment_system = ?pmt_sys(ID),
+    payment_token = ?token_srv(Prv),
+    tokenization_method = Method
+}).
 
 -define(cashrng(Lower, Upper), #domain_CashRange{lower = Lower, upper = Upper}).
 
