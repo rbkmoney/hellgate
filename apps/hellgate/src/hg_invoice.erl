@@ -15,6 +15,7 @@
 -module(hg_invoice).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+-include_lib("damsel/include/dmsl_base_thrift.hrl").
 -include("payment_events.hrl").
 -include("invoice_events.hrl").
 -include("domain.hrl").
@@ -593,11 +594,12 @@ handle_call({{'Invoicing', 'CapturePayment'}, {_UserInfo, _InvoiceID, PaymentID,
     #payproc_InvoicePaymentCaptureParams{
         reason = Reason,
         cash = Cash,
-        cart = Cart
+        cart = Cart,
+        allocation = AllocationPrototype
     } = Params,
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = #{timestamp := OccurredAt} = get_payment_opts(St),
-    {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, Opts),
+    {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
@@ -763,11 +765,11 @@ set_invoice_timer(?invoice_unpaid(), Action, #st{invoice = #domain_Invoice{due =
 set_invoice_timer(_Status, Action, _St) ->
     Action.
 
-capture_payment(PaymentSession, Reason, undefined, Cart, Opts) when Cart =/= undefined ->
+capture_payment(PaymentSession, Reason, undefined, Cart, AllocationPrototype, Opts) when Cart =/= undefined ->
     Cash = hg_invoice_utils:get_cart_amount(Cart),
-    capture_payment(PaymentSession, Reason, Cash, Cart, Opts);
-capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->
-    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, Opts).
+    capture_payment(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts);
+capture_payment(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts).
 
 %%
 
@@ -1024,6 +1026,10 @@ get_chargeback_state(ID, PaymentState) ->
 %%
 
 create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
+    FeeTarget = hg_allocations:construct_target(#{
+        owner_id => V#payproc_InvoiceParams.party_id,
+        shop_id => V#payproc_InvoiceParams.shop_id
+    }),
     #domain_Invoice{
         id = ID,
         shop_id = V#payproc_InvoiceParams.shop_id,
@@ -1037,7 +1043,8 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
         context = V#payproc_InvoiceParams.context,
         template_id = InvoiceTplID,
         external_id = V#payproc_InvoiceParams.external_id,
-        client_info = V#payproc_InvoiceParams.client_info
+        client_info = V#payproc_InvoiceParams.client_info,
+        allocation = hg_allocations:calculate_allocation(V#payproc_InvoiceParams.allocation, FeeTarget)
     }.
 
 create_payment_id(#st{payments = Payments}) ->

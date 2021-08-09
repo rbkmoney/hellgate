@@ -55,12 +55,13 @@
     }}
 ).
 
--define(payment_capture_started(Reason, Cost, Cart),
+-define(payment_capture_started(Reason, Cost, Cart, AllocationPrototype),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
         params = #payproc_InvoicePaymentCaptureParams{
             reason = Reason,
             cash = Cost,
-            cart = Cart
+            cart = Cart,
+            allocation = AllocationPrototype
         }
     }}
 ).
@@ -103,6 +104,10 @@
 
 -define(captured(Reason, Cost, Cart),
     {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart}}
+).
+
+-define(captured(Reason, Cost, Cart, Allocation),
+    {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart, allocation = Allocation}}
 ).
 
 -define(cancelled_with_reason(Reason),

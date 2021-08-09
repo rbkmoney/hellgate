@@ -52,7 +52,7 @@
 
 %% Business logic
 
--export([capture/5]).
+-export([capture/6]).
 -export([cancel/2]).
 -export([refund/3]).
 
@@ -996,18 +996,19 @@ get_selector_value(Name, Selector) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
-start_capture(Reason, Cost, Cart) ->
-    [?payment_capture_started(Reason, Cost, Cart)] ++
-        start_session(?captured(Reason, Cost, Cart)).
+start_capture(Reason, Cost, Cart, AllocationPrototype, Allocation) ->
+    [?payment_capture_started(Reason, Cost, Cart, AllocationPrototype)] ++
+        start_session(?captured(Reason, Cost, Cart, Allocation)).
 
-start_partial_capture(Reason, Cost, Cart, FinalCashflow) ->
+start_partial_capture(Reason, Cost, Cart, FinalCashflow, AllocationPrototype) ->
     [
-        ?payment_capture_started(Reason, Cost, Cart),
+        ?payment_capture_started(Reason, Cost, Cart, AllocationPrototype),
         ?cash_flow_changed(FinalCashflow)
     ].
 
--spec capture(st(), binary(), cash() | undefined, cart() | undefined, opts()) -> {ok, result()}.
-capture(St, Reason, Cost, Cart, Opts) ->
+-spec capture(st(), binary(), cash() | undefined, cart() | undefined, hg_allocations:allocation_prototype(), opts()) ->
+    {ok, result()}.
+capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Payment = get_payment(St),
     _ = assert_capture_cost_currency(Cost, Payment),
     _ = assert_capture_cart(Cost, Cart),
@@ -1015,18 +1016,23 @@ capture(St, Reason, Cost, Cart, Opts) ->
     _ = assert_payment_flow(hold, Payment),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
-            total_capture(St, Reason, Cart);
+            total_capture(St, Reason, Cart, AllocationPrototype);
         false ->
-            partial_capture(St, Reason, Cost, Cart, Opts)
+            partial_capture(St, Reason, Cost, Cart, Opts, AllocationPrototype)
     end.
 
-total_capture(St, Reason, Cart) ->
+total_capture(St, Reason, Cart, AllocationPrototype) ->
     Payment = get_payment(St),
     Cost = get_payment_cost(Payment),
-    Changes = start_capture(Reason, Cost, Cart),
+    Allocation = hg_allocations:calculate_allocation(
+        AllocationPrototype,
+        Payment#domain_InvoicePayment.owner_id,
+        Payment#domain_InvoicePayment.shop_id
+    ),
+    Changes = start_capture(Reason, Cost, Cart, AllocationPrototype, Allocation),
     {ok, {Changes, hg_machine_action:instant()}}.
 
-partial_capture(St0, Reason, Cost, Cart, Opts) ->
+partial_capture(St0, Reason, Cost, Cart, Opts, AllocationPrototype) ->
     Payment = get_payment(St0),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
     St = St0#st{payment = Payment2},
@@ -1040,7 +1046,7 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     ok = validate_provider_holds_terms(ProviderTerms),
     FinalCashflow =
         calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
-    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
+    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow, AllocationPrototype),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
@@ -1201,6 +1207,11 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
+    Allocation = hg_allocations:calculate_allocation(
+        Params#payproc_InvoicePaymentRefundParams.allocation,
+        Payment#domain_InvoicePayment.owner_id,
+        Payment#domain_InvoicePayment.shop_id
+    ),
     #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
         created_at = CreatedAt,
@@ -1210,7 +1221,8 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         reason = Params#payproc_InvoicePaymentRefundParams.reason,
         cash = Cash,
         cart = Cart,
-        external_id = Params#payproc_InvoicePaymentRefundParams.external_id
+        external_id = Params#payproc_InvoicePaymentRefundParams.external_id,
+        allocation = Allocation
     }.
 
 make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
@@ -2002,7 +2014,8 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     #payproc_InvoicePaymentCaptureParams{
         reason = Reason,
         cash = Cost,
-        cart = Cart
+        cart = Cart,
+        allocation = AllocationPrototype
     } = CaptureParams,
     Invoice = get_invoice(Opts),
     Payment = get_payment(St),
@@ -2014,7 +2027,12 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
             {3, FinalCashflow}
         ]
     ),
-    Events = start_session(?captured(Reason, Cost, Cart)),
+    Allocation = hg_allocations:calculate_allocation(
+        AllocationPrototype,
+        Payment#domain_InvoicePayment.owner_id,
+        Payment#domain_InvoicePayment.shop_id
+    ),
+    Events = start_session(?captured(Reason, Cost, Cart, Allocation)),
     {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
