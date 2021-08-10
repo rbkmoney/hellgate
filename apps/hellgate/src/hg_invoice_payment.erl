@@ -3041,6 +3041,7 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
             || S <- [
                    risk_scoring,
                    routing,
+                   routing_failure,
                    processing_failure
                ]
         ],
