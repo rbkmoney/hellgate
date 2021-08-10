@@ -117,6 +117,7 @@
     new
     | risk_scoring
     | routing
+    | routing_failure
     | cash_flow_building
     | processing_session
     | processing_accounter
@@ -1772,6 +1773,7 @@ process_timeout({payment, Step}, Action, St) when
     process_session(Action, St);
 process_timeout({payment, Step}, Action, St) when
     Step =:= processing_failure orelse
+        Step =:= routing_failure orelse
         Step =:= processing_accounter orelse
         Step =:= finalizing_accounter
 ->
@@ -2163,14 +2165,12 @@ process_result({payment, processing_accounter}, Action, St) ->
     Target = get_target(St),
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
-process_result({payment, processing_failure}, Action, St = #st{failure = Failure, cash_flow = undefined}) ->
+process_result({payment, routing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
     Routes = get_candidate_routes(St),
     _ = rollback_payment_limits(Routes, St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
-process_result({payment, processing_failure}, Action, St = #st{failure = Failure, cash_flow = CashFlow}) when
-    CashFlow /= undefined
-->
+process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
     Routes = [get_route(St)],
     _ = rollback_payment_limits(Routes, St),
@@ -3022,9 +3022,15 @@ merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
         St,
         Opts
     ),
+    Activity = case St#st.cash_flow of
+        undefined ->
+            {payment, routing_failure};
+        _ ->
+            {payment, processing_failure}
+    end,
     St#st{
         failure = Failure,
-        activity = {payment, processing_failure},
+        activity = Activity,
         timings = accrue_status_timing(failed, Opts, St)
     };
 merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment = Payment} = St, Opts) ->
