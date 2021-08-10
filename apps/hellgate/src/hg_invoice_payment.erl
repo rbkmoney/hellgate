@@ -3022,12 +3022,13 @@ merge_change(Change = ?payment_rollback_started(Failure), St, Opts) ->
         St,
         Opts
     ),
-    Activity = case St#st.cash_flow of
-        undefined ->
-            {payment, routing_failure};
-        _ ->
-            {payment, processing_failure}
-    end,
+    Activity =
+        case St#st.cash_flow of
+            undefined ->
+                {payment, routing_failure};
+            _ ->
+                {payment, processing_failure}
+        end,
     St#st{
         failure = Failure,
         activity = Activity,
