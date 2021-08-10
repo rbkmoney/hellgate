@@ -2,17 +2,20 @@
 
 -include_lib("damsel/include/dmsl_base_thrift.hrl").
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
 -export([construct_target/1]).
 -export([calculate_allocation/2]).
 -export([calculate_allocation/3]).
+-export([assert_allocatable/2]).
 
 -export_type([allocation_prototype/0]).
 -export_type([allocation/0]).
 
 -type allocation_prototype() :: dmsl_domain_thrift:'AllocationPrototype'().
 -type allocation() :: dmsl_domain_thrift:'Allocation'().
+-type allocation_terms() :: dmsl_domain_thrift:'PaymentAllocationServiceTerms'().
 -type target() :: dmsl_domain_thrift:'AllocationTransactionTarget'().
 
 -type owner_id() :: dmsl_payment_processing_thrift:'PartyID'().
@@ -44,6 +47,19 @@ calculate_allocation(#domain_AllocationPrototype{transactions = Transactions}, F
     #domain_Allocation{
         transactions = calculate_allocation_transactions(Transactions, FeeTarget)
     }.
+
+-spec assert_allocatable(allocation_prototype() | undefined, allocation_terms()) -> ok | no_return().
+assert_allocatable(undefined, _AllocationTerms) ->
+    ok;
+assert_allocatable(_Allocation, #domain_PaymentAllocationServiceTerms{allow = Allow}) ->
+    case Allow of
+        {constant, true} ->
+            ok;
+        _ ->
+            throw(#payproc_InvoiceTermsViolated{
+                reason = {invoice_unallocatable, #payproc_InvoiceUnallocatable{}}
+            })
+    end.
 
 calculate_allocation_transactions(Transactions, FeeTarget) ->
     calculate_allocation_transactions(Transactions, FeeTarget, []).

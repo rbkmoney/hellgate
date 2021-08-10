@@ -150,7 +150,9 @@
     capture_params :: undefined | capture_params(),
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
-    latest_change_at :: undefined | hg_datetime:timestamp()
+    latest_change_at :: undefined | hg_datetime:timestamp(),
+    allocation :: undefined | hg_allocations:allocation(),
+    allocation_prototype :: undefined | hg_allocations:allocation_prototype()
 }).
 
 -record(refund_st, {
@@ -271,6 +273,14 @@ get_route(#st{route = Route}) ->
 -spec get_adjustments(st()) -> [adjustment()].
 get_adjustments(#st{adjustments = As}) ->
     As.
+
+-spec get_allocation(st()) -> hg_allocations:allocation().
+get_allocation(#st{allocation = Allocation}) ->
+    Allocation.
+
+-spec get_allocation_prototype(st()) -> hg_allocations:allocation_prototype().
+get_allocation_prototype(#st{allocation_prototype = AllocationPrototype}) ->
+    AllocationPrototype.
 
 -spec get_adjustment(adjustment_id(), st()) -> adjustment() | no_return().
 get_adjustment(ID, St) ->
@@ -1014,11 +1024,16 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     _ = assert_capture_cart(Cost, Cart),
     _ = assert_activity({payment, flow_waiting}, St),
     _ = assert_payment_flow(hold, Payment),
+    Revision = get_payment_revision(St),
+    Timestamp = get_payment_created_at(Payment),
+    VS = collect_validation_varset(St, Opts),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
+    ok = validate_capture_allocatable(AllocationPrototype, MerchantTerms),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart, AllocationPrototype);
         false ->
-            partial_capture(St, Reason, Cost, Cart, Opts, AllocationPrototype)
+            partial_capture(St, Reason, Cost, Cart, Opts, MerchantTerms, AllocationPrototype)
     end.
 
 total_capture(St, Reason, Cart, AllocationPrototype) ->
@@ -1032,14 +1047,12 @@ total_capture(St, Reason, Cart, AllocationPrototype) ->
     Changes = start_capture(Reason, Cost, Cart, AllocationPrototype, Allocation),
     {ok, {Changes, hg_machine_action:instant()}}.
 
-partial_capture(St0, Reason, Cost, Cart, Opts, AllocationPrototype) ->
+partial_capture(St0, Reason, Cost, Cart, Opts, MerchantTerms, AllocationPrototype) ->
     Payment = get_payment(St0),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
     St = St0#st{payment = Payment2},
     Revision = get_payment_revision(St),
-    Timestamp = get_payment_created_at(Payment),
     VS = collect_validation_varset(St, Opts),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ok = validate_merchant_hold_terms(MerchantTerms),
     Route = get_route(St),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
@@ -1048,6 +1061,13 @@ partial_capture(St0, Reason, Cost, Cart, Opts, AllocationPrototype) ->
         calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow, AllocationPrototype),
     {ok, {Changes, hg_machine_action:instant()}}.
+
+validate_capture_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
+    #domain_PaymentsServiceTerms{
+        allocations = AllocationSelector
+    } = PaymentTerms,
+    _ = hg_allocations:assert_allocatable(Allocation, AllocationSelector),
+    ok.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 cancel(St, Reason) ->
@@ -1178,8 +1198,12 @@ refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
     Payment = get_payment(St),
+    VS = collect_validation_varset(St, Opts),
+    #payproc_InvoicePaymentRefundParams{allocation = Allocation} = Params,
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
+    _ = validate_invoice_allocatable(Allocation, MerchantTerms),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
-    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS),
     Changes = [?refund_created(Refund, FinalCashflow)],
     Action = hg_machine_action:instant(),
     ID = Refund#domain_InvoicePaymentRefund.id,
@@ -1190,8 +1214,12 @@ manual_refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     St = St0#st{opts = Opts},
     Revision = hg_domain:head(),
     Payment = get_payment(St),
+    VS = collect_validation_varset(St, Opts),
+    #payproc_InvoicePaymentRefundParams{allocation = Allocation} = Params,
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
+    _ = validate_invoice_allocatable(Allocation, MerchantTerms),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
-    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts),
+    FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
     Changes = [?refund_created(Refund, FinalCashflow, TransactionInfo)],
     Action = hg_machine_action:instant(),
@@ -1225,15 +1253,21 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         allocation = Allocation
     }.
 
-make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
+validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
+    #domain_PaymentsServiceTerms{
+        allocations = AllocationSelector
+    } = PaymentTerms,
+    _ = hg_allocations:assert_allocatable(Allocation, AllocationSelector),
+    ok.
+
+make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS) ->
     Route = get_route(St),
     Shop = get_shop(Opts),
-    VS = collect_validation_varset(St, Opts),
-    MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt, VS)),
-    ok = validate_refund(MerchantTerms, Refund, Payment),
+    MerchantRefundTerms = get_merchant_refunds_terms(MerchantTerms),
+    ok = validate_refund(MerchantRefundTerms, Refund, Payment),
     ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
-    Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms, Opts, Route),
+    Cashflow = collect_refund_cashflow(MerchantRefundTerms, ProviderTerms, Opts, Route),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
@@ -2100,7 +2134,7 @@ finalize_payment(Action, St) ->
     StartEvents =
         case Target of
             ?captured(Reason, Cost) ->
-                start_capture(Reason, Cost, undefined);
+                start_capture(Reason, Cost, undefined, get_allocation_prototype(St), get_allocation(St));
             _ ->
                 start_session(Target)
         end,
@@ -2914,9 +2948,11 @@ merge_change(Change = ?route_changed(Route), St, Opts) ->
     };
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
+    ?payment_capture_started(_, _, _, AllocationPrototype) = Change,
     St#st{
         capture_params = Params,
-        activity = {payment, processing_capture}
+        activity = {payment, processing_capture},
+        allocation_prototype = AllocationPrototype
     };
 merge_change(Change = ?cash_flow_changed(CashFlow), #st{activity = Activity} = St0, Opts) ->
     _ = validate_transition(
@@ -2993,7 +3029,8 @@ merge_change(Change = ?payment_status_changed({captured, Captured} = Status), #s
             cost = get_captured_cost(Captured, Payment)
         },
         activity = idle,
-        timings = accrue_status_timing(captured, Opts, St)
+        timings = accrue_status_timing(captured, Opts, St),
+        allocation = get_captured_allocation(Captured)
     };
 merge_change(Change = ?payment_status_changed({processed, _} = Status), #st{payment = Payment} = St, Opts) ->
     _ = validate_transition({payment, processing_accounter}, Change, St, Opts),
@@ -3300,6 +3337,9 @@ get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when Cost /= u
     Cost;
 get_captured_cost(_, #domain_InvoicePayment{cost = Cost}) ->
     Cost.
+
+get_captured_allocation(#domain_InvoicePaymentCaptured{allocation = Allocation}) ->
+    Allocation.
 
 get_refund_session(#refund_st{sessions = []}) ->
     undefined;

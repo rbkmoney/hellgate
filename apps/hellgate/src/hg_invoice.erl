@@ -341,7 +341,8 @@ get_payment_state(PaymentSession) ->
         legacy_refunds = LegacyRefunds,
         refunds = Refunds,
         sessions = hg_invoice_payment:get_sessions(PaymentSession),
-        last_transaction_info = hg_invoice_payment:get_trx(PaymentSession)
+        last_transaction_info = hg_invoice_payment:get_trx(PaymentSession),
+        allocaton = hg_invoice_payment:get_allocation(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->
@@ -1287,12 +1288,20 @@ make_invoice_params(Params) ->
     },
     {Party, Shop, InvoiceParams}.
 
-validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop, MerchantTerms) ->
-    validate_invoice_cost(Cost, Shop, MerchantTerms).
+validate_invoice_params(#payproc_InvoiceParams{cost = Cost, allocation = Allocation}, Shop, MerchantTerms) ->
+    ok = validate_invoice_cost(Cost, Shop, MerchantTerms),
+    validate_invoice_allocatable(Allocation, MerchantTerms).
 
 validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:validate_cost(Cost, Shop),
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
+    ok.
+
+validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
+    #domain_PaymentsServiceTerms{
+        allocations = AllocationSelector
+    } = PaymentTerms,
+    _ = hg_allocations:assert_allocatable(Allocation, AllocationSelector),
     ok.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
