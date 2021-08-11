@@ -172,6 +172,9 @@
 -export([repair_fail_session_on_pre_processing/1]).
 -export([repair_complex_succeeded_first/1]).
 -export([repair_complex_succeeded_second/1]).
+-export([repair_fulfill_session_succeeded/1]).
+-export([repair_fulfill_session_on_pre_processing_failed/1]).
+-export([repair_fulfill_session_with_trx_succeeded/1]).
 
 -export([consistent_account_balances/1]).
 
@@ -408,7 +411,10 @@ groups() ->
             repair_fail_session_succeeded,
             repair_fail_session_on_pre_processing,
             repair_complex_succeeded_first,
-            repair_complex_succeeded_second
+            repair_complex_succeeded_second,
+            repair_fulfill_session_succeeded,
+            repair_fulfill_session_on_pre_processing_failed,
+            repair_fulfill_session_with_trx_succeeded
         ]}
     ].
 
@@ -4931,6 +4937,79 @@ repair_complex_succeeded_second(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
+-spec repair_fulfill_session_succeeded(config()) -> test_return().
+repair_fulfill_session_succeeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, fulfill_session, Client),
+
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client).
+
+-spec repair_fulfill_session_on_pre_processing_failed(config()) -> test_return().
+repair_fulfill_session_on_pre_processing_failed(C) ->
+    Client = cfg(client, C),
+    PartyClient = cfg(party_client, C),
+    ShopID = hg_ct_helper:create_battle_ready_shop(
+        cfg(party_id, C),
+        ?cat(7),
+        <<"RUB">>,
+        ?tmpl(2),
+        ?pinst(2),
+        PartyClient
+    ),
+    InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
+    PaymentParams = make_payment_params(),
+    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ?assertException(
+        error,
+        {{woody_error, {external, result_unexpected, _}}, _},
+        repair_invoice_with_scenario(InvoiceID, fulfill_session, Client)
+    ),
+    ok = repair_invoice_with_scenario(InvoiceID, fail_pre_processing, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, _Failure})))
+    ] = next_event(InvoiceID, Client).
+
+-spec repair_fulfill_session_with_trx_succeeded(config()) -> test_return().
+repair_fulfill_session_with_trx_succeeded(C) ->
+    Client = cfg(client, C),
+    InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx),
+    PaymentParams = make_payment_params(PaymentTool, Session),
+    PaymentID = start_payment(InvoiceID, PaymentParams, Client),
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_started()))
+    ] = next_event(InvoiceID, Client),
+
+    timeout = next_event(InvoiceID, 2000, Client),
+    ok = repair_invoice_with_scenario(InvoiceID, {fulfill_session, ?trx_info(PaymentID, #{})}, Client),
+
+    [
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(?trx_info(PaymentID)))),
+        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+    ] = next_event(InvoiceID, Client),
+    [
+        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+    ] = next_event(InvoiceID, Client).
+
 %%
 
 -spec consistent_account_balances(config()) -> test_return().
@@ -5295,6 +5374,10 @@ create_repair_scenario(fail_session) ->
         {no_route_found, {unknown, #payprocerr_GeneralFailure{}}}
     ),
     {'fail_session', #'payproc_InvoiceRepairFailSession'{failure = Failure}};
+create_repair_scenario(fulfill_session) ->
+    {'fulfill_session', #'payproc_InvoiceRepairFulfillSession'{}};
+create_repair_scenario({fulfill_session, Trx}) ->
+    {'fulfill_session', #'payproc_InvoiceRepairFulfillSession'{trx = Trx}};
 create_repair_scenario(complex) ->
     {'complex', #'payproc_InvoiceRepairComplex'{
         scenarios = [
