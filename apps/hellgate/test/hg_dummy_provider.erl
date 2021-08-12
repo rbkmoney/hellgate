@@ -649,6 +649,7 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_de
     | preauth_3ds_offsite
     | forbidden
     | unexpected_failure
+    | unexpected_failure_no_trx
     | preauth_3ds
     | no_preauth
     | no_preauth_timeout
