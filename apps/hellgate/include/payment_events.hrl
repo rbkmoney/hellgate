@@ -51,17 +51,17 @@
 
 -define(payment_capture_started(Params),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        params = Params
+        data = Params
     }}
 ).
 
--define(payment_capture_started(Reason, Cost, Cart, AllocationPrototype),
+-define(payment_capture_started(Reason, Cost, Cart, Allocation),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        params = #payproc_InvoicePaymentCaptureParams{
+        data = #payproc_InvoicePaymentCaptureData{
             reason = Reason,
             cash = Cost,
             cart = Cart,
-            allocation = AllocationPrototype
+            allocation = Allocation
         }
     }}
 ).

@@ -147,12 +147,11 @@
     recurrent_token :: undefined | recurrent_token(),
     opts :: undefined | opts(),
     repair_scenario :: undefined | hg_invoice_repair:scenario(),
-    capture_params :: undefined | capture_params(),
+    capture_data :: undefined | capture_params(),
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
     latest_change_at :: undefined | hg_datetime:timestamp(),
-    allocation :: undefined | hg_allocations:allocation(),
-    allocation_prototype :: undefined | hg_allocations:allocation_prototype()
+    allocation :: undefined | hg_allocations:allocation()
 }).
 
 -record(refund_st, {
@@ -277,10 +276,6 @@ get_adjustments(#st{adjustments = As}) ->
 -spec get_allocation(st()) -> hg_allocations:allocation().
 get_allocation(#st{allocation = Allocation}) ->
     Allocation.
-
--spec get_allocation_prototype(st()) -> hg_allocations:allocation_prototype().
-get_allocation_prototype(#st{allocation_prototype = AllocationPrototype}) ->
-    AllocationPrototype.
 
 -spec get_adjustment(adjustment_id(), st()) -> adjustment() | no_return().
 get_adjustment(ID, St) ->
@@ -1006,13 +1001,13 @@ get_selector_value(Name, Selector) ->
 start_session(Target) ->
     [?session_ev(Target, ?session_started())].
 
-start_capture(Reason, Cost, Cart, AllocationPrototype, Allocation) ->
-    [?payment_capture_started(Reason, Cost, Cart, AllocationPrototype)] ++
+start_capture(Reason, Cost, Cart, Allocation) ->
+    [?payment_capture_started(Reason, Cost, Cart, Allocation)] ++
         start_session(?captured(Reason, Cost, Cart, Allocation)).
 
-start_partial_capture(Reason, Cost, Cart, FinalCashflow, AllocationPrototype) ->
+start_partial_capture(Reason, Cost, Cart, FinalCashflow, Allocation) ->
     [
-        ?payment_capture_started(Reason, Cost, Cart, AllocationPrototype),
+        ?payment_capture_started(Reason, Cost, Cart, Allocation),
         ?cash_flow_changed(FinalCashflow)
     ].
 
@@ -1029,25 +1024,25 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ok = validate_capture_allocatable(AllocationPrototype, MerchantTerms),
-    case check_equal_capture_cost_amount(Cost, Payment) of
-        true ->
-            total_capture(St, Reason, Cart, AllocationPrototype);
-        false ->
-            partial_capture(St, Reason, Cost, Cart, Opts, MerchantTerms, AllocationPrototype)
-    end.
-
-total_capture(St, Reason, Cart, AllocationPrototype) ->
-    Payment = get_payment(St),
-    Cost = get_payment_cost(Payment),
     Allocation = hg_allocations:calculate_allocation(
         AllocationPrototype,
         Payment#domain_InvoicePayment.owner_id,
         Payment#domain_InvoicePayment.shop_id
     ),
-    Changes = start_capture(Reason, Cost, Cart, AllocationPrototype, Allocation),
+    case check_equal_capture_cost_amount(Cost, Payment) of
+        true ->
+            total_capture(St, Reason, Cart, Allocation);
+        false ->
+            partial_capture(St, Reason, Cost, Cart, Opts, MerchantTerms, Allocation)
+    end.
+
+total_capture(St, Reason, Cart, Allocation) ->
+    Payment = get_payment(St),
+    Cost = get_payment_cost(Payment),
+    Changes = start_capture(Reason, Cost, Cart, Allocation),
     {ok, {Changes, hg_machine_action:instant()}}.
 
-partial_capture(St0, Reason, Cost, Cart, Opts, MerchantTerms, AllocationPrototype) ->
+partial_capture(St0, Reason, Cost, Cart, Opts, MerchantTerms, Allocation) ->
     Payment = get_payment(St0),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
     St = St0#st{payment = Payment2},
@@ -1059,7 +1054,7 @@ partial_capture(St0, Reason, Cost, Cart, Opts, MerchantTerms, AllocationPrototyp
     ok = validate_provider_holds_terms(ProviderTerms),
     FinalCashflow =
         calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
-    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow, AllocationPrototype),
+    Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow, Allocation),
     {ok, {Changes, hg_machine_action:instant()}}.
 
 validate_capture_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
@@ -2043,14 +2038,14 @@ process_adjustment_cashflow(ID, _Action, St) ->
     Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
     {done, {Events, hg_machine_action:new()}}.
 
-process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
+process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_data = CaptureData}) ->
     Opts = get_opts(St),
-    #payproc_InvoicePaymentCaptureParams{
+    #payproc_InvoicePaymentCaptureData{
         reason = Reason,
         cash = Cost,
         cart = Cart,
-        allocation = AllocationPrototype
-    } = CaptureParams,
+        allocation = Allocation
+    } = CaptureData,
     Invoice = get_invoice(Opts),
     Payment = get_payment(St),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
@@ -2060,11 +2055,6 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
             {2, hg_cashflow:revert(get_cashflow(St))},
             {3, FinalCashflow}
         ]
-    ),
-    Allocation = hg_allocations:calculate_allocation(
-        AllocationPrototype,
-        Payment#domain_InvoicePayment.owner_id,
-        Payment#domain_InvoicePayment.shop_id
     ),
     Events = start_session(?captured(Reason, Cost, Cart, Allocation)),
     {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
@@ -2134,7 +2124,7 @@ finalize_payment(Action, St) ->
     StartEvents =
         case Target of
             ?captured(Reason, Cost) ->
-                start_capture(Reason, Cost, undefined, get_allocation_prototype(St), get_allocation(St));
+                start_capture(Reason, Cost, undefined, get_allocation(St));
             _ ->
                 start_session(Target)
         end,
@@ -2580,11 +2570,11 @@ get_turnover_limits(ProviderTerms) ->
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
     hg_limiter:get_turnover_limits(TurnoverLimitSelector).
 
-commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
+commit_payment_limits(#st{capture_data = CaptureData} = St) ->
     Revision = get_payment_revision(St),
     Invoice = get_invoice(get_opts(St)),
     Payment = get_payment(St),
-    #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
+    #payproc_InvoicePaymentCaptureData{cash = CapturedCash} = CaptureData,
     ProviderTerms = get_provider_terms(St, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     hg_limiter:commit_payment_limits(TurnoverLimits, Invoice, Payment, CapturedCash).
@@ -2946,13 +2936,13 @@ merge_change(Change = ?route_changed(Route), St, Opts) ->
         route = Route,
         activity = {payment, cash_flow_building}
     };
-merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
+merge_change(Change = ?payment_capture_started(Data), #st{} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
-    ?payment_capture_started(_, _, _, AllocationPrototype) = Change,
+    ?payment_capture_started(_, _, _, Allocation) = Change,
     St#st{
-        capture_params = Params,
+        capture_data = Data,
         activity = {payment, processing_capture},
-        allocation_prototype = AllocationPrototype
+        allocation = Allocation
     };
 merge_change(Change = ?cash_flow_changed(CashFlow), #st{activity = Activity} = St0, Opts) ->
     _ = validate_transition(
