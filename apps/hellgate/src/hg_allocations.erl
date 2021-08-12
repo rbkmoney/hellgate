@@ -31,7 +31,7 @@ calculate_allocation(AllocationPrototype, OwnerID, ShopID) ->
         owner_id => OwnerID,
         shop_id => ShopID
     }),
-    calculate_allocation(AllocationPrototype, OwnerID, ShopID).
+    calculate_allocation(AllocationPrototype, FeeTarget).
 
 -spec construct_target(target_map()) -> target().
 construct_target(#{owner_id := OwnerID, shop_id := ShopID}) ->
