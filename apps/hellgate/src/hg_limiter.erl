@@ -3,6 +3,7 @@
 -include("domain.hrl").
 -include_lib("limiter_proto/include/lim_limiter_thrift.hrl").
 -include_lib("damsel/include/dmsl_domain_thrift.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -type turnover_selector() :: dmsl_domain_thrift:'TurnoverLimitSelector'().
 -type turnover_limit() :: dmsl_domain_thrift:'TurnoverLimit'().
@@ -10,16 +11,17 @@
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type refund() :: dmsl_domain_thrift:'InvoicePaymentRefund'().
--type cash() :: dmsl_domain_thrift:'Cash'().
+-type cash() :: dmsl_domain_thrift:'Cash'() | undefined.
+-type clock() :: dmsl_payment_processing_thrift:'Clock'() | undefined.
 
 -export([get_turnover_limits/1]).
--export([check_limits/3]).
--export([hold_payment_limits/4]).
--export([hold_refund_limits/4]).
--export([commit_payment_limits/5]).
--export([commit_refund_limits/4]).
--export([rollback_payment_limits/4]).
--export([rollback_refund_limits/4]).
+-export([check_limits/4]).
+-export([hold_payment_limits/5]).
+-export([hold_refund_limits/5]).
+-export([commit_payment_limits/6]).
+-export([commit_refund_limits/5]).
+-export([rollback_payment_limits/5]).
+-export([rollback_refund_limits/5]).
 
 -spec get_turnover_limits(turnover_selector() | undefined) -> [turnover_limit()].
 get_turnover_limits(undefined) ->
@@ -30,13 +32,19 @@ get_turnover_limits({value, Limits}) ->
 get_turnover_limits(Ambiguous) ->
     error({misconfiguration, {'Could not reduce selector to a value', Ambiguous}}).
 
--spec check_limits([turnover_limit()], invoice(), payment()) ->
+-spec check_limits([turnover_limit()], invoice(), payment(), clock()) ->
     {ok, [hg_limiter_client:limit()]}
     | {error, {limit_overflow, [binary()]}}.
-check_limits(TurnoverLimits, Invoice, Payment) ->
+check_limits(TurnoverLimits, Invoice, Payment, Clock) ->
     Context = gen_limit_context(Invoice, Payment),
+    LimiterClock = to_limiter_clock(Clock),
+
+    Fun = fun(LimitID) ->
+        hg_limiter_client:get(LimitID, LimiterClock, Context)
+    end,
+
     try
-        check_limits_(TurnoverLimits, Context, [])
+        check_limits_(TurnoverLimits, Fun, [])
     catch
         throw:limit_overflow ->
             IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
@@ -45,17 +53,12 @@ check_limits(TurnoverLimits, Invoice, Payment) ->
 
 check_limits_([], _, Limits) ->
     {ok, Limits};
-check_limits_([T | TurnoverLimits], Context, Acc) ->
-    #domain_TurnoverLimit{id = LimitID} = T,
-    Clock = get_latest_clock(),
-    Limit = hg_limiter_client:get(LimitID, Clock, Context),
-    #limiter_Limit{
-        amount = LimiterAmount
-    } = Limit,
-    UpperBoundary = T#domain_TurnoverLimit.upper_boundary,
+check_limits_([T | TurnoverLimits], GetLimitFunc, Acc) ->
+    #domain_TurnoverLimit{id = LimitID, upper_boundary = UpperBoundary} = T,
+    #limiter_Limit{amount = LimiterAmount} = Limit = GetLimitFunc(LimitID),
     case LimiterAmount < UpperBoundary of
         true ->
-            check_limits_(TurnoverLimits, Context, [Limit | Acc]);
+            check_limits_(TurnoverLimits, GetLimitFunc, [Limit | Acc]);
         false ->
             logger:info("Limit with id ~p overflowed, amount ~p upper boundary ~p", [
                 LimitID,
@@ -65,64 +68,57 @@ check_limits_([T | TurnoverLimits], Context, Acc) ->
             throw(limit_overflow)
     end.
 
--spec hold_payment_limits([turnover_limit()], route(), invoice(), payment()) -> ok.
-hold_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_payment_changes(IDs, Route, Invoice, Payment),
+-spec hold_payment_limits([turnover_limit()], route(), invoice(), payment(), clock()) -> [clock()].
+hold_payment_limits(TurnoverLimits, Route, Invoice, Payment, Clock) ->
+    IDGenerator = fun(ID) -> construct_limit_change_id(ID, Route, Invoice, Payment) end,
+    LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_context(Invoice, Payment),
-    hold(LimitChanges, get_latest_clock(), Context).
+    hold(LimitChanges, Clock, Context).
 
--spec hold_refund_limits([turnover_limit()], invoice(), payment(), refund()) -> ok.
-hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_refund_changes(IDs, Invoice, Payment, Refund),
+-spec hold_refund_limits([turnover_limit()], invoice(), payment(), refund(), clock()) -> [clock()].
+hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund, Clock) ->
+    IDGenerator = fun(ID) -> construct_limit_refund_change_id(ID, Invoice, Payment, Refund) end,
+    LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
-    hold(LimitChanges, get_latest_clock(), Context).
+    hold(LimitChanges, Clock, Context).
 
--spec commit_payment_limits([turnover_limit()], route(), invoice(), payment(), cash() | undefined) -> ok.
-commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash) ->
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_payment_changes(IDs, Route, Invoice, Payment),
+-spec commit_payment_limits([turnover_limit()], route(), invoice(), payment(), cash(), clock()) -> [clock()].
+commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash, Clock) ->
+    IDGenerator = fun(ID) -> construct_limit_change_id(ID, Route, Invoice, Payment) end,
+    LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_context(Invoice, Payment, CapturedCash),
-    commit(LimitChanges, get_latest_clock(), Context).
+    commit(LimitChanges, Clock, Context).
 
--spec commit_refund_limits([turnover_limit()], invoice(), payment(), refund()) -> ok.
-commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
-    IDs = [T#domain_TurnoverLimit.id || T <- TurnoverLimits],
-    LimitChanges = gen_limit_refund_changes(IDs, Invoice, Payment, Refund),
+-spec commit_refund_limits([turnover_limit()], invoice(), payment(), refund(), clock()) -> [clock()].
+commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund, Clock) ->
+    IDGenerator = fun(ID) -> construct_limit_refund_change_id(ID, Invoice, Payment, Refund) end,
+    LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
-    commit(LimitChanges, get_latest_clock(), Context).
+    commit(LimitChanges, Clock, Context).
 
--spec rollback_payment_limits([turnover_limit()], route(), invoice(), payment()) -> ok.
-rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
+-spec rollback_payment_limits([turnover_limit()], route(), invoice(), payment(), clock()) -> [clock()].
+rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment, Clock) ->
     #domain_InvoicePayment{cost = Cash} = Payment,
     CapturedCash = Cash#domain_Cash{
         amount = 0
     },
-    commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash).
+    commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash, Clock).
 
--spec rollback_refund_limits([turnover_limit()], invoice(), payment(), refund()) -> ok.
-rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund0) ->
+-spec rollback_refund_limits([turnover_limit()], invoice(), payment(), refund(), clock()) -> [clock()].
+rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund0, Clock) ->
     Refund1 = set_refund_amount(0, Refund0),
-    commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund1).
+    commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund1, Clock).
 
--spec hold([hg_limiter_client:limit_change()], hg_limiter_client:clock(), hg_limiter_client:context()) -> ok.
+-spec hold([hg_limiter_client:limit_change()], clock(), hg_limiter_client:context()) -> [clock()].
 hold(LimitChanges, Clock, Context) ->
-    lists:foreach(
-        fun(LimitChange) ->
-            hg_limiter_client:hold(LimitChange, Clock, Context)
-        end,
-        LimitChanges
-    ).
+    do(fun hg_limiter_client:hold/3, LimitChanges, to_limiter_clock(Clock), Context).
 
--spec commit([hg_limiter_client:limit_change()], hg_limiter_client:clock(), hg_limiter_client:context()) -> ok.
+-spec commit([hg_limiter_client:limit_change()], clock(), hg_limiter_client:context()) -> [clock()].
 commit(LimitChanges, Clock, Context) ->
-    lists:foreach(
-        fun(LimitChange) ->
-            hg_limiter_client:commit(LimitChange, Clock, Context)
-        end,
-        LimitChanges
-    ).
+    do(fun hg_limiter_client:commit/3, LimitChanges, to_limiter_clock(Clock), Context).
+
+do(Func, LimitChanges, Clock, Context) ->
+    [to_payproc_clock(Func(Item, Clock, Context)) || Item <- LimitChanges].
 
 gen_limit_context(Invoice, Payment) ->
     gen_limit_context(Invoice, Payment, undefined).
@@ -156,22 +152,13 @@ gen_limit_refund_context(Invoice, Payment, Refund) ->
         }
     }.
 
-gen_limit_payment_changes(LimitIDs, Route, Invoice, Payment) ->
+gen_limit_changes(TurnoverLimits, ChangeIDGenerator) ->
     [
         #limiter_LimitChange{
             id = ID,
-            change_id = construct_limit_change_id(ID, Route, Invoice, Payment)
+            change_id = ChangeIDGenerator(ID)
         }
-        || ID <- LimitIDs
-    ].
-
-gen_limit_refund_changes(LimitIDs, Invoice, Payment, Refund) ->
-    [
-        #limiter_LimitChange{
-            id = ID,
-            change_id = construct_limit_refund_change_id(ID, Invoice, Payment, Refund)
-        }
-        || ID <- LimitIDs
+        || #domain_TurnoverLimit{id = ID} <- TurnoverLimits
     ].
 
 construct_limit_change_id(LimitID, Route, Invoice, Payment) ->
@@ -209,8 +196,15 @@ get_payment_id(#domain_InvoicePayment{id = ID}) ->
 get_refund_id(#domain_InvoicePaymentRefund{id = ID}) ->
     ID.
 
-get_latest_clock() ->
-    {latest, #limiter_LatestClock{}}.
+to_limiter_clock(undefined) ->
+    {latest, #limiter_LatestClock{}};
+to_limiter_clock(#payproc_VectorClock{state = State}) ->
+    {vector, #limiter_VectorClock{state = State}}.
+
+to_payproc_clock({latest, #limiter_LatestClock{}}) ->
+    undefined;
+to_payproc_clock({vector, #limiter_VectorClock{state = State}}) ->
+    #payproc_VectorClock{state = State}.
 
 set_refund_amount(Amount, Refund) ->
     IFDefined = fun

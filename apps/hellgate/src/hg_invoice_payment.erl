@@ -1970,7 +1970,7 @@ process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Shop = get_shop(Opts),
     RefundSt = try_get_refund_state(ID, St),
-    hold_refund_limits(RefundSt, St),
+    _ = hold_refund_limits(RefundSt, St),
 
     #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
     Clock = prepare_refund_cashflow(RefundSt, St),
@@ -2181,7 +2181,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
     _Clocks =
         case Target of
             ?captured() ->
-                commit_payment_limits(St),
+                _ = commit_payment_limits(St),
                 commit_payment_cashflow(St);
             ?cancelled() ->
                 Route = get_route(St),
@@ -2564,7 +2564,7 @@ get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
-            case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
+            case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment, undefined) of
                 {ok, _} ->
                     {[Route | RoutesNoOverflowIn], RejectedIn};
                 {error, {limit_overflow, IDs}} ->
@@ -2587,7 +2587,7 @@ hold_limit_routes(Routes, VS, St) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
-            ok = hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment)
+            hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment, undefined)
         end,
         Routes
     ).
@@ -2603,16 +2603,14 @@ rollback_payment_limits(Routes, St) ->
         fun(Route) ->
             ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
-            ok = hg_limiter:rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment)
+            hg_limiter:rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment, undefined)
         end,
         Routes
     ).
 
 rollback_unused_payment_limits(St) ->
-    Route = get_route(St),
     Routes = get_candidate_routes(St),
-    UnUsedRoutes = Routes -- [Route],
-    rollback_payment_limits(UnUsedRoutes, St).
+    rollback_payment_limits(lists:delete(get_route(St), Routes), St).
 
 get_turnover_limits(ProviderTerms) ->
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
@@ -2626,7 +2624,7 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
     ProviderTerms = get_provider_terms(St, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash).
+    hg_limiter:commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash, undefined).
 
 hold_refund_limits(RefundSt, St) ->
     Invoice = get_invoice(get_opts(St)),
@@ -2634,7 +2632,7 @@ hold_refund_limits(RefundSt, St) ->
     Refund = get_refund(RefundSt),
     ProviderTerms = get_provider_terms(St, get_refund_revision(RefundSt)),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund).
+    hg_limiter:hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund, undefined).
 
 commit_refund_limits(RefundSt, St) ->
     Revision = get_refund_revision(RefundSt),
@@ -2643,7 +2641,7 @@ commit_refund_limits(RefundSt, St) ->
     Payment = get_payment(St),
     ProviderTerms = get_provider_terms(St, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund).
+    hg_limiter:commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund, undefined).
 
 rollback_refund_limits(RefundSt, St) ->
     Revision = get_refund_revision(RefundSt),
@@ -2652,7 +2650,7 @@ rollback_refund_limits(RefundSt, St) ->
     Payment = get_payment(St),
     ProviderTerms = get_provider_terms(St, Revision),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund).
+    hg_limiter:rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund, undefined).
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
