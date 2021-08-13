@@ -2977,24 +2977,13 @@ merge_change(Change = ?route_changed(Route, Candidates), St, Opts) ->
         activity = {payment, cash_flow_building}
     };
 merge_change(Change = ?payment_capture_started(Params), #st{} = St, Opts) ->
-    _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
+    _ = validate_transition({payment, flow_waiting}, Change, St, Opts),
     St#st{
         capture_params = Params,
         activity = {payment, processing_capture}
     };
 merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = St0, Opts) ->
-    _ = validate_transition(
-        [
-            {payment, S}
-            || S <- [
-                   cash_flow_building,
-                   processing_capture
-               ]
-        ],
-        Change,
-        St0,
-        Opts
-    ),
+    _ = validate_transition([{payment, cash_flow_building}, {payment, processing_capture}], Change, St0, Opts),
     St = St0#st{final_cash_flow = Cashflow},
     case Activity of
         {payment, cash_flow_building} ->
@@ -3141,16 +3130,16 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
                 _ = validate_transition({refund_session, ID}, Change, St, Opts),
                 St#st{activity = {refund_accounter, ID}};
             ?refund_status_changed(?refund_succeeded()) ->
-                _ = validate_transition([{refund_accounter, ID}], Change, St, Opts),
+                _ = validate_transition({refund_accounter, ID}, Change, St, Opts),
                 St;
             ?refund_rollback_started(_) ->
                 _ = validate_transition([{refund_session, ID}, {refund_new, ID}], Change, St, Opts),
                 St#st{activity = {refund_failure, ID}};
             ?refund_status_changed(?refund_failed(_)) ->
-                _ = validate_transition([{refund_failure, ID}], Change, St, Opts),
+                _ = validate_transition({refund_failure, ID}, Change, St, Opts),
                 St;
             _ ->
-                _ = validate_transition([{refund_session, ID}], Change, St, Opts),
+                _ = validate_transition({refund_session, ID}, Change, St, Opts),
                 St
         end,
     RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
