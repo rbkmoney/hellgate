@@ -2547,34 +2547,32 @@ get_provider_terms(St, Revision) ->
 
 filter_limit_overflow_routes(Routes, VS, St) ->
     ok = hold_limit_routes(Routes, VS, St),
-    RejectedContext = #{rejected_routes => []},
-    case get_limit_overflow_routes(Routes, VS, St, RejectedContext) of
-        {[], _RejectedRoutesOut} ->
+    case get_limit_overflow_routes(Routes, VS, St) of
+        {[], _RejectedRoutes} ->
             {error, not_found};
         {RoutesNoOverflow, _} ->
             {ok, RoutesNoOverflow}
     end.
 
-get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
+get_limit_overflow_routes(Routes, VS, St) ->
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
     lists:foldl(
-        fun(Route, {RoutesNoOverflowIn, RejectedIn}) ->
+        fun(Route, {Accepted, Rejected}) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment, undefined) of
                 {ok, _} ->
-                    {[Route | RoutesNoOverflowIn], RejectedIn};
+                    {[Route | Accepted], Rejected};
                 {error, {limit_overflow, IDs}} ->
                     PRef = hg_routing:provider_ref(Route),
                     TRef = hg_routing:terminal_ref(Route),
-                    RejectedOut = [{PRef, TRef, {'LimitOverflow', IDs}} | RejectedIn],
-                    {RoutesNoOverflowIn, RejectedOut}
+                    {Accepted, [{PRef, TRef, {'LimitOverflow', IDs}} | Rejected]}
             end
         end,
-        {[], RejectedRoutes},
+        {[], []},
         Routes
     ).
 
