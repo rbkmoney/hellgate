@@ -2172,8 +2172,7 @@ process_result({payment, routing_failure}, Action, St = #st{failure = Failure}) 
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    Routes = [get_route(St)],
-    _ = rollback_payment_limits(Routes, St),
+    _ = rollback_payment_limits([get_route(St)], St),
     _ = rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
@@ -2184,8 +2183,7 @@ process_result({payment, finalizing_accounter}, Action, St) ->
                 _ = commit_payment_limits(St),
                 commit_payment_cashflow(St);
             ?cancelled() ->
-                Route = get_route(St),
-                _ = rollback_payment_limits([Route], St),
+                _ = rollback_payment_limits([get_route(St)], St),
                 rollback_payment_cashflow(St)
         end,
     check_recurrent_token(St),
@@ -2590,6 +2588,15 @@ hold_limit_routes(Routes, VS, St) ->
         Routes
     ).
 
+commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
+    Invoice = get_invoice(get_opts(St)),
+    Payment = get_payment(St),
+    Route = get_route(St),
+    #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
+    ProviderTerms = get_provider_terms(St, get_payment_revision(St)),
+    TurnoverLimits = get_turnover_limits(ProviderTerms),
+    hg_limiter:commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash, undefined).
+
 rollback_payment_limits(Routes, St) ->
     Revision = get_payment_revision(St),
     Opts = get_opts(St),
@@ -2614,41 +2621,22 @@ get_turnover_limits(ProviderTerms) ->
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
     hg_limiter:get_turnover_limits(TurnoverLimitSelector).
 
-commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
-    Revision = get_payment_revision(St),
-    Invoice = get_invoice(get_opts(St)),
-    Payment = get_payment(St),
-    Route = get_route(St),
-    #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
-    ProviderTerms = get_provider_terms(St, Revision),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash, undefined).
-
 hold_refund_limits(RefundSt, St) ->
-    Invoice = get_invoice(get_opts(St)),
-    Payment = get_payment(St),
-    Refund = get_refund(RefundSt),
-    ProviderTerms = get_provider_terms(St, get_refund_revision(RefundSt)),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund, undefined).
+    do_refund(fun hg_limiter:hold_refund_limits/5, RefundSt, St).
 
 commit_refund_limits(RefundSt, St) ->
-    Revision = get_refund_revision(RefundSt),
-    Invoice = get_invoice(get_opts(St)),
-    Refund = get_refund(RefundSt),
-    Payment = get_payment(St),
-    ProviderTerms = get_provider_terms(St, Revision),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund, undefined).
+    do_refund(fun hg_limiter:commit_refund_limits/5, RefundSt, St).
 
 rollback_refund_limits(RefundSt, St) ->
-    Revision = get_refund_revision(RefundSt),
+    do_refund(fun hg_limiter:rollback_refund_limits/5, RefundSt, St).
+
+do_refund(Func, RefundSt, St) ->
     Invoice = get_invoice(get_opts(St)),
     Refund = get_refund(RefundSt),
     Payment = get_payment(St),
-    ProviderTerms = get_provider_terms(St, Revision),
+    ProviderTerms = get_provider_terms(St, get_refund_revision(RefundSt)),
     TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund, undefined).
+    Func(TurnoverLimits, Invoice, Payment, Refund, undefined).
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
