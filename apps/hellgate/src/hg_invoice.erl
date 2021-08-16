@@ -1027,25 +1027,24 @@ get_chargeback_state(ID, PaymentState) ->
 %%
 
 create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
-    FeeTarget = hg_allocations:construct_target(#{
-        owner_id => V#payproc_InvoiceParams.party_id,
-        shop_id => V#payproc_InvoiceParams.shop_id
-    }),
+    OwnerID = V#payproc_InvoiceParams.party_id,
+    ShopID = V#payproc_InvoiceParams.shop_id,
+    Cost = V#payproc_InvoiceParams.cost,
     #domain_Invoice{
         id = ID,
-        shop_id = V#payproc_InvoiceParams.shop_id,
-        owner_id = V#payproc_InvoiceParams.party_id,
+        shop_id = ShopID,
+        owner_id = OwnerID,
         party_revision = PartyRevision,
         created_at = hg_datetime:format_now(),
         status = ?invoice_unpaid(),
-        cost = V#payproc_InvoiceParams.cost,
+        cost = Cost,
         due = V#payproc_InvoiceParams.due,
         details = V#payproc_InvoiceParams.details,
         context = V#payproc_InvoiceParams.context,
         template_id = InvoiceTplID,
         external_id = V#payproc_InvoiceParams.external_id,
         client_info = V#payproc_InvoiceParams.client_info,
-        allocation = hg_allocations:calculate_allocation(V#payproc_InvoiceParams.allocation, FeeTarget)
+        allocation = hg_allocations:calculate_allocation(V#payproc_InvoiceParams.allocation, OwnerID, ShopID, Cost)
     }.
 
 create_payment_id(#st{payments = Payments}) ->

@@ -1027,7 +1027,8 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Allocation = hg_allocations:calculate_allocation(
         AllocationPrototype,
         Payment#domain_InvoicePayment.owner_id,
-        Payment#domain_InvoicePayment.shop_id
+        Payment#domain_InvoicePayment.shop_id,
+        Cost
     ),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
@@ -1230,10 +1231,16 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
-    Allocation = hg_allocations:calculate_allocation(
+    #domain_Invoice{
+        owner_id = OwnerID,
+        shop_id = ShopID
+    } = get_invoice(Opts),
+    Allocation = hg_allocations:calculate_refund_allocation(
+        get_allocation(St),
         Params#payproc_InvoicePaymentRefundParams.allocation,
-        Payment#domain_InvoicePayment.owner_id,
-        Payment#domain_InvoicePayment.shop_id
+        OwnerID,
+        ShopID,
+        get_remaining_payment_amount(Cash, St)
     ),
     #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
