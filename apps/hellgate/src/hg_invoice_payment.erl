@@ -3059,7 +3059,7 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
                     #st{activity = {chargeback, ID, holding_updated_cash_flow}} ->
                         St#st{activity = {chargeback, ID, finalising_accounter}};
                     #st{activity = {chargeback, ID, finalising_accounter}} ->
-                        St#st{activity = {chargeback, ID, finalising_accounter}}
+                        St
                 end;
             ?chargeback_target_status_changed(?chargeback_status_accepted()) ->
                 _ = validate_transition([idle, {chargeback, ID, updating_chargeback}], Change, St, Opts),

@@ -54,7 +54,6 @@
 
 -record(chargeback_st, {
     chargeback :: undefined | chargeback(),
-    clock :: undefined | clock(),
     target_status :: undefined | status(),
     cash_flow = [] :: cash_flow(),
     cash_flow_plans = #{
