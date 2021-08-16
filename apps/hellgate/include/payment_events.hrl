@@ -68,6 +68,13 @@
     }}
 ).
 
+-define(limits_clock_update(Clocks, Status),
+    {invoice_payment_limit_checked, #payproc_InvoicePaymentLimitChecked{
+        results = Clocks,
+        action = Status
+    }}
+).
+
 -define(pending(),
     {pending, #domain_InvoicePaymentPending{}}
 ).

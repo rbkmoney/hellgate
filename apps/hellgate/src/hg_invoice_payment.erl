@@ -150,7 +150,8 @@
     capture_params :: undefined | capture_params(),
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
-    latest_change_at :: undefined | hg_datetime:timestamp()
+    latest_change_at :: undefined | hg_datetime:timestamp(),
+    limits_clock = #{} :: limits_clock()
 }).
 
 -record(refund_st, {
@@ -160,6 +161,8 @@
     transaction_info :: undefined | trx_info(),
     failure :: undefined | failure()
 }).
+
+-type limits_clock() :: #{limit_id() => limit_clock()}.
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
 
@@ -208,6 +211,8 @@
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_tool() :: dmsl_domain_thrift:'PaymentTool'().
 -type recurrent_paytool_service_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
+-type limit_id() :: dmsl_domain_thrift:'TurnoverLimitID'().
+-type limit_clock() :: hg_limiter:clock().
 
 -type session_status() :: active | suspended | finished.
 
@@ -1888,11 +1893,12 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, [], St, Action)
     end.
 
-handle_gathered_route_result({ok, RoutesNoOverflow}, Routes, Revision) ->
+handle_gathered_route_result({ok, RoutesNoOverflow, _Clocks}, Routes, Revision) ->
     {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
     _ = log_route_choice_meta(ChoiceMeta, Revision),
+    %% add extra event ?limits_clock_update(Clocks, update)
     [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
-handle_gathered_route_result({error, not_found}, Routes, _) ->
+handle_gathered_route_result({error, not_found, _Clocks}, Routes, _) ->
     Failure =
         {failure,
             payproc_errors:construct(
@@ -1903,6 +1909,7 @@ handle_gathered_route_result({error, not_found}, Routes, _) ->
     %% For protocol compatability we set choosen route in route_changed event.
     %% It doesn't influence cash_flow building because this step will be skipped. And all limit's 'hold' operations
     %% will be rolled back.
+    %% add extra event ?limits_clock_update(Clocks, clear)
     [?route_changed(Route, Routes), ?payment_rollback_started(Failure)].
 
 handle_choose_route_error(Reason, Events, St, Action) ->
@@ -1927,7 +1934,7 @@ process_cash_flow_building(Action, St) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
     ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
-    _ = rollback_unused_payment_limits(St),
+    ok = rollback_unused_payment_limits(St),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
@@ -2168,11 +2175,11 @@ process_result({payment, processing_accounter}, Action, St) ->
 process_result({payment, routing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
     Routes = get_candidate_routes(St),
-    _ = rollback_payment_limits(Routes, St),
+    ok = rollback_payment_limits(Routes, St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    _ = rollback_payment_limits([get_route(St)], St),
+    ok = rollback_payment_limits([get_route(St)], St),
     _ = rollback_payment_cashflow(St),
     {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
@@ -2180,10 +2187,10 @@ process_result({payment, finalizing_accounter}, Action, St) ->
     _Clocks =
         case Target of
             ?captured() ->
-                _ = commit_payment_limits(St),
+                _LimitClocks = commit_payment_limits(St),
                 commit_payment_cashflow(St);
             ?cancelled() ->
-                _ = rollback_payment_limits([get_route(St)], St),
+                ok = rollback_payment_limits([get_route(St)], St),
                 rollback_payment_cashflow(St)
         end,
     check_recurrent_token(St),
@@ -2544,12 +2551,12 @@ get_provider_terms(St, Revision) ->
     get_provider_terminal_terms(Route, VS1, Revision).
 
 filter_limit_overflow_routes(Routes, VS, St) ->
-    ok = hold_limit_routes(Routes, VS, St),
+    Clocks = hold_limit_routes(Routes, VS, St),
     case get_limit_overflow_routes(Routes, VS, St) of
         {[], _RejectedRoutes} ->
-            {error, not_found};
+            {error, not_found, Clocks};
         {RoutesNoOverflow, _} ->
-            {ok, RoutesNoOverflow}
+            {ok, RoutesNoOverflow, Clocks}
     end.
 
 get_limit_overflow_routes(Routes, VS, St) ->
@@ -2560,8 +2567,8 @@ get_limit_overflow_routes(Routes, VS, St) ->
         fun(Route, {Accepted, Rejected}) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
-            TurnoverLimits = get_turnover_limits(ProviderTerms),
-            case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment, undefined) of
+            Limits = get_turnover_limits(ProviderTerms),
+            case hg_limiter:check_limits(bind_up(Limits, St), Invoice, Payment) of
                 {ok, _} ->
                     {[Route | Accepted], Rejected};
                 {error, {limit_overflow, IDs}} ->
@@ -2578,15 +2585,13 @@ hold_limit_routes(Routes, VS, St) ->
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
     Invoice = get_invoice(get_opts(St)),
-    lists:foreach(
-        fun(Route) ->
-            PaymentRoute = hg_routing:to_payment_route(Route),
-            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
-            TurnoverLimits = get_turnover_limits(ProviderTerms),
-            hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment, undefined)
-        end,
-        Routes
-    ).
+    HoldLimitsFun = fun(Route) ->
+        PaymentRoute = hg_routing:to_payment_route(Route),
+        ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
+        Limits = get_turnover_limits(ProviderTerms),
+        hg_limiter:hold_payment_limits(bind_up(Limits, St), PaymentRoute, Invoice, Payment)
+    end,
+    lists:flatten([HoldLimitsFun(R) || R <- Routes]).
 
 commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     Invoice = get_invoice(get_opts(St)),
@@ -2594,8 +2599,8 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     Route = get_route(St),
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
     ProviderTerms = get_provider_terms(St, get_payment_revision(St)),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash, undefined).
+    Limits = get_turnover_limits(ProviderTerms),
+    hg_limiter:commit_payment_limits(bind_up(Limits, St), Route, Invoice, Payment, CapturedCash).
 
 rollback_payment_limits(Routes, St) ->
     Revision = get_payment_revision(St),
@@ -2607,8 +2612,8 @@ rollback_payment_limits(Routes, St) ->
     lists:foreach(
         fun(Route) ->
             ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
-            TurnoverLimits = get_turnover_limits(ProviderTerms),
-            hg_limiter:rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment, undefined)
+            Limits = get_turnover_limits(ProviderTerms),
+            hg_limiter:rollback_payment_limits(bind_up(Limits, St), Route, Invoice, Payment)
         end,
         Routes
     ).
@@ -2621,22 +2626,25 @@ get_turnover_limits(ProviderTerms) ->
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
     hg_limiter:get_turnover_limits(TurnoverLimitSelector).
 
+bind_up(Limits, #st{limits_clock = Clocks}) ->
+    [{Item, maps:get(ID, Clocks, undefined)} || #domain_TurnoverLimit{id = ID} = Item <- Limits].
+
 hold_refund_limits(RefundSt, St) ->
-    do_refund(fun hg_limiter:hold_refund_limits/5, RefundSt, St).
+    do_refund(fun hg_limiter:hold_refund_limits/4, RefundSt, St).
 
 commit_refund_limits(RefundSt, St) ->
-    do_refund(fun hg_limiter:commit_refund_limits/5, RefundSt, St).
+    do_refund(fun hg_limiter:commit_refund_limits/4, RefundSt, St).
 
 rollback_refund_limits(RefundSt, St) ->
-    do_refund(fun hg_limiter:rollback_refund_limits/5, RefundSt, St).
+    do_refund(fun hg_limiter:rollback_refund_limits/4, RefundSt, St).
 
 do_refund(Func, RefundSt, St) ->
     Invoice = get_invoice(get_opts(St)),
     Refund = get_refund(RefundSt),
     Payment = get_payment(St),
     ProviderTerms = get_provider_terms(St, get_refund_revision(RefundSt)),
-    TurnoverLimits = get_turnover_limits(ProviderTerms),
-    Func(TurnoverLimits, Invoice, Payment, Refund, undefined).
+    Limits = get_turnover_limits(ProviderTerms),
+    Func(bind_up(Limits, St), Invoice, Payment, Refund).
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
