@@ -3778,18 +3778,9 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth_mc),
     PaymentParams = make_payment_params(PaymentTool, Session, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
-    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Cash, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
-        ?payment_ev(PaymentID, ?cash_flow_changed(_))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_clock_update(_)),
-        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cash), ?session_started()))
-    ] = next_event(InvoiceID, Client),
-    PaymentID = await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, 0, Cash),
-    % Settlement1  = hg_ct_helper:get_balance(SettlementID),
-    % ?assertEqual(Partial - Fee, maps:get(min_available_amount, Settlement1)),
+    Reason = <<"ok">>,
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
+    PaymentID = await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client),
     Chargeback = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
     {InvoiceID, PaymentID, SettlementID, Chargeback}.
 
