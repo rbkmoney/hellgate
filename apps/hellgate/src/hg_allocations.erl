@@ -63,44 +63,44 @@ calculate_refund_allocation(Allocation, AllocationPrototype, OwnerID, ShopID, Co
 calculate_refund_transactions(Transactions, TransactionPrototypes, FeeTarget, Cost) ->
     calculate_refund_transactions(Transactions, TransactionPrototypes, FeeTarget, Cost, []).
 
-calculate_refund_transactions(Transactions, [], FeeTarget, Cost, Acc) ->
-    Transactions0 = lists:dropwhile(
-        fun
-            (#domain_AllocationTransaction{target = FeeTarget}) -> true;
-            (_) -> false
+calculate_refund_transactions(Transactions0, [], FeeTarget, Cost, Acc0) ->
+    Transactions1 = lists:dropwhile(
+        fun (T) ->
+            case T of
+                #domain_AllocationTransaction{target = FeeTarget} ->
+                    true;
+                _ ->
+                    false
+            end
         end,
-        Transactions
+        Transactions0
     ),
-    Acc0 = [
-        #domain_AllocationTransaction{
-            %% TODO Get some ID
-            id = <<"">>,
-            target = FeeTarget,
-            amount = Cost
-        }
-        | Acc
-    ],
-    Transactions0 ++ genlib_list:compact(Acc0);
-calculate_refund_transactions(Transactions, [TP | TransactionPrototypes], FeeTarget, ?cash(Cost, SymCode), Acc) ->
+    Acc1 = [construct_aggregator_transaction(FeeTarget, Cost) | Acc0],
+    Transactions1 ++ genlib_list:compact(Acc1);
+calculate_refund_transactions(Transactions, [TP | TransactionPrototypes], FeeTarget, ?cash(Cost, SymCode), Acc0) ->
     #domain_AllocationTransactionPrototype{
         target = Target
     } = TP,
     {[RefundTargetTransaction], RemainingTransactions} =
         lists:partition(
-            fun
-                (#domain_AllocationTransaction{target = Target}) -> true;
-                (_) -> false
+            fun (T) ->
+                case T of
+                    #domain_AllocationTransaction{target = Target} ->
+                        true;
+                    _ ->
+                        false
+                end
             end,
             Transactions
         ),
     {?cash(Amount, SymCode), RefundedTransaction} = calculate_refunded_transaction(RefundTargetTransaction, TP),
-    Acc0 = [RefundedTransaction | Acc],
+    Acc1 = [RefundedTransaction | Acc0],
     calculate_refund_transactions(
         RemainingTransactions,
         TransactionPrototypes,
         FeeTarget,
         ?cash(Cost - Amount, SymCode),
-        Acc0
+        Acc1
     ).
 
 calculate_refunded_transaction(Transaction, TransactionPrototype) ->
@@ -238,16 +238,8 @@ calculate_allocation_transactions(Transactions, FeeTarget, Cost) ->
     calculate_allocation_transactions(Transactions, FeeTarget, Cost, []).
 
 calculate_allocation_transactions([], FeeTarget, Cost, Acc) ->
-    [
-        #domain_AllocationTransaction{
-            %% TODO Get some ID
-            id = <<"">>,
-            target = FeeTarget,
-            amount = Cost
-        }
-        | Acc
-    ];
-calculate_allocation_transactions([Head | Transactions], FeeTarget, Cost, Acc) ->
+    genlib_list:compact([construct_aggregator_transaction(FeeTarget, Cost) | Acc]);
+calculate_allocation_transactions([Head | Transactions], FeeTarget, Cost, Acc0) ->
     #domain_AllocationTransactionPrototype{
         id = ID,
         target = Target,
@@ -255,7 +247,7 @@ calculate_allocation_transactions([Head | Transactions], FeeTarget, Cost, Acc) -
         details = Details
     } = Head,
     {TransformedBody, TransactionCash} = calculate_allocation_transactions_body(Body, FeeTarget),
-    Acc0 = [
+    Acc1 = [
         #domain_AllocationTransaction{
             id = ID,
             target = Target,
@@ -263,9 +255,9 @@ calculate_allocation_transactions([Head | Transactions], FeeTarget, Cost, Acc) -
             body = TransformedBody,
             details = Details
         }
-        | Acc
+        | Acc0
     ],
-    calculate_allocation_transactions(Transactions, FeeTarget, Cost - TransactionCash, Acc0).
+    calculate_allocation_transactions(Transactions, FeeTarget, Cost - TransactionCash, Acc1).
 
 calculate_allocation_transactions_body({amount, Body}, _FeeTarget) ->
     #domain_AllocationTransactionPrototypeBodyAmount{
@@ -308,3 +300,20 @@ calculate_allocation_transactions_fee({share, Fee}, ?cash(Total, SymCode)) ->
         parts = FinalParts,
         rounding_method = RoundingMethod
     }}.
+
+construct_transaction_id({#domain_AllocationTransactionTargetShop{
+    owner_id = OwnerID,
+    shop_id = ShopID
+}}) ->
+    <<OwnerID, "_", ShopID>>.
+
+construct_aggregator_transaction(_FeeTarget, Cost) when Cost == 0 ->
+    undefined;
+construct_aggregator_transaction(_FeeTarget, Cost) when Cost < 0 ->
+    throw(allocations_and_cost_do_not_match); %% TODO Real exception
+construct_aggregator_transaction(FeeTarget, Cost) ->
+    #domain_AllocationTransaction{
+        id = construct_transaction_id(FeeTarget),
+        target = FeeTarget,
+        amount = Cost
+    }.

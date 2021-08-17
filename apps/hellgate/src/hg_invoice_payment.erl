@@ -159,7 +159,8 @@
     cash_flow :: undefined | final_cash_flow(),
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
-    failure :: undefined | failure()
+    failure :: undefined | failure(),
+    allocation :: undefined | hg_allocations:allocation()
 }).
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
@@ -3214,7 +3215,8 @@ merge_chargeback_change(Change, ChargebackState) ->
     hg_invoice_payment_chargeback:merge_change(Change, ChargebackState).
 
 merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
-    #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo};
+    #domain_InvoicePaymentRefund{allocation = Allocation} = Refund,
+    #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo, allocation = Allocation};
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?refund_rollback_started(Failure), RefundSt) ->
@@ -3327,8 +3329,8 @@ try_get_chargeback_state(ID, #st{chargebacks = CBs}) ->
             undefined
     end.
 
-set_refund_state(ID, RefundSt, St = #st{refunds = Rs}) ->
-    St#st{refunds = Rs#{ID => RefundSt}}.
+set_refund_state(ID, RefundSt = #refund_st{allocation = Allocation}, St = #st{refunds = Rs}) ->
+    St#st{refunds = Rs#{ID => RefundSt}, allocation = Allocation}.
 
 get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when Cost /= undefined ->
     Cost;
