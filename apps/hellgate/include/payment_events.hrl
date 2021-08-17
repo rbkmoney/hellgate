@@ -49,9 +49,9 @@
     {invoice_payment_rec_token_acquired, #payproc_InvoicePaymentRecTokenAcquired{token = Token}}
 ).
 
--define(payment_capture_started(Params),
+-define(payment_capture_started(Data),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        data = Params
+        data = Data
     }}
 ).
 
