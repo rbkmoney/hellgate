@@ -175,7 +175,7 @@ calculate_refund_body(_Cash, Body, {total, Amount}) ->
         #domain_AllocationTransactionBodyTotal{
             fee_target = FeeTarget,
             total = ?cash(Total - RefundAmount, SymCode),
-            fee_amount = ?cash(FeeAmount, RefundFee, SymCode),
+            fee_amount = ?cash(FeeAmount - RefundFee, SymCode),
             fee = FeeShare
         }
     }.
