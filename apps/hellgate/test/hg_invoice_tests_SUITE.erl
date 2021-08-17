@@ -1419,7 +1419,7 @@ payment_capture_retries_exceeded(C) ->
     Reason = ?timeout_reason(),
     Target = ?captured(Reason, Cost),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _, _Allocation)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, 3),
@@ -1506,7 +1506,7 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_accounting:get_balance(SettlementID)),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _, _Allocation)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, Client),
@@ -3699,7 +3699,7 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Cash, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _, _Allocation)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
@@ -4405,7 +4405,7 @@ payment_hold_partial_capturing(C) ->
     Reason = <<"ok">>,
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _, _Allocation)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
@@ -4424,7 +4424,7 @@ payment_hold_partial_capturing_with_cart(C) ->
     Reason = <<"ok">>,
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _, _Allocation)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
@@ -4443,7 +4443,7 @@ payment_hold_partial_capturing_with_cart_missing_cash(C) ->
     Reason = <<"ok">>,
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, Reason, undefined, Cart, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _, _Allocation)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [
@@ -5450,7 +5450,7 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _, _Allocation)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
@@ -5460,7 +5460,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _, _Allocation)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [

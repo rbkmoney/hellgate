@@ -119,15 +119,15 @@ calculate_refunded_transaction(Transaction, TransactionPrototype) ->
         details = RefundDetails
     } = TransactionPrototype,
     _ = validate_prototype_body_currency(Amount, RefundBody),
-    {RefundedAmount, RefundedBody} = calculate_refund_body(Amount, Body, RefundBody),
+    {?cash(RefundedAmount, SymCode), RefundedBody} = calculate_refund_body(Amount, Body, RefundBody),
     case RefundedAmount of
         _ when RefundedAmount == 0 ->
-            {0, undefined};
+            {?cash(RefundedAmount, SymCode), undefined};
         _ when RefundedAmount < 0 ->
             %% TODO make real exception
             throw(allocation_refund_too_much);
         _ ->
-            {RefundedAmount, #domain_AllocationTransaction{
+            {?cash(RefundedAmount, SymCode), #domain_AllocationTransaction{
                 id = ID,
                 target = Target,
                 amount = RefundedAmount,
@@ -169,7 +169,7 @@ calculate_refund_body(_Cash, Body, {total, Amount}) ->
         fee = FeeShare
     } = Body,
     _ = validate_same_fee_type(Fee, FeeShare),
-    RefundFee = calculate_allocation_transactions_fee(Fee, Total),
+    {RefundFee, _} = calculate_allocation_transactions_fee(Fee, Total),
     {
         ?cash(Total - RefundAmount, SymCode),
         #domain_AllocationTransactionBodyTotal{
@@ -239,25 +239,25 @@ calculate_allocation_transactions(Transactions, FeeTarget, Cost) ->
 
 calculate_allocation_transactions([], FeeTarget, Cost, Acc) ->
     genlib_list:compact([construct_aggregator_transaction(FeeTarget, Cost) | Acc]);
-calculate_allocation_transactions([Head | Transactions], FeeTarget, Cost, Acc0) ->
+calculate_allocation_transactions([Head | Transactions], FeeTarget, ?cash(Cost, SymCode), Acc0) ->
     #domain_AllocationTransactionPrototype{
         id = ID,
         target = Target,
         body = Body,
         details = Details
     } = Head,
-    {TransformedBody, TransactionCash} = calculate_allocation_transactions_body(Body, FeeTarget),
+    {TransformedBody, ?cash(TransactionCash, SymCode)} = calculate_allocation_transactions_body(Body, FeeTarget),
     Acc1 = [
         #domain_AllocationTransaction{
             id = ID,
             target = Target,
-            amount = TransactionCash,
+            amount = ?cash(TransactionCash, SymCode),
             body = TransformedBody,
             details = Details
         }
         | Acc0
     ],
-    calculate_allocation_transactions(Transactions, FeeTarget, Cost - TransactionCash, Acc1).
+    calculate_allocation_transactions(Transactions, FeeTarget, ?cash(Cost - TransactionCash, SymCode), Acc1).
 
 calculate_allocation_transactions_body({amount, Body}, _FeeTarget) ->
     #domain_AllocationTransactionPrototypeBodyAmount{
@@ -269,14 +269,15 @@ calculate_allocation_transactions_body({total, Body}, FeeTarget) ->
         total = Total,
         fee = Fee
     } = Body,
-    {CalculatedFee, Fee} = calculate_allocation_transactions_fee(Fee, Total),
+    {?cash(CalculatedFee, SymCode), FeeShare} = calculate_allocation_transactions_fee(Fee, Total),
     TransformedBody = #domain_AllocationTransactionBodyTotal{
         fee_target = FeeTarget,
         total = Total,
-        fee_amount = CalculatedFee,
-        fee = Fee
+        fee_amount = ?cash(CalculatedFee, SymCode),
+        fee = FeeShare
     },
-    {TransformedBody, Total - CalculatedFee}.
+    ?cash(TotalAmount, SymCode) = Total,
+    {TransformedBody, ?cash(TotalAmount - CalculatedFee, SymCode)}.
 
 calculate_allocation_transactions_fee({fixed, Fee}, _Total) ->
     #domain_AllocationTransactionPrototypeFeeFixed{
@@ -301,15 +302,15 @@ calculate_allocation_transactions_fee({share, Fee}, ?cash(Total, SymCode)) ->
         rounding_method = RoundingMethod
     }}.
 
-construct_transaction_id({#domain_AllocationTransactionTargetShop{
+construct_transaction_id({shop, #domain_AllocationTransactionTargetShop{
     owner_id = OwnerID,
     shop_id = ShopID
 }}) ->
     <<OwnerID, "_", ShopID>>.
 
-construct_aggregator_transaction(_FeeTarget, Cost) when Cost == 0 ->
+construct_aggregator_transaction(_FeeTarget, ?cash(Cost, _SymCode)) when Cost == 0 ->
     undefined;
-construct_aggregator_transaction(_FeeTarget, Cost) when Cost < 0 ->
+construct_aggregator_transaction(_FeeTarget, ?cash(Cost, _SymCode)) when Cost < 0 ->
     throw(allocations_and_cost_do_not_match); %% TODO Real exception
 construct_aggregator_transaction(FeeTarget, Cost) ->
     #domain_AllocationTransaction{
@@ -317,3 +318,136 @@ construct_aggregator_transaction(FeeTarget, Cost) ->
         target = FeeTarget,
         amount = Cost
     }.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+-spec test() -> _.
+
+-spec allocation_1_test() -> _.
+allocation_1_test() ->
+     Cart = #domain_InvoiceCart{
+        lines = [
+            #domain_InvoiceLine{
+                product = <<"STRING">>,
+                quantity = 1,
+                price = ?cash(30, <<"RUB">>),
+                metadata = #{}
+            }
+        ]
+    },
+    AllocationPrototype = #domain_AllocationPrototype{
+        transactions = [
+            #domain_AllocationTransactionPrototype{
+                id = <<"1">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY1">>,
+                    shop_id = <<"SHOP1">>
+                }},
+                body = {amount, #domain_AllocationTransactionPrototypeBodyAmount{
+                    amount = ?cash(30, <<"RUB">>)
+                }},
+                details = #domain_AllocationTransactionDetails{
+                    cart = Cart
+                }
+            },
+            #domain_AllocationTransactionPrototype{
+                id = <<"2">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY2">>,
+                    shop_id = <<"SHOP2">>
+                }},
+                body = {total, #domain_AllocationTransactionPrototypeBodyTotal{
+                    total = ?cash(30, <<"RUB">>),
+                    fee = {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
+                        amount = ?cash(10, <<"RUB">>)
+                    }}
+                }},
+                details = #domain_AllocationTransactionDetails{
+                    cart = Cart
+                }
+            },
+            #domain_AllocationTransactionPrototype{
+                id = <<"3">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY3">>,
+                    shop_id = <<"SHOP3">>
+                }},
+                body = {total, #domain_AllocationTransactionPrototypeBodyTotal{
+                    total = ?cash(30, <<"RUB">>),
+                    fee = {share, #domain_AllocationTransactionPrototypeFeeShare{
+                        parts = #'Rational'{
+                            p = 15,
+                            q = 100
+                        }
+                    }}
+                }},
+                details = #domain_AllocationTransactionDetails{
+                    cart = Cart
+                }
+            }
+        ]
+    },
+    #domain_Allocation{
+        transactions = [
+            #domain_AllocationTransaction{
+                id = <<"PARTY0_SHOP0">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY0">>,
+                    shop_id = <<"SHOP0">>
+                }},
+                amount = ?cash(25, <<"RUB">>)
+            },
+            #domain_AllocationTransaction{
+                id = <<"1">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY1">>,
+                    shop_id = <<"SHOP1">>
+                }},
+                amount = ?cash(30, <<"RUB">>),
+                details = #domain_AllocationTransactionDetails{
+                    cart = Cart
+                }
+            },
+            #domain_AllocationTransaction{
+                id = <<"2">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY2">>,
+                    shop_id = <<"SHOP2">>
+                }},
+                amount = ?cash(20, <<"RUB">>),
+                details = #domain_AllocationTransactionDetails{
+                    cart = Cart
+                },
+                body = #domain_AllocationTransactionBodyTotal{
+                    fee_target = {shop, #domain_AllocationTransactionTargetShop{
+                        owner_id = <<"PARTY0">>,
+                        shop_id = <<"SHOP0">>
+                    }},
+                    total = ?cash(30, <<"RUB">>),
+                    fee_amount = ?cash(10, <<"RUB">>)
+                }
+            },
+            #domain_AllocationTransaction{
+                id = <<"3">>,
+                target = {shop, #domain_AllocationTransactionTargetShop{
+                    owner_id = <<"PARTY3">>,
+                    shop_id = <<"SHOP3">>
+                }},
+                amount = ?cash(25, <<"RUB">>),
+                details = #domain_AllocationTransactionDetails{
+                    cart = Cart
+                },
+                body = #domain_AllocationTransactionBodyTotal{
+                    fee_target = {shop, #domain_AllocationTransactionTargetShop{
+                        owner_id = <<"PARTY0">>,
+                        shop_id = <<"SHOP0">>
+                    }},
+                    total = ?cash(30, <<"RUB">>),
+                    fee_amount = ?cash(5, <<"RUB">>)
+                }
+            }
+        ]
+    } = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
+
+-endif.
