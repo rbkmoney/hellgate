@@ -80,7 +80,7 @@ calculate_refund_transactions(Transactions, [], FeeTarget, Cost, Acc) ->
         }
         | Acc
     ],
-    Transactions0 ++ Acc0;
+    Transactions0 ++ genlib_list:compact(Acc0);
 calculate_refund_transactions(Transactions, [TP | TransactionPrototypes], FeeTarget, ?cash(Cost, SymCode), Acc) ->
     #domain_AllocationTransactionPrototype{
         target = Target
