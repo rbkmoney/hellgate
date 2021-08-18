@@ -290,23 +290,29 @@ calculate_allocation_transactions_fee({share, Fee}, ?cash(Total, SymCode)) ->
             p = P,
             q = Q
         },
-        rounding_method = RoundingMethod
+        rounding_method = RoundingMethod0
     } = Fee,
-    Amount = ?cash(genlib_rational:round({P * Total, Q}, RoundingMethod), SymCode),
+    RoundingMethod1 = get_rounding_method(RoundingMethod0),
+    Amount = ?cash(genlib_rational:round({P * Total, Q}, RoundingMethod1), SymCode),
     FinalParts = #'Rational'{
         p = P * Total,
         q = Q
     },
     {Amount, #domain_AllocationTransactionFeeShare{
         parts = FinalParts,
-        rounding_method = RoundingMethod
+        rounding_method = RoundingMethod1
     }}.
+
+get_rounding_method(undefined) ->
+    round_half_away_from_zero;
+get_rounding_method(RoundingMethod) ->
+    RoundingMethod.
 
 construct_transaction_id({shop, #domain_AllocationTransactionTargetShop{
     owner_id = OwnerID,
     shop_id = ShopID
 }}) ->
-    <<OwnerID, "_", ShopID>>.
+    unicode:characters_to_binary([OwnerID, <<"_">>, ShopID]).
 
 construct_aggregator_transaction(_FeeTarget, ?cash(Cost, _SymCode)) when Cost == 0 ->
     undefined;
@@ -399,14 +405,22 @@ allocation_1_test() ->
                 amount = ?cash(25, <<"RUB">>)
             },
             #domain_AllocationTransaction{
-                id = <<"1">>,
+                id = <<"3">>,
                 target = {shop, #domain_AllocationTransactionTargetShop{
-                    owner_id = <<"PARTY1">>,
-                    shop_id = <<"SHOP1">>
+                    owner_id = <<"PARTY3">>,
+                    shop_id = <<"SHOP3">>
                 }},
-                amount = ?cash(30, <<"RUB">>),
+                amount = ?cash(25, <<"RUB">>),
                 details = #domain_AllocationTransactionDetails{
                     cart = Cart
+                },
+                body = #domain_AllocationTransactionBodyTotal{
+                    fee_target = {shop, #domain_AllocationTransactionTargetShop{
+                        owner_id = <<"PARTY0">>,
+                        shop_id = <<"SHOP0">>
+                    }},
+                    total = ?cash(30, <<"RUB">>),
+                    fee_amount = ?cash(5, <<"RUB">>)
                 }
             },
             #domain_AllocationTransaction{
@@ -429,22 +443,14 @@ allocation_1_test() ->
                 }
             },
             #domain_AllocationTransaction{
-                id = <<"3">>,
+                id = <<"1">>,
                 target = {shop, #domain_AllocationTransactionTargetShop{
-                    owner_id = <<"PARTY3">>,
-                    shop_id = <<"SHOP3">>
+                    owner_id = <<"PARTY1">>,
+                    shop_id = <<"SHOP1">>
                 }},
-                amount = ?cash(25, <<"RUB">>),
+                amount = ?cash(30, <<"RUB">>),
                 details = #domain_AllocationTransactionDetails{
                     cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target = {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(5, <<"RUB">>)
                 }
             }
         ]
