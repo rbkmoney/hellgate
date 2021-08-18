@@ -241,6 +241,8 @@
 -type change() ::
     dmsl_payment_processing_thrift:'InvoicePaymentChangePayload'().
 
+-define(LIMIT_RESULT(ID, Clock), #payproc_LimitResult{limit_id = ID, clock = Clock}).
+
 %%
 
 -spec get_party_revision(st()) -> {hg_party:party_revision(), hg_datetime:timestamp()}.
@@ -1893,12 +1895,11 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, [], St, Action)
     end.
 
-handle_gathered_route_result({ok, RoutesNoOverflow, _Clocks}, Routes, Revision) ->
+handle_gathered_route_result({ok, RoutesNoOverflow, Clocks}, Routes, Revision) ->
     {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
     _ = log_route_choice_meta(ChoiceMeta, Revision),
-    %% add extra event ?limits_clock_update(Clocks, update)
-    [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
-handle_gathered_route_result({error, not_found, _Clocks}, Routes, _) ->
+    [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes), ?limits_clock_update(Clocks, update)];
+handle_gathered_route_result({error, not_found, Clocks}, Routes, _) ->
     Failure =
         {failure,
             payproc_errors:construct(
@@ -1909,8 +1910,7 @@ handle_gathered_route_result({error, not_found, _Clocks}, Routes, _) ->
     %% For protocol compatability we set choosen route in route_changed event.
     %% It doesn't influence cash_flow building because this step will be skipped. And all limit's 'hold' operations
     %% will be rolled back.
-    %% add extra event ?limits_clock_update(Clocks, clear)
-    [?route_changed(Route, Routes), ?payment_rollback_started(Failure)].
+    [?route_changed(Route, Routes), ?payment_rollback_started(Failure), ?limits_clock_update(Clocks, clear)].
 
 handle_choose_route_error(Reason, Events, St, Action) ->
     Failure =
@@ -3229,7 +3229,18 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
             St2#st{activity = NextActivity};
         _ ->
             St2
-    end.
+    end;
+merge_change(_Change = ?limits_clock_update(Result, Action), #st{limits_clock = StateClocks} = St, _Opts) ->
+    %_ = validate_transition({payment, routing}, Change, St, Opts),
+    UpdatedClocks =
+        case Action of
+            update ->
+                LocClocks = maps:from_list([{ID, Clock} || ?LIMIT_RESULT(ID, Clock) <- Result]),
+                maps:merge(StateClocks, LocClocks);
+            clear ->
+                maps:without([ID || ?LIMIT_RESULT(ID, _) <- Result], StateClocks)
+        end,
+    St#st{limits_clock = UpdatedClocks}.
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(get_target_type(Target), fun(N) -> N + 1 end, 0, Attempts)}.
