@@ -294,7 +294,8 @@ calculate_allocation_transactions_fee({share, Fee}, ?cash(Total, SymCode)) ->
         rounding_method = RoundingMethod0
     } = Fee,
     RoundingMethod1 = get_rounding_method(RoundingMethod0),
-    Amount = ?cash(genlib_rational:round({P * Total, Q}, RoundingMethod1), SymCode),
+    R = genlib_rational:new(P * Total, Q),
+    Amount = ?cash(genlib_rational:round(R, RoundingMethod1), SymCode),
     FinalParts = #'Rational'{
         p = P * Total,
         q = Q

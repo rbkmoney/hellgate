@@ -1161,7 +1161,7 @@ refund_limit_success(C) ->
 
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(_Payment)]
+        [?payment_state(_)]
     ) = create_payment(PartyID, ShopID, 50000, Client),
 
     ?invoice_state(
@@ -1190,7 +1190,7 @@ refund_limit_success(C) ->
     % try payment after refund(limit was decreased)
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
-        [?payment_state(_Payment)]
+        [?payment_state(_)]
     ) = create_payment(PartyID, ShopID, 50000, Client).
 
 -spec payment_partial_capture_limit_success(config()) -> test_return().
