@@ -126,8 +126,7 @@
 -define(DEFAULT_ROUTE_PRIORITY, 1000).
 
 -spec from_payment_route(payment_route()) -> route().
-from_payment_route(Route) ->
-    ?route(ProviderRef, TerminalRef) = Route,
+from_payment_route(?route(ProviderRef, TerminalRef)) ->
     #{
         provider_ref => ProviderRef,
         terminal_ref => TerminalRef,

@@ -68,10 +68,9 @@
     }}
 ).
 
--define(limits_clock_update(Clocks, Status),
+-define(limits_clock_update(Clocks),
     {invoice_payment_limit_checked, #payproc_InvoicePaymentLimitChecked{
-        results = Clocks,
-        action = Status
+        results = Clocks
     }}
 ).
 

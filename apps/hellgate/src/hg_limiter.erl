@@ -13,7 +13,7 @@
 -type refund() :: dmsl_domain_thrift:'InvoicePaymentRefund'().
 -type cash() :: dmsl_domain_thrift:'Cash'() | undefined.
 -type clock() :: dmsl_domain_thrift:'VectorClock'() | undefined.
--type limit_clock() :: {turnover_limit(), clock()}.
+-type turnover_w_clock() :: {turnover_limit(), clock()}.
 -type limit_result() :: dmsl_payment_processing_thrift:'LimitResult'().
 
 -export([get_turnover_limits/1]).
@@ -26,6 +26,9 @@
 -export([rollback_refund_limits/4]).
 
 -export_type([clock/0]).
+-export_type([limit_result/0]).
+-export_type([turnover_w_clock/0]).
+-export_type([turnover_limit/0]).
 
 -define(LIMIT_RESULT(ID, Clock), #payproc_LimitResult{limit_id = ID, clock = Clock}).
 
@@ -38,7 +41,7 @@ get_turnover_limits({value, Limits}) ->
 get_turnover_limits(Ambiguous) ->
     error({misconfiguration, {'Could not reduce selector to a value', Ambiguous}}).
 
--spec check_limits([limit_clock()], invoice(), payment()) ->
+-spec check_limits([turnover_w_clock()], invoice(), payment()) ->
     {ok, [hg_limiter_client:limit()]}
     | {error, {limit_overflow, [binary()]}}.
 check_limits(TurnoverLimits, Invoice, Payment) ->
@@ -68,35 +71,35 @@ check_limits_([{T, Clock} | TurnoverLimits], Context, Acc) ->
             throw(limit_overflow)
     end.
 
--spec hold_payment_limits([limit_clock()], route(), invoice(), payment()) -> [limit_result()].
+-spec hold_payment_limits([turnover_w_clock()], route(), invoice(), payment()) -> [limit_result()].
 hold_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
     IDGenerator = fun(ID) -> construct_limit_change_id(ID, Route, Invoice, Payment) end,
     LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_context(Invoice, Payment),
     hold(LimitChanges, Context).
 
--spec hold_refund_limits([limit_clock()], invoice(), payment(), refund()) -> [limit_result()].
+-spec hold_refund_limits([turnover_w_clock()], invoice(), payment(), refund()) -> [limit_result()].
 hold_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
     IDGenerator = fun(ID) -> construct_limit_refund_change_id(ID, Invoice, Payment, Refund) end,
     LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
     hold(LimitChanges, Context).
 
--spec commit_payment_limits([limit_clock()], route(), invoice(), payment(), cash()) -> [limit_result()].
+-spec commit_payment_limits([turnover_w_clock()], route(), invoice(), payment(), cash()) -> [limit_result()].
 commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash) ->
     IDGenerator = fun(ID) -> construct_limit_change_id(ID, Route, Invoice, Payment) end,
     LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_context(Invoice, Payment, CapturedCash),
     commit(LimitChanges, Context).
 
--spec commit_refund_limits([limit_clock()], invoice(), payment(), refund()) -> [limit_result()].
+-spec commit_refund_limits([turnover_w_clock()], invoice(), payment(), refund()) -> [limit_result()].
 commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund) ->
     IDGenerator = fun(ID) -> construct_limit_refund_change_id(ID, Invoice, Payment, Refund) end,
     LimitChanges = gen_limit_changes(TurnoverLimits, IDGenerator),
     Context = gen_limit_refund_context(Invoice, Payment, Refund),
     commit(LimitChanges, Context).
 
--spec rollback_payment_limits([limit_clock()], route(), invoice(), payment()) -> [limit_result()].
+-spec rollback_payment_limits([turnover_w_clock()], route(), invoice(), payment()) -> [limit_result()].
 rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
     #domain_InvoicePayment{cost = Cash} = Payment,
     CapturedCash = Cash#domain_Cash{
@@ -104,7 +107,7 @@ rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment) ->
     },
     commit_payment_limits(TurnoverLimits, Route, Invoice, Payment, CapturedCash).
 
--spec rollback_refund_limits([limit_clock()], invoice(), payment(), refund()) -> [limit_result()].
+-spec rollback_refund_limits([turnover_w_clock()], invoice(), payment(), refund()) -> [limit_result()].
 rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund0) ->
     Refund1 = set_refund_amount(0, Refund0),
     commit_refund_limits(TurnoverLimits, Invoice, Payment, Refund1).
