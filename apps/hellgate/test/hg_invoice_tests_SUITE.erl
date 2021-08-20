@@ -197,6 +197,7 @@ init([]) ->
 
 -define(PARTY_ID_WITH_LIMIT, <<"bIg merch limit">>).
 -define(PARTY_ID_WITH_SEVERAL_LIMITS, <<"bIg merch limit cascading">>).
+-define(PARTYID_EXTERNAL, <<"DUBTV">>).
 -define(LIMIT_ID, <<"ID">>).
 -define(LIMIT_ID2, <<"ID2">>).
 -define(LIMIT_UPPER_BOUNDARY, 100000).
@@ -450,6 +451,8 @@ init_per_suite(C) ->
     Party2ID = hg_utils:unique_id(),
     PartyClient2 = {party_client:create_client(), party_client:create_context(user_info())},
     CustomerClient2 = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, Party2ID)),
+
+    _ = hg_ct_helper:create_party(?PARTYID_EXTERNAL, PartyClient),
 
     _ = timer:sleep(5000),
 
@@ -2317,13 +2320,13 @@ update_payment_terms_cashflow(ProviderRef, CashFlow) ->
 get_cashflow_account(Type, CF) ->
     [ID] = [
         V
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_id = V,
-                   account_type = T
-               }
-           } <- CF,
-           T == Type
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_id = V,
+                account_type = T
+            }
+        } <- CF,
+        T == Type
     ],
     hg_accounting:get_balance(ID).
 
@@ -2343,11 +2346,11 @@ invalid_payment_w_deprived_party(C) ->
 
 -spec external_account_posting(config()) -> test_return().
 external_account_posting(C) ->
-    PartyID = <<"LGBT">>,
+    % Party создается в инициализации suite
+    PartyID = ?PARTYID_EXTERNAL,
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    _ = hg_ct_helper:create_party(PartyID, PartyClient),
     ShopID = hg_ct_helper:create_battle_ready_shop(PartyID, ?cat(2), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
@@ -2366,13 +2369,13 @@ external_account_posting(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
         AccountID
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_type = {external, outcome},
-                   account_id = AccountID
-               },
-               details = <<"Kek">>
-           } <- CF
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_type = {external, outcome},
+                account_id = AccountID
+            },
+            details = <<"Kek">>
+        } <- CF
     ],
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
@@ -2380,11 +2383,11 @@ external_account_posting(C) ->
 
 -spec terminal_cashflow_overrides_provider(config()) -> test_return().
 terminal_cashflow_overrides_provider(C) ->
-    PartyID = <<"LGBT">>,
+    % Party создается в инициализации suite
+    PartyID = ?PARTYID_EXTERNAL,
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    %% party was created in fun external_account_posting/1 (see above). fix later
     ShopID = hg_ct_helper:create_battle_ready_shop(PartyID, ?cat(4), <<"RUB">>, ?tmpl(2), ?pinst(2), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubbermoss">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, InvoicingClient),
@@ -2401,13 +2404,13 @@ terminal_cashflow_overrides_provider(C) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
         AccountID
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_type = {external, outcome},
-                   account_id = AccountID
-               },
-               details = <<"Kek">>
-           } <- CF
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_type = {external, outcome},
+                account_id = AccountID
+            },
+            details = <<"Kek">>
+        } <- CF
     ],
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
@@ -4477,13 +4480,13 @@ rounding_cashflow_volume(C) ->
 get_cashflow_volume(Source, Destination, CF) ->
     [Volume] = [
         V
-        || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{account_type = S},
-               destination = #domain_FinalCashFlowAccount{account_type = D},
-               volume = V
-           } <- CF,
-           S == Source,
-           D == Destination
+     || #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{account_type = S},
+            destination = #domain_FinalCashFlowAccount{account_type = D},
+            volume = V
+        } <- CF,
+        S == Source,
+        D == Destination
     ],
     Volume.
 
@@ -4960,8 +4963,8 @@ consistent_account_balances(C) ->
     Shops = maps:values(Party#domain_Party.shops),
     _ = [
         Fun(AccountID, Shop)
-        || #domain_Shop{account = #domain_ShopAccount{settlement = ID1, guarantee = ID2}} = Shop <- Shops,
-           AccountID <- [ID1, ID2]
+     || #domain_Shop{account = #domain_ShopAccount{settlement = ID1, guarantee = ID2}} = Shop <- Shops,
+        AccountID <- [ID1, ID2]
     ],
     ok.
 
@@ -5819,11 +5822,11 @@ get_payment_cashflow_mapped(InvoiceID, PaymentID, Client) ->
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     [
         {Source, Dest, Volume}
-        || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{account_type = Source},
-               destination = #domain_FinalCashFlowAccount{account_type = Dest},
-               volume = #domain_Cash{amount = Volume}
-           } <- CashFlow
+     || #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{account_type = Source},
+            destination = #domain_FinalCashFlowAccount{account_type = Dest},
+            volume = #domain_Cash{amount = Volume}
+        } <- CashFlow
     ].
 
 %
@@ -6410,7 +6413,7 @@ construct_domain_fixture() ->
                             if_ =
                                 {condition,
                                     {party, #domain_PartyCondition{
-                                        id = <<"LGBT">>
+                                        id = ?PARTYID_EXTERNAL
                                     }}},
                             then_ = {value, ?eas(2)}
                         },
