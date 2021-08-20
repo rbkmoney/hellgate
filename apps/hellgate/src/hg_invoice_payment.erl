@@ -36,6 +36,7 @@
 -export([get_refund/2]).
 -export([get_route/1]).
 -export([get_adjustments/1]).
+-export([get_allocation/1]).
 -export([get_adjustment/2]).
 -export([get_trx/1]).
 
@@ -147,7 +148,7 @@
     recurrent_token :: undefined | recurrent_token(),
     opts :: undefined | opts(),
     repair_scenario :: undefined | hg_invoice_repair:scenario(),
-    capture_data :: undefined | capture_params(),
+    capture_data :: undefined | capture_data(),
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
     latest_change_at :: undefined | hg_datetime:timestamp(),
@@ -204,7 +205,7 @@
 -type make_recurrent() :: true | false.
 -type recurrent_token() :: dmsl_domain_thrift:'Token'().
 -type retry_strategy() :: hg_retry:strategy().
--type capture_params() :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureParams'().
+-type capture_data() :: dmsl_payment_processing_thrift:'InvoicePaymentCaptureData'().
 -type payment_session() :: dmsl_payment_processing_thrift:'InvoicePaymentSession'().
 -type failure() :: dmsl_domain_thrift:'OperationFailure'().
 -type shop() :: dmsl_domain_thrift:'Shop'().
@@ -1024,7 +1025,7 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Timestamp = get_payment_created_at(Payment),
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    ok = validate_capture_allocatable(AllocationPrototype, MerchantTerms),
+    ok = validate_allocatable(AllocationPrototype, MerchantTerms),
     Allocation = hg_allocations:calculate_allocation(
         AllocationPrototype,
         Payment#domain_InvoicePayment.owner_id,
@@ -1058,13 +1059,6 @@ partial_capture(St0, Reason, Cost, Cart, Opts, MerchantTerms, Allocation) ->
         calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow, Allocation),
     {ok, {Changes, hg_machine_action:instant()}}.
-
-validate_capture_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
-    #domain_PaymentsServiceTerms{
-        allocations = AllocationSelector
-    } = PaymentTerms,
-    _ = hg_allocations:assert_allocatable(Allocation, AllocationSelector),
-    ok.
 
 -spec cancel(st(), binary()) -> {ok, result()}.
 cancel(St, Reason) ->
@@ -1108,8 +1102,6 @@ assert_capture_cart(Cost, Cart) ->
             throw_invalid_request(<<"Capture amount does not match with the cart total amount">>)
     end.
 
-check_equal_capture_cost_amount(undefined, _) ->
-    true;
 check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) when
     PassedAmount =:= Amount
 ->
@@ -1198,7 +1190,7 @@ refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     VS = collect_validation_varset(St, Opts),
     #payproc_InvoicePaymentRefundParams{allocation = Allocation} = Params,
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
-    _ = validate_invoice_allocatable(Allocation, MerchantTerms),
+    _ = validate_allocatable(Allocation, MerchantTerms),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS),
     Changes = [?refund_created(Refund, FinalCashflow)],
@@ -1214,7 +1206,7 @@ manual_refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     VS = collect_validation_varset(St, Opts),
     #payproc_InvoicePaymentRefundParams{allocation = Allocation} = Params,
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
-    _ = validate_invoice_allocatable(Allocation, MerchantTerms),
+    _ = validate_allocatable(Allocation, MerchantTerms),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
@@ -1256,7 +1248,7 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         allocation = Allocation
     }.
 
-validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
+validate_allocatable(Allocation, PaymentTerms) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
