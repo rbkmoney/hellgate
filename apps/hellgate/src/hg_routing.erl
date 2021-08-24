@@ -28,6 +28,19 @@
 
 -include("domain.hrl").
 
+-define(DEFAULT_ROUTE_WEIGHT, 0).
+% Set value like in protocol
+% https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
+-define(DEFAULT_ROUTE_PRIORITY, 1000).
+
+-record(route, {
+    provider_ref :: dmsl_domain_thrift:'ProviderRef'(),
+    terminal_ref :: dmsl_domain_thrift:'TerminalRef'(),
+    weight = ?DEFAULT_ROUTE_WEIGHT :: integer(),
+    priority = ?DEFAULT_ROUTE_PRIORITY :: integer()
+}).
+
+-type route() :: #route{}.
 -type terms() ::
     dmsl_domain_thrift:'PaymentsProvisionTerms'()
     | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
@@ -71,13 +84,6 @@
 
 -type route_groups_by_priority() :: #{{availability_condition(), terminal_priority_rating()} => [fail_rated_route()]}.
 
--type route() :: #{
-    provider_ref := dmsl_domain_thrift:'ProviderRef'(),
-    terminal_ref := dmsl_domain_thrift:'TerminalRef'(),
-    weight => integer(),
-    priority := integer()
-}.
-
 -type fail_rated_route() :: {route(), provider_status()}.
 
 -type scored_route() :: {route_scores(), route()}.
@@ -120,55 +126,49 @@
 -export_type([reject_context/0]).
 -export_type([varset/0]).
 
--define(DEFAULT_ROUTE_WEIGHT, 0).
-% Set value like in protocol
-% https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
--define(DEFAULT_ROUTE_PRIORITY, 1000).
-
--spec from_payment_route(payment_route()) -> route().
-from_payment_route(Route) ->
-    ?route(ProviderRef, TerminalRef) = Route,
-    #{
-        provider_ref => ProviderRef,
-        terminal_ref => TerminalRef,
-        weight => ?DEFAULT_ROUTE_WEIGHT,
-        priority => ?DEFAULT_ROUTE_PRIORITY
-    }.
+%% Route accessors
 
 -spec new(provider_ref(), terminal_ref(), integer() | undefined, integer()) -> route().
 new(ProviderRef, TerminalRef, undefined, Priority) ->
     new(ProviderRef, TerminalRef, ?DEFAULT_ROUTE_WEIGHT, Priority);
 new(ProviderRef, TerminalRef, Weight, Priority) ->
-    #{
-        provider_ref => ProviderRef,
-        terminal_ref => TerminalRef,
-        weight => Weight,
-        priority => Priority
+    #route{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef,
+        weight = Weight,
+        priority = Priority
     }.
 
--spec to_payment_route(route()) -> payment_route().
-to_payment_route(#{provider_ref := _, terminal_ref := _} = Route) ->
-    ?route(provider_ref(Route), terminal_ref(Route)).
-
 -spec provider_ref(route()) -> provider_ref().
-provider_ref(#{provider_ref := Ref}) ->
+provider_ref(#route{provider_ref = Ref}) ->
     Ref.
 
 -spec terminal_ref(route()) -> terminal_ref().
-terminal_ref(#{terminal_ref := Ref}) ->
+terminal_ref(#route{terminal_ref = Ref}) ->
     Ref.
 
 -spec priority(route()) -> integer().
-priority(#{priority := Priority}) ->
+priority(#route{priority = Priority}) ->
     Priority.
 
 -spec weight(route()) -> integer().
-weight(Route) ->
-    maps:get(weight, Route).
+weight(#route{weight = Weight}) ->
+    Weight.
+
+-spec from_payment_route(payment_route()) -> route().
+from_payment_route(Route) ->
+    ?route(ProviderRef, TerminalRef) = Route,
+    #route{provider_ref = ProviderRef, terminal_ref = TerminalRef}.
+
+-spec to_payment_route(route()) -> payment_route().
+to_payment_route(#route{} = Route) ->
+    ?route(provider_ref(Route), terminal_ref(Route)).
 
 -spec set_weight(integer(), route()) -> route().
 set_weight(Weight, Route) ->
-    Route#{weight => Weight}.
+    Route#route{weight = Weight}.
+
+%%
 
 -spec gather_fail_rates([route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
@@ -257,9 +257,13 @@ add_route_name(Route, Revision) ->
     TerminalRef = terminal_ref(Route),
     #domain_Provider{name = PName} = hg_domain:get(Revision, {provider, ProviderRef}),
     #domain_Terminal{name = TName} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    genlib_map:compact(Route#{
+    genlib_map:compact(#{
         provider_name => PName,
-        terminal_name => TName
+        terminal_name => TName,
+        provider_ref => ProviderRef,
+        terminal_ref => TerminalRef,
+        priority => priority(Route),
+        weight => weight(Route)
     }).
 
 map_route_switch_reason(SameScores, SameScores) ->

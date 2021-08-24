@@ -224,18 +224,19 @@ gather_route_success(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    {[#{terminal_ref := ?trm(1)}], RejectContext} = hg_routing_rule:gather_routes(
+    {[Route], RejectContext} = hg_routing_rule:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
-    #{
+    ?assertMatch(?trm(1), hg_routing:terminal_ref(Route)),
+    ?assertMatch(#{
         rejected_routes := [
             {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
             {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
         ]
-    } = RejectContext.
+    }, RejectContext).
 
 -spec rejected_by_table_prohibitions(config()) -> test_return().
 rejected_by_table_prohibitions(_C) ->
@@ -334,7 +335,8 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     Routes = sort_routes(SelectedProviders),
 
     %% Ensure list of selected provider ID match to given
-    PrvIDList = [P || #{provider_ref := ?prv(P)} <- Routes],
+    GetID = fun(R) -> ?prv(P) = hg_routing:provider_ref(R), P end,
+    PrvIDList = [GetID(Route) || Route <- Routes],
     ok.
 
 -spec prefer_alive(config()) -> test_return().
@@ -359,12 +361,8 @@ prefer_alive(_C) ->
     ),
     Routes = sort_routes(RoutesUnordered),
     ?assertMatch(
-        [
-            #{provider_ref := ?prv(21)},
-            #{provider_ref := ?prv(22)},
-            #{provider_ref := ?prv(23)}
-        ],
-        Routes
+        [?prv(21), ?prv(22), ?prv(23)],
+        [hg_routing:provider_ref(R) || R <- Routes]
     ),
 
     Alive = {alive, 0.0},
@@ -379,19 +377,17 @@ prefer_alive(_C) ->
     FailRatedRoutes1 = lists:zip(Routes, ProviderStatuses1),
     FailRatedRoutes2 = lists:zip(Routes, ProviderStatuses2),
 
-    Result0 = hg_routing:choose_rated_route(FailRatedRoutes0),
-    Result1 = hg_routing:choose_rated_route(FailRatedRoutes1),
-    Result2 = hg_routing:choose_rated_route(FailRatedRoutes2),
+    Route1 = hg_routing:new(?prv(21), ?trm(21), 0, 1000),
+    Route2 = hg_routing:new(?prv(22), ?trm(22), 0, 1000),
+    Route3 = hg_routing:new(?prv(23), ?trm(23), 0, 1000),
 
-    {#{provider_ref := ?prv(21), terminal_ref := ?trm(21)}, Meta0} = Result0,
-    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, Meta1} = Result1,
-    {#{provider_ref := ?prv(23), terminal_ref := ?trm(23)}, Meta2} = Result2,
+    {Route1, Meta0} = hg_routing:choose_rated_route(FailRatedRoutes0),
+    {Route2, Meta1} = hg_routing:choose_rated_route(FailRatedRoutes1),
+    {Route3, Meta2} = hg_routing:choose_rated_route(FailRatedRoutes2),
 
-    #{reject_reason := availability_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta0,
-    #{reject_reason := availability_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta1,
-    false = maps:is_key(reject_reason, Meta2),
-
-    ok.
+    #{reject_reason := availability_condition, preferable_route := Route3} = Meta0,
+    #{reject_reason := availability_condition, preferable_route := Route3} = Meta1,
+    false = maps:is_key(reject_reason, Meta2).
 
 -spec prefer_normal_conversion(config()) -> test_return().
 prefer_normal_conversion(_C) ->
@@ -415,12 +411,8 @@ prefer_normal_conversion(_C) ->
     ),
     Routes = sort_routes(RoutesUnordered),
     ?assertMatch(
-        [
-            #{provider_ref := ?prv(21)},
-            #{provider_ref := ?prv(22)},
-            #{provider_ref := ?prv(23)}
-        ],
-        Routes
+        [?prv(21), ?prv(22), ?prv(23)],
+        [hg_routing:provider_ref(R) || R <- Routes]
     ),
 
     Alive = {alive, 0.0},
@@ -434,19 +426,17 @@ prefer_normal_conversion(_C) ->
     FailRatedRoutes1 = lists:zip(Routes, ProviderStatuses1),
     FailRatedRoutes2 = lists:zip(Routes, ProviderStatuses2),
 
-    Result0 = hg_routing:choose_rated_route(FailRatedRoutes0),
-    Result1 = hg_routing:choose_rated_route(FailRatedRoutes1),
-    Result2 = hg_routing:choose_rated_route(FailRatedRoutes2),
+    Route1 = hg_routing:new(?prv(21), ?trm(21), 0, 1000),
+    Route2 = hg_routing:new(?prv(22), ?trm(22), 0, 1000),
+    Route3 = hg_routing:new(?prv(23), ?trm(23), 0, 1000),
 
-    {#{provider_ref := ?prv(21), terminal_ref := ?trm(21)}, Meta0} = Result0,
-    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, Meta1} = Result1,
-    {#{provider_ref := ?prv(23), terminal_ref := ?trm(23)}, Meta2} = Result2,
+    {Route1, Meta0} = hg_routing:choose_rated_route(FailRatedRoutes0),
+    {Route2, Meta1} = hg_routing:choose_rated_route(FailRatedRoutes1),
+    {Route3, Meta2} = hg_routing:choose_rated_route(FailRatedRoutes2),
 
-    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta0,
-    #{reject_reason := conversion_condition, preferable_route := #{provider_ref := ?prv(23)}} = Meta1,
-    false = maps:is_key(reject_reason, Meta2),
-
-    ok.
+    #{reject_reason := conversion_condition, preferable_route := Route3} = Meta0,
+    #{reject_reason := conversion_condition, preferable_route := Route3} = Meta1,
+    false = maps:is_key(reject_reason, Meta2).
 
 -spec prefer_higher_availability(config()) -> test_return().
 prefer_higher_availability(_C) ->
@@ -470,24 +460,17 @@ prefer_higher_availability(_C) ->
     ),
     Routes = sort_routes(RoutesUnordered),
     ?assertMatch(
-        [
-            #{provider_ref := ?prv(21)},
-            #{provider_ref := ?prv(22)},
-            #{provider_ref := ?prv(23)}
-        ],
-        Routes
+        [?prv(21), ?prv(22), ?prv(23)],
+        [hg_routing:provider_ref(R) || R <- Routes]
     ),
 
     ProviderStatuses = [{{alive, 0.5}, {normal, 0.5}}, {{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.6}, {normal, 0.5}}],
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
+
+    Route1 = hg_routing:new(?prv(21), ?trm(21), 0, 1000),
+    Route2 = hg_routing:new(?prv(23), ?trm(23), 0, 1000),
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
-
-    {#{provider_ref := ?prv(21), terminal_ref := ?trm(21)}, #{
-        reject_reason := availability,
-        preferable_route := #{provider_ref := ?prv(23)}
-    }} = Result,
-
-    ok.
+    ?assertMatch({Route1, #{reject_reason := availability, preferable_route := Route2}}, Result).
 
 -spec prefer_higher_conversion(config()) -> test_return().
 prefer_higher_conversion(_C) ->
@@ -510,23 +493,17 @@ prefer_higher_conversion(_C) ->
     ),
     Routes = sort_routes(RoutesUnordered),
     ?assertMatch(
-        [
-            #{provider_ref := ?prv(21)},
-            #{provider_ref := ?prv(22)},
-            #{provider_ref := ?prv(23)}
-        ],
-        Routes
+        [?prv(21), ?prv(22), ?prv(23)],
+        [hg_routing:provider_ref(R) || R <- Routes]
     ),
 
     ProviderStatuses = [{{dead, 0.8}, {lacking, 1.0}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.5}}],
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
+    Route1 = hg_routing:new(?prv(22), ?trm(22), 0, 1000),
+    Route2 = hg_routing:new(?prv(23), ?trm(23), 0, 1000),
 
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
-    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, #{
-        reject_reason := conversion,
-        preferable_route := #{provider_ref := ?prv(23)}
-    }} = Result,
-    ok.
+    ?assertMatch({Route1, #{reject_reason := conversion, preferable_route := Route2}}, Result).
 
 -spec prefer_weight_over_availability(config()) -> test_return().
 prefer_weight_over_availability(_C) ->
@@ -550,21 +527,15 @@ prefer_weight_over_availability(_C) ->
     ),
     Routes = sort_routes(RoutesUnordered),
     ?assertMatch(
-        [
-            #{provider_ref := ?prv(21)},
-            #{provider_ref := ?prv(22)},
-            #{provider_ref := ?prv(23)}
-        ],
-        Routes
+        [?prv(21), ?prv(22), ?prv(23)],
+        [hg_routing:provider_ref(R) || R <- Routes]
     ),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.3}}, {{alive, 0.5}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
 
-    Result = hg_routing:choose_rated_route(FailRatedRoutes),
-
-    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, _Meta} = Result,
-    ok.
+    Route = hg_routing:new(?prv(22), ?trm(22), 0, 1005),
+    ?assertMatch({Route, _}, hg_routing:choose_rated_route(FailRatedRoutes)).
 
 -spec prefer_weight_over_conversion(config()) -> test_return().
 prefer_weight_over_conversion(_C) ->
@@ -585,21 +556,13 @@ prefer_weight_over_conversion(_C) ->
         Revision
     ),
     Routes = sort_routes(RoutesUnordered),
-    ?assertMatch(
-        [
-            #{provider_ref := ?prv(21)},
-            #{provider_ref := ?prv(22)},
-            #{provider_ref := ?prv(23)}
-        ],
-        Routes
-    ),
+    ?assertMatch([?prv(21), ?prv(22), ?prv(23)], [hg_routing:provider_ref(R) || R <- Routes]),
 
     ProviderStatuses = [{{alive, 0.3}, {normal, 0.5}}, {{alive, 0.3}, {normal, 0.3}}, {{alive, 0.3}, {normal, 0.3}}],
     FailRatedRoutes = lists:zip(Routes, ProviderStatuses),
-
     Result = hg_routing:choose_rated_route(FailRatedRoutes),
-    {#{provider_ref := ?prv(22), terminal_ref := ?trm(22)}, _Meta} = Result,
-    ok.
+    {Route, _Meta} = Result,
+    ?assertMatch({?prv(22), ?trm(22)}, {hg_routing:provider_ref(Route), hg_routing:terminal_ref(Route)}).
 
 -spec gathers_fail_rated_routes(config()) -> test_return().
 gathers_fail_rated_routes(_C) ->
@@ -616,18 +579,20 @@ gathers_fail_rated_routes(_C) ->
 
     {Routes0, _RejectContext0} = hg_routing_rule:gather_routes(payment, PaymentInstitution, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
-    ?assertMatch(
+    ?assertEqual(
         [
-            {#{provider_ref := ?prv(21)}, {{dead, 0.9}, {lacking, 0.9}}},
-            {#{provider_ref := ?prv(22)}, {{alive, 0.1}, {normal, 0.1}}},
-            {#{provider_ref := ?prv(23)}, {{alive, 0.0}, {normal, 0.0}}}
+            {hg_routing:new(?prv(21), ?trm(21), 0, 1000), {{dead, 0.9}, {lacking, 0.9}}},
+            {hg_routing:new(?prv(22), ?trm(22), 0, 1000), {{alive, 0.1}, {normal, 0.1}}},
+            {hg_routing:new(?prv(23), ?trm(23), 0, 1000), {{alive, 0.0}, {normal, 0.0}}}
         ],
         lists:sort(Result)
     ).
 
 sort_routes(Routes) ->
     lists:sort(
-        fun(#{provider_ref := ?prv(ID1)}, #{provider_ref := ?prv(ID2)}) ->
+        fun(Route1, Route2) ->
+            ?prv(ID1) = hg_routing:provider_ref(Route1),
+            ?prv(ID2) = hg_routing:provider_ref(Route2),
             ID1 < ID2
         end,
         Routes
@@ -637,20 +602,10 @@ sort_routes(Routes) ->
 
 -spec terminal_priority_for_shop(config()) -> test_return().
 terminal_priority_for_shop(C) ->
-    {
-        #{
-            provider_ref := ?prv(41),
-            terminal_ref := ?trm(41)
-        },
-        _Meta0
-    } = terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C),
-    {
-        #{
-            provider_ref := ?prv(42),
-            terminal_ref := ?trm(42)
-        },
-        _Meta1
-    } = terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C).
+    Route1 = hg_routing:new(?prv(41), ?trm(41), 0, 10),
+    Route2 = hg_routing:new(?prv(42), ?trm(42), 0, 10),
+    ?assertMatch({Route1, _Meta0}, terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C)),
+    ?assertMatch({Route2, _Meta1}, terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C)).
 
 terminal_priority_for_shop(PartyID, ShopID, _C) ->
     VS = #{

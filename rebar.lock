@@ -46,7 +46,7 @@
  {<<"idna">>,{pkg,<<"idna">>,<<"6.1.1">>},2},
  {<<"jsx">>,{pkg,<<"jsx">>,<<"3.0.0">>},1},
  {<<"limiter_proto">>,
-  {git,"https://github.com/rbkmoney/limiter-proto.git",
+  {git,"git@github.com:rbkmoney/limiter-proto.git",
        {ref,"f46aba6b44f562d909cf09201a951ae117a9c58c"}},
   0},
  {<<"metrics">>,{pkg,<<"metrics">>,<<"1.0.1">>},2},

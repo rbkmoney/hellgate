@@ -1908,9 +1908,9 @@ handle_choose_route_error(Reason, Events, St, Action) ->
 
 -spec process_cash_flow_building(action(), st()) -> machine_result().
 process_cash_flow_building(Action, St) ->
-    Opts = get_opts(St),
     Route = get_route(St),
-    {Invoice, Payment, VS, Revision} = fetch_values(St),
+    {Invoice, Payment, Opts, Revision} = fetch_values(St),
+    VS = get_varset(St, #{}),
     CreatedAt = get_payment_created_at(Payment),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
     ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
