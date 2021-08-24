@@ -777,7 +777,7 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
     Payment = get_payment(St),
     Predestination = choose_routing_predestination(Payment),
     case
-        hg_routing_rule:gather_routes(
+        hg_routing:gather_routes(
             Predestination,
             PaymentInstitution,
             VS,

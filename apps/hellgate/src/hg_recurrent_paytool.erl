@@ -264,7 +264,7 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
 gather_routes(PaymentInstitution, VS, Revision) ->
     Predestination = recurrent_paytool,
     case
-        hg_routing_rule:gather_routes(
+        hg_routing:gather_routes(
             Predestination,
             PaymentInstitution,
             VS,
