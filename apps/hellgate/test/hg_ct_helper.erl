@@ -74,15 +74,22 @@
 
 -spec start_app(app_name()) -> {[app_name()], map()}.
 start_app(scoper = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {storage, scoper_storage_logger}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(woody = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {acceptors_pool_size, 4}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(dmt_client = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             % milliseconds
             {cache_update_interval, 5000},
             {max_cache_size, #{
@@ -103,9 +110,12 @@ start_app(dmt_client = AppName) ->
                 'Repository' => <<"http://dominant:8022/v1/domain/repository">>,
                 'RepositoryClient' => <<"http://dominant:8022/v1/domain/repository_client">>
             }}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(hellgate = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {host, ?HELLGATE_HOST},
             {port, ?HELLGATE_PORT},
             {default_woody_handling_timeout, 30000},
@@ -205,11 +215,14 @@ start_app(hellgate = AppName) ->
                     pre_aggregation_size => 2
                 }
             }}
-        ]), #{
+        ]),
+        #{
             hellgate_root_url => get_hellgate_url()
-        }};
+        }
+    };
 start_app(party_client = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {services, #{
                 party_management => "http://party-management:8022/v1/processing/partymgmt"
             }},
@@ -229,11 +242,16 @@ start_app(party_client = AppName) ->
                     }
                 }
             }}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(snowflake = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {max_backward_clock_moving, 1000}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 

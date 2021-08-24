@@ -213,13 +213,15 @@ select_better_route_ideal(Left, Right) ->
     end.
 
 set_ideal_score({RouteScores, PT}) ->
-    {RouteScores#route_scores{
+    {
+        RouteScores#route_scores{
             availability_condition = 1,
             availability = 1.0,
             conversion_condition = 1,
             conversion = 1.0
         },
-        PT}.
+        PT
+    }.
 
 get_route_choice_meta({_, SameRoute}, {_, SameRoute}) ->
     #{
@@ -741,7 +743,8 @@ unmarshal(_, Other) ->
 -spec record_comparsion_test() -> _.
 record_comparsion_test() ->
     Bigger =
-        {#route_scores{
+        {
+            #route_scores{
                 availability_condition = 1,
                 availability = 0.5,
                 conversion_condition = 1,
@@ -749,9 +752,11 @@ record_comparsion_test() ->
                 priority_rating = 1,
                 random_condition = 1
             },
-            {42, 42}},
+            {42, 42}
+        },
     Smaller =
-        {#route_scores{
+        {
+            #route_scores{
                 availability_condition = 0,
                 availability = 0.1,
                 conversion_condition = 1,
@@ -759,7 +764,8 @@ record_comparsion_test() ->
                 priority_rating = 1,
                 random_condition = 1
             },
-            {99, 99}},
+            {99, 99}
+        },
     Bigger = select_better_route(Bigger, Smaller).
 
 -spec balance_routes_test() -> list().
