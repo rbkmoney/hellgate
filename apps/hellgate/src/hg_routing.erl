@@ -174,7 +174,7 @@ set_weight(Weight, Route) ->
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
-    hg_routing:varset(),
+    varset(),
     hg_domain:revision()
 ) -> {[route()], reject_context()}.
 gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} = PayInst, VS, _) ->
@@ -250,8 +250,8 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
                 provider_ref = ProviderRef
             } = hg_domain:get(Revision, {terminal, TerminalRef}),
             try
-                {_, _Terminal} = hg_routing:acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
-                Route = hg_routing:new(ProviderRef, TerminalRef, Weight, Priority),
+                {_, _Terminal} = acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
+                Route = new(ProviderRef, TerminalRef, Weight, Priority),
                 {[Route | Accepted], Rejected}
             catch
                 {rejected, Reason} ->
@@ -267,12 +267,12 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
 filter_routes({Routes, Rejected}, Prohibitions) ->
     lists:foldr(
         fun(Route, {AccIn, RejectedIn}) ->
-            TRef = hg_routing:terminal_ref(Route),
+            TRef = terminal_ref(Route),
             case maps:find(TRef, Prohibitions) of
                 error ->
                     {[Route | AccIn], RejectedIn};
                 {ok, Description} ->
-                    PRef = hg_routing:provider_ref(Route),
+                    PRef = provider_ref(Route),
                     RejectedOut = [{PRef, TRef, {'RoutingRule', Description}} | RejectedIn],
                     {AccIn, RejectedOut}
             end

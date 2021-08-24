@@ -231,12 +231,15 @@ gather_route_success(_C) ->
         Revision
     ),
     ?assertMatch(?trm(1), hg_routing:terminal_ref(Route)),
-    ?assertMatch(#{
-        rejected_routes := [
-            {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
-            {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
-        ]
-    }, RejectContext).
+    ?assertMatch(
+        #{
+            rejected_routes := [
+                {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
+                {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
+            ]
+        },
+        RejectContext
+    ).
 
 -spec rejected_by_table_prohibitions(config()) -> test_return().
 rejected_by_table_prohibitions(_C) ->
@@ -335,7 +338,10 @@ routes_selected_with_risk_score(_C, RiskScore, PrvIDList) ->
     Routes = sort_routes(SelectedProviders),
 
     %% Ensure list of selected provider ID match to given
-    GetID = fun(R) -> ?prv(P) = hg_routing:provider_ref(R), P end,
+    GetID = fun(R) ->
+        ?prv(P) = hg_routing:provider_ref(R),
+        P
+    end,
     PrvIDList = [GetID(Route) || Route <- Routes],
     ok.
 
@@ -604,8 +610,8 @@ sort_routes(Routes) ->
 terminal_priority_for_shop(C) ->
     Route1 = hg_routing:new(?prv(41), ?trm(41), 0, 10),
     Route2 = hg_routing:new(?prv(42), ?trm(42), 0, 10),
-    ?assertMatch({Route1, _Meta0}, terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C)),
-    ?assertMatch({Route2, _Meta1}, terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C)).
+    ?assertMatch({Route1, _}, terminal_priority_for_shop(?dummy_party_id, ?dummy_shop_id, C)),
+    ?assertMatch({Route2, _}, terminal_priority_for_shop(?dummy_party_id, ?dummy_another_shop_id, C)).
 
 terminal_priority_for_shop(PartyID, ShopID, _C) ->
     VS = #{
