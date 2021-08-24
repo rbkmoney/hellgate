@@ -322,7 +322,7 @@ get_sessions(#st{sessions = S}) ->
             target_status = TS,
             transaction_info = TR
         }
-        || #{target := TS, trx := TR} <- lists:flatten(maps:values(S))
+     || #{target := TS, trx := TR} <- lists:flatten(maps:values(S))
     ].
 
 -spec get_refunds(st()) -> [payment_refund()].
@@ -2217,9 +2217,10 @@ process_result({refund_accounter, ID}, Action, St) ->
             ?cash(Amount, _) when Amount > 0 ->
                 []
         end,
-    {done,
-        {[?refund_ev(ID, ?refund_status_changed(?refund_succeeded())), ?limits_clock_update(LimitResults) | Events],
-            Action}}.
+    {done, {
+        [?refund_ev(ID, ?refund_status_changed(?refund_succeeded())), ?limits_clock_update(LimitResults) | Events],
+        Action
+    }}.
 
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
@@ -3023,12 +3024,12 @@ merge_change(Change = ?payment_status_changed({failed, _} = Status), #st{payment
     _ = validate_transition(
         [
             {payment, S}
-            || S <- [
-                   risk_scoring,
-                   routing,
-                   routing_failure,
-                   processing_failure
-               ]
+         || S <- [
+                risk_scoring,
+                routing,
+                routing_failure,
+                processing_failure
+            ]
         ],
         Change,
         St,
@@ -3178,13 +3179,13 @@ merge_change(
     _ = validate_transition(
         [
             {payment, S}
-            || S <- [
-                   processing_session,
-                   flow_waiting,
-                   processing_capture,
-                   updating_accounter,
-                   finalizing_session
-               ]
+         || S <- [
+                processing_session,
+                flow_waiting,
+                processing_capture,
+                updating_accounter,
+                finalizing_session
+            ]
         ],
         Change,
         St,

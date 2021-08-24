@@ -61,7 +61,7 @@ compute_postings(CF, Context, AccountMap) ->
             compute_volume(Volume, Context),
             Details
         )
-        || ?posting(Source, Destination, Volume, Details) <- CF
+     || ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
 -spec construct_final_account(account(), account_map()) -> final_cash_flow_account() | no_return().
@@ -86,7 +86,7 @@ resolve_account(AccountType, AccountMap) ->
 revert(CF) ->
     [
         ?final_posting(Destination, Source, Volume, revert_details(Details))
-        || ?final_posting(Source, Destination, Volume, Details) <- CF
+     || ?final_posting(Source, Destination, Volume, Details) <- CF
     ].
 
 revert_details(undefined) ->

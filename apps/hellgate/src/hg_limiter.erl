@@ -123,7 +123,7 @@ commit(LimitChanges, Context) ->
 do(Func, LimitChanges, Context) ->
     [
         ?LIMIT_RESULT(Item#limiter_LimitChange.id, to_clock(Func(Item, to_limiter_clock(Clock), Context)))
-        || {Item, Clock} <- LimitChanges
+     || {Item, Clock} <- LimitChanges
     ].
 
 gen_limit_context(Invoice, Payment) ->
@@ -160,12 +160,14 @@ gen_limit_refund_context(Invoice, Payment, Refund) ->
 
 gen_limit_changes(TurnoverLimits, ChangeIDGenerator) ->
     [
-        {#limiter_LimitChange{
+        {
+            #limiter_LimitChange{
                 id = ID,
                 change_id = ChangeIDGenerator(ID)
             },
-            Clock}
-        || {#domain_TurnoverLimit{id = ID}, Clock} <- TurnoverLimits
+            Clock
+        }
+     || {#domain_TurnoverLimit{id = ID}, Clock} <- TurnoverLimits
     ].
 
 construct_limit_change_id(LimitID, Route, Invoice, Payment) ->
