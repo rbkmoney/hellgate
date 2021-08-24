@@ -1933,12 +1933,12 @@ process_cash_flow_building(Action, St) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
     ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
-    ok = rollback_unused_payment_limits(St),
+    LimitResults = rollback_unused_payment_limits(St),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
     ),
-    Events = [?cash_flow_changed(FinalCashflow)],
+    Events = [?limits_clock_update(LimitResults), ?cash_flow_changed(FinalCashflow)],
     {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
 
 %%
@@ -1976,7 +1976,7 @@ process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Shop = get_shop(Opts),
     RefundSt = try_get_refund_state(ID, St),
-    _ = hold_refund_limits(RefundSt, St),
+    LimitResults = hold_refund_limits(RefundSt, St),
 
     #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
     Clock = prepare_refund_cashflow(RefundSt, St),
@@ -1986,7 +1986,7 @@ process_refund_cashflow(ID, Action, St) ->
         Available when Available >= 0 ->
             Events = [?session_ev(?refunded(), ?session_started()) | get_manual_refund_events(RefundSt)],
             {next, {
-                [?refund_ev(ID, C) || C <- Events],
+                [?limits_clock_update(LimitResults) | [?refund_ev(ID, C) || C <- Events]],
                 hg_machine_action:set_timeout(0, Action)
             }};
         _ ->
@@ -1996,7 +1996,7 @@ process_refund_cashflow(ID, Action, St) ->
                         'RefundFailure',
                         {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
                     )},
-            process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
+            process_failure(get_activity(St), [?limits_clock_update(LimitResults)], Action, Failure, St, RefundSt)
     end.
 
 get_manual_refund_events(#refund_st{transaction_info = undefined}) ->
@@ -2174,39 +2174,39 @@ process_result({payment, processing_accounter}, Action, St) ->
 process_result({payment, routing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
     Routes = get_candidate_routes(St),
-    ok = rollback_payment_limits(Routes, St),
-    {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
+    LimitResults = rollback_payment_limits(Routes, St),
+    {done, {[?limits_clock_update(LimitResults), ?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
     NewAction = hg_machine_action:set_timeout(0, Action),
-    ok = rollback_payment_limits([get_route(St)], St),
+    LimitResults = rollback_payment_limits([get_route(St)], St),
     _ = rollback_payment_cashflow(St),
-    {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
+    {done, {[?limits_clock_update(LimitResults), ?payment_status_changed(?failed(Failure))], NewAction}};
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    _Clocks =
+    {LimitResults, _Clocks} =
         case Target of
             ?captured() ->
-                _LimitClocks = commit_payment_limits(St),
-                commit_payment_cashflow(St);
+                {commit_payment_limits(St), commit_payment_cashflow(St)};
             ?cancelled() ->
-                ok = rollback_payment_limits([get_route(St)], St),
-                rollback_payment_cashflow(St)
+                Routes = [get_route(St)],
+                {rollback_payment_limits(Routes, St), rollback_payment_cashflow(St)}
         end,
     check_recurrent_token(St),
     NewAction = get_action(Target, Action, St),
-    {done, {[?payment_status_changed(Target)], NewAction}};
+    {done, {[?limits_clock_update(LimitResults), ?payment_status_changed(Target)], NewAction}};
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
-    _ = rollback_refund_limits(RefundSt, St),
+    LimitResults = rollback_refund_limits(RefundSt, St),
     _Clocks = rollback_refund_cashflow(RefundSt, St),
     Events = [
-        ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
+        ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure))),
+        ?limits_clock_update(LimitResults)
     ],
     {done, {Events, Action}};
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    _ = commit_refund_limits(RefundSt, St),
+    LimitResults = commit_refund_limits(RefundSt, St),
     _Clocks = commit_refund_cashflow(RefundSt, St),
     Events =
         case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
@@ -2217,7 +2217,9 @@ process_result({refund_accounter, ID}, Action, St) ->
             ?cash(Amount, _) when Amount > 0 ->
                 []
         end,
-    {done, {[?refund_ev(ID, ?refund_status_changed(?refund_succeeded())) | Events], Action}}.
+    {done,
+        {[?refund_ev(ID, ?refund_status_changed(?refund_succeeded())), ?limits_clock_update(LimitResults) | Events],
+            Action}}.
 
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
@@ -2244,8 +2246,8 @@ process_failure({payment, Step} = Activity, Events, Action, Failure, St, _Refund
             _ = maybe_notify_fault_detector(Activity, TargetType, OperationStatus, St),
             process_fatal_payment_failure(Target, Events, Action, Failure, St)
     end;
-process_failure({refund_new, ID}, [], Action, Failure, _St, _RefundSt) ->
-    {next, {[?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
+process_failure({refund_new, ID}, Events, Action, Failure, _St, _RefundSt) ->
+    {next, {Events ++ [?refund_ev(ID, ?refund_rollback_started(Failure))], hg_machine_action:set_timeout(0, Action)}};
 process_failure({refund_session, ID}, Events, Action, Failure, St, _RefundSt) ->
     Target = ?refunded(),
     case check_retry_possibility(Target, Failure, St) of
@@ -2607,14 +2609,12 @@ rollback_payment_limits(Routes, St) ->
     Invoice = get_invoice(get_opts(St)),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    lists:foreach(
-        fun(Route) ->
-            ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
-            Limits = get_turnover_limits(ProviderTerms),
-            hg_limiter:rollback_payment_limits(bind_up(Limits, St), Route, Invoice, Payment)
-        end,
-        Routes
-    ).
+    RollbackFun = fun(Route) ->
+        ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
+        Limits = get_turnover_limits(ProviderTerms),
+        hg_limiter:rollback_payment_limits(bind_up(Limits, St), Route, Invoice, Payment)
+    end,
+    lists:flatten([RollbackFun(R) || R <- Routes]).
 
 rollback_unused_payment_limits(St) ->
     Routes = get_candidate_routes(St),
@@ -3234,8 +3234,22 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
         _ ->
             St2
     end;
+merge_change(?limits_clock_update(Result), St = #st{activity = {refund_new, _}}, _Opts) ->
+    store(Result, St);
 merge_change(Change = ?limits_clock_update(Result), St, Opts) ->
-    _ = validate_transition({payment, routing}, Change, St, Opts),
+    _ = validate_transition(
+        [
+            {payment, routing},
+            {payment, routing_failure},
+            {payment, cash_flow_building},
+            {payment, processing_failure},
+            {payment, finalizing_accounter},
+            idle
+        ],
+        Change,
+        St,
+        Opts
+    ),
     store(Result, St).
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
