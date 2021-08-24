@@ -13,9 +13,7 @@
         hg_proto,
         shumpune_proto,
         cowboy,
-        how_are_you,  % must be after ranch and before any woody usage
         woody,
-        woody_api_hay,
         scoper,  % should be before any scoper event handler usage
         gproc,
         dmt_client,
