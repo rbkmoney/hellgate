@@ -626,8 +626,11 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_de
     mobile_commerce.
 
 -type tokenized_bank_card_payment_system() ::
-    {dmsl_domain_thrift:'LegacyBankCardPaymentSystem'(), dmsl_domain_thrift:'LegacyBankCardTokenProvider'(),
-        dmsl_domain_thrift:'TokenizationMethod'()}.
+    {
+        dmsl_domain_thrift:'LegacyBankCardPaymentSystem'(),
+        dmsl_domain_thrift:'LegacyBankCardTokenProvider'(),
+        dmsl_domain_thrift:'TokenizationMethod'()
+    }.
 -type payment_system() ::
     dmsl_domain_thrift:'LegacyBankCardPaymentSystem'()
     | dmsl_domain_thrift:'PaymentServiceRef'()
