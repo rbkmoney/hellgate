@@ -92,7 +92,7 @@
   0},
  {<<"woody_api_hay">>,
   {git,"https://github.com/rbkmoney/woody_api_hay.git",
-       {ref,"3cb6404bfbe80478a71c88b33c0bd352e94cd3c3"}},
+       {ref,"44061e004e9e7e55f0e3b8ad99480e6e958f9488"}},
   0},
  {<<"woody_user_identity">>,
   {git,"https://github.com/rbkmoney/woody_erlang_user_identity.git",
