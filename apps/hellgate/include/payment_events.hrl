@@ -1,8 +1,6 @@
 -ifndef(__hellgate_payment_events__).
 -define(__hellgate_payment_events__, 42).
 
--include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
-
 %% Payments
 
 -define(payment_started(Payment),
@@ -31,10 +29,15 @@
     {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{route = Route}}
 ).
 
--define(cash_flow_changed(CashFlow),
-    {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{
-        cash_flow = CashFlow
+-define(route_changed(Route, Candidates),
+    {invoice_payment_route_changed, #payproc_InvoicePaymentRouteChanged{
+        route = Route,
+        candidates = Candidates
     }}
+).
+
+-define(cash_flow_changed(CashFlow),
+    {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
 ).
 
 -define(payment_status_changed(Status),
@@ -253,6 +256,13 @@
 -define(chargeback_created(Chargeback),
     {invoice_payment_chargeback_created, #payproc_InvoicePaymentChargebackCreated{
         chargeback = Chargeback
+    }}
+).
+
+-define(chargeback_created(Chargeback, OccurredAt),
+    {invoice_payment_chargeback_created, #payproc_InvoicePaymentChargebackCreated{
+        chargeback = Chargeback,
+        occurred_at = OccurredAt
     }}
 ).
 

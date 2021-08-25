@@ -73,36 +73,22 @@ init_per_suite(C) ->
     % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
-    {Apps, Ret} = hg_ct_helper:start_apps([
-        woody,
-        scoper,
-        dmt_client,
-        party_client,
-        party_management,
-        hellgate,
-        {cowboy, CowboySpec}
-    ]),
+    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}]),
     _ = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
+
     PartyID = hg_utils:unique_id(),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
-    CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
-    AnotherPartyID = hg_utils:unique_id(),
-    AnotherPartyClient = hg_client_party:start(AnotherPartyID, hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
-    AnotherCustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, AnotherPartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    AnotherShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
+    PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
+
+    _ = timer:sleep(5000),
+
+    ShopID = hg_ct_helper:create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     NewC = [
         {party_id, PartyID},
-        {party_client, PartyClient},
         {shop_id, ShopID},
-        {customer_client, CustomerClient},
-        {another_party_id, AnotherPartyID},
-        {another_party_client, AnotherPartyClient},
-        {another_shop_id, AnotherShopID},
-        {another_customer_client, AnotherCustomerClient},
         {root_url, RootUrl},
         {apps, Apps},
         {test_sup, SupPid}
@@ -111,6 +97,9 @@ init_per_suite(C) ->
 
     ok = start_proxies([{hg_dummy_provider, 1, NewC}, {hg_dummy_inspector, 2, NewC}]),
     NewC.
+
+user_info() ->
+    #{user_info => #{id => <<"test">>, realm => <<"service">>}}.
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -882,7 +871,9 @@ start_payment(InvoiceID, PaymentParams, Client) ->
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?risk_score_changed(_)),
+        ?payment_ev(PaymentID, ?risk_score_changed(_))
+    ] = next_event(InvoiceID, Client),
+    [
         ?payment_ev(PaymentID, ?route_changed(_))
     ] = next_event(InvoiceID, Client),
     [

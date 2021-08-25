@@ -318,7 +318,7 @@ get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
         invoice = Invoice,
         payments = [
             get_payment_state(PaymentSession)
-            || {_PaymentID, PaymentSession} <- Payments
+         || {_PaymentID, PaymentSession} <- Payments
         ]
     }.
 

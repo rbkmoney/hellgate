@@ -614,7 +614,7 @@ party_get_revision(C) ->
     Max = 7,
     Claims = [
         assert_claim_pending(pm_client_party:create_claim(create_change_set(Num), Client), Client)
-        || Num <- lists:seq(1, Max)
+     || Num <- lists:seq(1, Max)
     ],
     R2 = pm_client_party:get_revision(Client),
     Party2 = pm_client_party:checkout({revision, R2}, Client),

@@ -64,21 +64,15 @@ init_per_suite(C) ->
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({'hg_dummy_provider', 'handle_function', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
-    {Apps, Ret} = hg_ct_helper:start_apps([
-        woody,
-        scoper,
-        dmt_client,
-        party_client,
-        party_management,
-        hellgate,
-        snowflake,
-        {cowboy, CowboySpec}
-    ]),
+    {Apps, Ret} = hg_ct_helper:start_apps(
+        [woody, scoper, dmt_client, party_client, hellgate, snowflake, {cowboy, CowboySpec}]
+    ),
     _ = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
+    _ = timer:sleep(5000),
+    ShopID = hg_ct_helper:create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     C1 = [
@@ -92,6 +86,9 @@ init_per_suite(C) ->
     ],
     ok = start_proxies([{hg_dummy_provider, 1, C1}, {hg_dummy_inspector, 2, C1}]),
     C1.
+
+user_info() ->
+    #{user_info => #{id => <<"test">>, realm => <<"service">>}}.
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
@@ -186,29 +183,29 @@ invalid_shop(C) ->
 
 invalid_party_status(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
+    {PartyClient, Context} = cfg(party_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
-    ok = hg_client_party:block(<<>>, PartyClient),
+    ok = party_client_thrift:block(PartyID, <<>>, PartyClient, Context),
     {exception, ?invalid_party_status({blocking, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:unblock(<<>>, PartyClient),
-    ok = hg_client_party:suspend(PartyClient),
+    ok = party_client_thrift:unblock(PartyID, <<>>, PartyClient, Context),
+    ok = party_client_thrift:suspend(PartyID, PartyClient, Context),
     {exception, ?invalid_party_status({suspension, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:activate(PartyClient).
+    ok = party_client_thrift:activate(PartyID, PartyClient, Context).
 
 invalid_shop_status(C) ->
     Client = cfg(client, C),
-    PartyClient = cfg(party_client, C),
+    {PartyClient, Context} = cfg(party_client, C),
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     Params = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
-    ok = hg_client_party:block_shop(ShopID, <<>>, PartyClient),
+    ok = party_client_thrift:block_shop(PartyID, ShopID, <<>>, PartyClient, Context),
     {exception, ?invalid_shop_status({blocking, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:unblock_shop(ShopID, <<>>, PartyClient),
-    ok = hg_client_party:suspend_shop(ShopID, PartyClient),
+    ok = party_client_thrift:unblock_shop(PartyID, ShopID, <<>>, PartyClient, Context),
+    ok = party_client_thrift:suspend_shop(PartyID, ShopID, PartyClient, Context),
     {exception, ?invalid_shop_status({suspension, _})} = hg_client_customer:create(Params, Client),
-    ok = hg_client_party:activate_shop(ShopID, PartyClient).
+    ok = party_client_thrift:activate_shop(PartyID, ShopID, PartyClient, Context).
 
 %%
 

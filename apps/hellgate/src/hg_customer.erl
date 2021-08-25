@@ -597,7 +597,7 @@ get_pending_binding_set(St) ->
     Bindings = get_bindings(get_customer(St)),
     [
         get_binding_id(Binding)
-        || Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
+     || Binding <- Bindings, get_binding_status(Binding) == ?customer_binding_pending()
     ].
 
 get_binding_id(#payproc_CustomerBinding{id = BindingID}) ->

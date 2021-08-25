@@ -18,14 +18,14 @@ services:
     mem_limit: 512M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:15ceafee13b874a728d28fc5567ad070fac1d0fa
+    image: dr2.rbkmoney.com/rbkmoney/dominant:9de9cf7f9d80c6bdcf549bbed9ac3096fe5e519d
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
         condition: service_healthy
 
   machinegun:
-    image: dr2.rbkmoney.com/rbkmoney/machinegun:c35e8a08500fbc2f0f0fa376a145a7324d18a062
+    image: dr2.rbkmoney.com/rbkmoney/machinegun:627130675ad6e7ee2127126740fe369542905b4b
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
@@ -37,7 +37,7 @@ services:
       retries: 20
 
   limiter:
-    image: dr2.rbkmoney.com/rbkmoney/limiter:c5572a9a22b3fea68213f32276b5272605aebec8
+    image: dr2.rbkmoney.com/rbkmoney/limiter:c7e96068a56da444e78cc7739a902da8e268dc63
     command: /opt/limiter/bin/limiter foreground
     depends_on:
       machinegun:
@@ -59,6 +59,19 @@ services:
       - --management.metrics.export.statsd.enabled=false
     depends_on:
       - shumway-db
+    healthcheck:
+      test: "curl http://localhost:8022/"
+      interval: 5s
+      timeout: 1s
+      retries: 20
+
+  party-management:
+    image: dr2.rbkmoney.com/rbkmoney/party-management:9a8cd55d2da226be4fc02b9efe4062b310138246
+    command: /opt/party-management/bin/party-management foreground
+    depends_on:
+      - machinegun
+      - dominant
+      - shumway
     healthcheck:
       test: "curl http://localhost:8022/"
       interval: 5s

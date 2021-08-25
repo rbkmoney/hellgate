@@ -320,6 +320,8 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
             sleep(1, <<"sleeping">>);
         unexpected_failure ->
             sleep(1, <<"sleeping">>, undefined, get_payment_id(PaymentInfo));
+        unexpected_failure_no_trx ->
+            error(unexpected_failure);
         {temporary_unavailability, _Scenario} ->
             sleep(0, <<"sleeping">>)
     end;
@@ -602,6 +604,8 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"preauth_3ds_
     {preauth_3ds_sleep, erlang:binary_to_integer(Timeout)};
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"forbidden">>}}) ->
     forbidden;
+get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure_no_trx">>}}) ->
+    unexpected_failure_no_trx;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_failure">>}}) ->
     unexpected_failure;
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_", BinScenario/binary>>}}) ->
@@ -654,6 +658,8 @@ make_payment_tool({preauth_3ds_sleep, Timeout}) ->
     make_simple_payment_tool(<<"preauth_3ds_sleep:timeout=", TimeoutBin/binary>>, visa);
 make_payment_tool(forbidden) ->
     make_simple_payment_tool(<<"forbidden">>, visa);
+make_payment_tool(unexpected_failure_no_trx) ->
+    make_simple_payment_tool(<<"unexpected_failure_no_trx">>, visa);
 make_payment_tool(unexpected_failure) ->
     make_simple_payment_tool(<<"unexpected_failure">>, visa);
 make_payment_tool({scenario, Scenario}) ->

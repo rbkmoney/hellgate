@@ -15,26 +15,15 @@
 -type account_map() :: #{account() => account_id()}.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
--type cash_flow_posting() :: dmsl_domain_thrift:'CashFlowPosting'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
 -type final_cash_flow_account() :: dmsl_domain_thrift:'FinalCashFlowAccount'().
 
--type shop() :: dmsl_domain_thrift:'Shop'().
--type party() :: hg_party:party().
--type route() :: dmsl_domain_thrift:'PaymentRoute'().
--type posting_context() :: #{
-    shop := shop(),
-    party := party(),
-    route := route()
-}.
-
 %%
 
 -export([finalize/3]).
 -export([revert/1]).
--export([add_cashflow_posting_context/4]).
 
 -export([compute_volume/2]).
 
@@ -67,54 +56,20 @@ finalize(CF, Context, AccountMap) ->
 compute_postings(CF, Context, AccountMap) ->
     [
         ?final_posting(
-            construct_final_account(Source, AccountMap, PostingContext),
-            construct_final_account(Destination, AccountMap, PostingContext),
+            construct_final_account(Source, AccountMap),
+            construct_final_account(Destination, AccountMap),
             compute_volume(Volume, Context),
             Details
         )
-        || {?posting(Source, Destination, Volume, Details), PostingContext} <- CF
+     || ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
--spec construct_final_account(account(), account_map(), posting_context()) -> final_cash_flow_account() | no_return().
-construct_final_account(AccountType, AccountMap, PostingContext) ->
+-spec construct_final_account(account(), account_map()) -> final_cash_flow_account() | no_return().
+construct_final_account(AccountType, AccountMap) ->
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
-        account_id = resolve_account(AccountType, AccountMap),
-        transaction_account = construct_transaction_account(AccountType, PostingContext)
+        account_id = resolve_account(AccountType, AccountMap)
     }.
-
-construct_transaction_account({merchant, MerchantFlowAccount}, #{party := Party, shop := Shop}) ->
-    #domain_Party{id = PartyID} = Party,
-    #domain_Shop{id = ShopID} = Shop,
-    AccountOwner = #domain_MerchantTransactionAccountOwner{
-        party_id = PartyID,
-        shop_id = ShopID
-    },
-    {merchant, #domain_MerchantTransactionAccount{
-        type = MerchantFlowAccount,
-        owner = AccountOwner
-    }};
-construct_transaction_account({provider, ProviderFlowAccount}, #{route := Route}) ->
-    #domain_PaymentRoute{
-        provider = ProviderRef,
-        terminal = TerminalRef
-    } = Route,
-    AccountOwner = #domain_ProviderTransactionAccountOwner{
-        provider_ref = ProviderRef,
-        terminal_ref = TerminalRef
-    },
-    {provider, #domain_ProviderTransactionAccount{
-        type = ProviderFlowAccount,
-        owner = AccountOwner
-    }};
-construct_transaction_account({system, SystemFlowAccount}, _) ->
-    {system, #domain_SystemTransactionAccount{
-        type = SystemFlowAccount
-    }};
-construct_transaction_account({external, ExternalFlowAccount}, _) ->
-    {external, #domain_ExternalTransactionAccount{
-        type = ExternalFlowAccount
-    }}.
 
 -spec resolve_account(account(), account_map()) -> account_id() | no_return().
 resolve_account(AccountType, AccountMap) ->
@@ -131,7 +86,7 @@ resolve_account(AccountType, AccountMap) ->
 revert(CF) ->
     [
         ?final_posting(Destination, Source, Volume, revert_details(Details))
-        || ?final_posting(Source, Destination, Volume, Details) <- CF
+     || ?final_posting(Source, Destination, Volume, Details) <- CF
     ].
 
 revert_details(undefined) ->
@@ -139,15 +94,6 @@ revert_details(undefined) ->
 revert_details(Details) ->
     % TODO looks gnarly
     <<"Revert '", Details/binary, "'">>.
-
--spec add_cashflow_posting_context(cash_flow(), party(), shop(), route()) -> [{cash_flow_posting(), posting_context()}].
-add_cashflow_posting_context(CashFlow, Party, Shop, Route) ->
-    Context = #{
-        party => Party,
-        shop => Shop,
-        route => Route
-    },
-    lists:map(fun(A) -> {A, Context} end, CashFlow).
 
 %%
 
@@ -324,7 +270,7 @@ unmarshal(
     };
 unmarshal(
     final_cash_flow_posting,
-    ?legacy_final_cash_flow_posting(Source, Destination, Volume, Details)
+    ?legacy_final_cash_flow_posting(Code, Source, Destination, Volume, Details)
 ) ->
     #domain_FinalCashFlowPosting{
         source = unmarshal(final_cash_flow_account, Source),

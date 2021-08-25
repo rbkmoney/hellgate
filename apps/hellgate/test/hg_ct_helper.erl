@@ -9,20 +9,11 @@
 -export([create_client/2]).
 -export([create_client/3]).
 
--export([create_party_and_shop/5]).
--export([create_battle_ready_shop/5]).
--export([get_account/1]).
--export([get_balance/1]).
--export([get_first_contract_id/1]).
--export([get_first_battle_ready_contract_id/1]).
--export([get_first_payout_tool_id/2]).
--export([adjust_contract/3]).
-
--export([make_battle_ready_contract_params/2]).
--export([make_battle_ready_contractor/0]).
--export([make_battle_ready_payout_tool_params/0]).
-
--export([make_userinfo/1]).
+-export([create_party_and_shop/6]).
+-export([create_party/2]).
+-export([create_shop/6]).
+-export([create_battle_ready_shop/6]).
+-export([adjust_contract/4]).
 
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
@@ -43,9 +34,6 @@
 -export([make_invoice_context/0]).
 -export([make_invoice_context/1]).
 
--export([make_shop_details/1]).
--export([make_shop_details/2]).
-
 -export([make_cash/2]).
 
 -export([make_lifetime/3]).
@@ -55,7 +43,6 @@
 
 -export([make_disposable_payment_resource/1]).
 -export([make_customer_params/3]).
--export([make_customer_params/4]).
 -export([make_customer_binding_params/1]).
 -export([make_customer_binding_params/2]).
 -export([make_customer_binding_params/3]).
@@ -87,15 +74,22 @@
 
 -spec start_app(app_name()) -> {[app_name()], map()}.
 start_app(scoper = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {storage, scoper_storage_logger}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(woody = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {acceptors_pool_size, 4}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(dmt_client = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             % milliseconds
             {cache_update_interval, 5000},
             {max_cache_size, #{
@@ -116,9 +110,12 @@ start_app(dmt_client = AppName) ->
                 'Repository' => <<"http://dominant:8022/v1/domain/repository">>,
                 'RepositoryClient' => <<"http://dominant:8022/v1/domain/repository_client">>
             }}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(hellgate = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {host, ?HELLGATE_HOST},
             {port, ?HELLGATE_PORT},
             {default_woody_handling_timeout, 30000},
@@ -159,7 +156,7 @@ start_app(hellgate = AppName) ->
                     }
                 },
                 party_management => #{
-                    url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
+                    url => <<"http://party-management:8022/v1/processing/partymgmt">>,
                     transport_opts => #{
                         pool => party_management,
                         max_connections => 300
@@ -218,34 +215,16 @@ start_app(hellgate = AppName) ->
                     pre_aggregation_size => 2
                 }
             }}
-        ]), #{
+        ]),
+        #{
             hellgate_root_url => get_hellgate_url()
-        }};
-start_app(party_management = AppName) ->
-    {start_app(AppName, [
-            {scoper_event_handler_options, #{
-                event_handler_opts => #{
-                    formatter_opts => #{
-                        max_length => 1000
-                    }
-                }
-            }},
-            {services, #{
-                accounter => <<"http://shumway:8022/shumpune">>,
-                automaton => <<"http://machinegun:8022/v1/automaton">>,
-                party_management => #{
-                    url => <<"http://hellgate:8022/v1/processing/partymgmt">>,
-                    transport_opts => #{
-                        pool => party_management,
-                        max_connections => 300
-                    }
-                }
-            }}
-        ]), #{}};
+        }
+    };
 start_app(party_client = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {services, #{
-                party_management => "http://hellgate:8022/v1/processing/partymgmt"
+                party_management => "http://party-management:8022/v1/processing/partymgmt"
             }},
             {woody, #{
                 % disabled | safe | aggressive
@@ -263,11 +242,16 @@ start_app(party_client = AppName) ->
                     }
                 }
             }}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(snowflake = AppName) ->
-    {start_app(AppName, [
+    {
+        start_app(AppName, [
             {max_backward_clock_moving, 1000}
-        ]), #{}};
+        ]),
+        #{}
+    };
 start_app(AppName) ->
     {genlib_app:start_application(AppName), #{}}.
 
@@ -330,14 +314,10 @@ make_user_identity(UserID) ->
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/party_events.hrl").
 
--type customer_id() :: dmsl_domain_thrift:'CustomerID'().
 -type invoice_id() :: dmsl_domain_thrift:'InvoiceID'().
 -type invoice_template_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
--type user_info() :: dmsl_payment_processing_thrift:'UserInfo'().
--type account_id() :: dmsl_domain_thrift:'AccountID'().
--type account() :: map().
--type balance() :: map().
+-type party() :: dmsl_domain_thrift:'Party'().
 -type contract_id() :: dmsl_domain_thrift:'ContractID'().
 -type contract_tpl() :: dmsl_domain_thrift:'ContractTemplateRef'().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
@@ -355,47 +335,41 @@ make_user_identity(UserID) ->
 -type currency() :: dmsl_domain_thrift:'CurrencySymbolicCode'().
 -type invoice_tpl_create_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateCreateParams'().
 -type invoice_tpl_update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
+-type party_client() :: {party_client:client(), party_client:context()}.
+-type payment_inst_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
--spec create_party_and_shop(
+-spec create_party(party_id(), party_client()) -> party().
+create_party(PartyID, {Client, Context}) ->
+    ok = party_client_thrift:create(PartyID, make_party_params(), Client, Context),
+    {ok, #domain_Party{id = PartyID} = Party} = party_client_thrift:get(PartyID, Client, Context),
+    Party.
+
+-spec create_shop(
+    party_id(),
     category(),
     currency(),
     contract_tpl(),
-    dmsl_domain_thrift:'PaymentInstitutionRef'(),
-    Client :: pid()
+    payment_inst_ref(),
+    party_client()
 ) -> shop_id().
-create_party_and_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
-    _ = hg_client_party:create(make_party_params(), Client),
-    #domain_Party{} = hg_client_party:get(Client),
-    create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client).
+create_shop(PartyID, Category, Currency, TemplateRef, PaymentInstRef, PartyClient) ->
+    Fun = fun(_, Changeset, Client, Context) ->
+        {ok, _Claim} = party_client_thrift:create_claim(PartyID, Changeset, Client, Context),
+        ok
+    end,
+    create_shop_(PartyID, Category, Currency, TemplateRef, PaymentInstRef, PartyClient, Fun).
 
-make_party_params() ->
-    #payproc_PartyParams{
-        contact_info = #domain_PartyContactInfo{
-            email = <<?MODULE_STRING>>
-        }
-    }.
-
--spec create_battle_ready_shop(
-    category(),
-    currency(),
-    contract_tpl(),
-    dmsl_domain_thrift:'PaymentInstitutionRef'(),
-    Client :: pid()
-) -> shop_id().
-create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef, Client) ->
-    ContractID = hg_utils:unique_id(),
-    ContractParams = make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef),
-    PayoutToolID = hg_utils:unique_id(),
-    PayoutToolParams = make_battle_ready_payout_tool_params(),
+create_shop_(PartyID, Category, Currency, TemplateRef, PaymentInstRef, {Client, Context}, CreateShopFun) ->
     ShopID = hg_utils:unique_id(),
-    ShopParams = #payproc_ShopParams{
-        category = Category,
-        location = {url, <<>>},
-        details = make_shop_details(<<"Battle Ready Shop">>),
-        contract_id = ContractID,
-        payout_tool_id = PayoutToolID
-    },
+    ContractID = hg_utils:unique_id(),
+    PayoutToolID = hg_utils:unique_id(),
+
+    ShopParams = make_shop_params(Category, ContractID, PayoutToolID),
     ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
+
+    ContractParams = make_contract_params(TemplateRef, PaymentInstRef),
+    PayoutToolParams = make_payout_tool_params(),
+
     Changeset = [
         {contract_modification, #payproc_ContractModificationUnit{
             id = ContractID,
@@ -412,103 +386,95 @@ create_battle_ready_shop(Category, Currency, TemplateRef, PaymentInstitutionRef,
         ?shop_modification(ShopID, {creation, ShopParams}),
         ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
     ],
-    ok = ensure_claim_accepted(hg_client_party:create_claim(Changeset, Client), Client),
-    _Shop = hg_client_party:get_shop(ShopID, Client),
+
+    ok = CreateShopFun(PartyID, Changeset, Client, Context),
+
+    {ok, #domain_Shop{id = ShopID}} = party_client_thrift:get_shop(PartyID, ShopID, Client, Context),
     ShopID.
 
--spec get_first_contract_id(Client :: pid()) -> contract_id().
-get_first_contract_id(Client) ->
-    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
-    lists:min(maps:keys(Contracts)).
+-spec create_party_and_shop(
+    party_id(),
+    category(),
+    currency(),
+    contract_tpl(),
+    payment_inst_ref(),
+    party_client()
+) -> shop_id().
+create_party_and_shop(PartyID, Category, Currency, TemplateRef, PaymentInstRef, Client) ->
+    _ = create_party(PartyID, Client),
+    create_shop(PartyID, Category, Currency, TemplateRef, PaymentInstRef, Client).
 
--spec get_first_battle_ready_contract_id(Client :: pid()) -> contract_id().
-get_first_battle_ready_contract_id(Client) ->
-    #domain_Party{contracts = Contracts} = hg_client_party:get(Client),
-    IDs = lists:foldl(
-        fun({ID, Contract}, Acc) ->
-            case Contract of
-                #domain_Contract{
-                    contractor = {legal_entity, _},
-                    payout_tools = [#domain_PayoutTool{} | _]
-                } ->
-                    [ID | Acc];
-                _ ->
-                    Acc
-            end
-        end,
-        [],
-        maps:to_list(Contracts)
-    ),
-    case IDs of
-        [_ | _] ->
-            lists:min(IDs);
-        [] ->
-            error(not_found)
-    end.
+make_shop_params(Category, ContractID, PayoutToolID) ->
+    #payproc_ShopParams{
+        category = Category,
+        location = {url, <<>>},
+        details = #domain_ShopDetails{name = <<"Battle Ready Shop">>},
+        contract_id = ContractID,
+        payout_tool_id = PayoutToolID
+    }.
 
--spec adjust_contract(contract_id(), contract_tpl(), Client :: pid()) -> ok.
-adjust_contract(ContractID, TemplateRef, Client) ->
-    ensure_claim_accepted(
-        hg_client_party:create_claim(
-            [
-                {contract_modification, #payproc_ContractModificationUnit{
-                    id = ContractID,
+make_party_params() ->
+    #payproc_PartyParams{
+        contact_info = #domain_PartyContactInfo{
+            email = <<?MODULE_STRING>>
+        }
+    }.
+
+-spec create_battle_ready_shop(
+    party_id(),
+    category(),
+    currency(),
+    contract_tpl(),
+    payment_inst_ref(),
+    party_client()
+) -> shop_id().
+create_battle_ready_shop(PartyID, Category, Currency, TemplateRef, PaymentInstRef, PartyPair) ->
+    Fun = fun(_, Changeset, _, _) ->
+        %%_ = timer:sleep(5000),
+        create_claim(PartyID, Changeset, PartyPair)
+    end,
+    create_shop_(PartyID, Category, Currency, TemplateRef, PaymentInstRef, PartyPair, Fun).
+
+-spec adjust_contract(party_id(), contract_id(), contract_tpl(), party_client()) -> ok.
+adjust_contract(PartyID, ContractID, TemplateRef, Client) ->
+    Changeset = [
+        {contract_modification, #payproc_ContractModificationUnit{
+            id = ContractID,
+            modification =
+                {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{
+                    adjustment_id = hg_utils:unique_id(),
                     modification =
-                        {adjustment_modification, #payproc_ContractAdjustmentModificationUnit{
-                            adjustment_id = hg_utils:unique_id(),
-                            modification =
-                                {creation, #payproc_ContractAdjustmentParams{
-                                    template = TemplateRef
-                                }}
+                        {creation, #payproc_ContractAdjustmentParams{
+                            template = TemplateRef
                         }}
                 }}
-            ],
-            Client
-        ),
-        Client
-    ).
+        }}
+    ],
+    create_claim(PartyID, Changeset, Client).
 
-ensure_claim_accepted(#payproc_Claim{id = ClaimID, revision = ClaimRevision, status = Status}, Client) ->
-    case Status of
-        {accepted, _} ->
+-spec create_claim(party_id(), list(), party_client()) -> ok.
+create_claim(PartyID, Changeset, {Client, Context}) ->
+    {ok, Claim} = party_client_thrift:create_claim(PartyID, Changeset, Client, Context),
+    case Claim of
+        #payproc_Claim{status = {accepted, _}} ->
             ok;
-        _ ->
-            ok = hg_client_party:accept_claim(ClaimID, ClaimRevision, Client)
+        #payproc_Claim{id = ID, revision = Rev} ->
+            party_client_thrift:accept_claim(PartyID, ID, Rev, Client, Context)
     end.
 
--spec get_account(account_id()) -> account().
-get_account(AccountID) ->
-    % TODO we sure need to proxy this through the hellgate interfaces
-    hg_accounting:get_account(AccountID).
-
--spec get_balance(account_id()) -> balance().
-get_balance(AccountID) ->
-    % TODO we sure need to proxy this through the hellgate interfaces
-    hg_accounting:get_balance(AccountID).
-
--spec get_first_payout_tool_id(contract_id(), Client :: pid()) -> dmsl_domain_thrift:'PayoutToolID'().
-get_first_payout_tool_id(ContractID, Client) ->
-    #domain_Contract{payout_tools = PayoutTools} = hg_client_party:get_contract(ContractID, Client),
-    case PayoutTools of
-        [Tool | _] ->
-            Tool#domain_PayoutTool.id;
-        [] ->
-            error(not_found)
-    end.
-
--spec make_battle_ready_contract_params(
-    dmsl_domain_thrift:'ContractTemplateRef'() | undefined,
-    dmsl_domain_thrift:'PaymentInstitutionRef'()
+-spec make_contract_params(
+    contract_tpl() | undefined,
+    payment_inst_ref()
 ) -> dmsl_payment_processing_thrift:'ContractParams'().
-make_battle_ready_contract_params(TemplateRef, PaymentInstitutionRef) ->
+make_contract_params(TemplateRef, PaymentInstitutionRef) ->
     #payproc_ContractParams{
-        contractor = make_battle_ready_contractor(),
+        contractor = make_contractor(),
         template = TemplateRef,
         payment_institution = PaymentInstitutionRef
     }.
 
--spec make_battle_ready_contractor() -> dmsl_domain_thrift:'Contractor'().
-make_battle_ready_contractor() ->
+-spec make_contractor() -> dmsl_domain_thrift:'Contractor'().
+make_contractor() ->
     BankAccount = #domain_RussianBankAccount{
         account = <<"4276300010908312893">>,
         bank_name = <<"SomeBank">>,
@@ -528,8 +494,8 @@ make_battle_ready_contractor() ->
             russian_bank_account = BankAccount
         }}}.
 
--spec make_battle_ready_payout_tool_params() -> dmsl_payment_processing_thrift:'PayoutToolParams'().
-make_battle_ready_payout_tool_params() ->
+-spec make_payout_tool_params() -> dmsl_payment_processing_thrift:'PayoutToolParams'().
+make_payout_tool_params() ->
     #payproc_PayoutToolParams{
         currency = ?cur(<<"RUB">>),
         tool_info =
@@ -540,10 +506,6 @@ make_battle_ready_payout_tool_params() ->
                 bank_bik = <<"66642666">>
             }}
     }.
-
--spec make_userinfo(party_id()) -> user_info().
-make_userinfo(PartyID) ->
-    #payproc_UserInfo{id = PartyID, type = {external_user, #payproc_ExternalUser{}}}.
 
 -spec make_invoice_params(party_id(), shop_id(), binary(), cash()) -> invoice_params().
 make_invoice_params(PartyID, ShopID, Product, Cost) ->
@@ -705,17 +667,6 @@ make_invoice_context(Data) ->
         data = Data
     }.
 
--spec make_shop_details(binary()) -> dmsl_domain_thrift:'ShopDetails'().
-make_shop_details(Name) ->
-    make_shop_details(Name, undefined).
-
--spec make_shop_details(binary(), undefined | binary()) -> dmsl_domain_thrift:'ShopDetails'().
-make_shop_details(Name, Description) ->
-    #domain_ShopDetails{
-        name = Name,
-        description = Description
-    }.
-
 -spec make_disposable_payment_resource({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
     dmsl_domain_thrift:'DisposablePaymentResource'().
 make_disposable_payment_resource({PaymentTool, SessionID}) ->
@@ -747,14 +698,8 @@ get_hellgate_url() ->
 
 -spec make_customer_params(party_id(), shop_id(), binary()) -> dmsl_payment_processing_thrift:'CustomerParams'().
 make_customer_params(PartyID, ShopID, EMail) ->
-    CustomerID = hg_utils:unique_id(),
-    make_customer_params(CustomerID, PartyID, ShopID, EMail).
-
--spec make_customer_params(customer_id(), party_id(), shop_id(), binary()) ->
-    dmsl_payment_processing_thrift:'CustomerParams'().
-make_customer_params(CustomerID, PartyID, ShopID, EMail) ->
     #payproc_CustomerParams{
-        customer_id = CustomerID,
+        customer_id = hg_utils:unique_id(),
         party_id = PartyID,
         shop_id = ShopID,
         contact_info = ?contact_info(EMail),

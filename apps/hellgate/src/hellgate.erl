@@ -41,9 +41,6 @@ init([]) ->
         hg_customer,
         hg_recurrent_paytool
     ],
-    PMMachineHandlers = [
-        pm_party_machine
-    ],
     PartyClient = party_client:create_client(),
     DefaultTimeout = genlib_app:env(hellgate, default_woody_handling_timeout, ?DEFAULT_HANDLING_TIMEOUT),
     Opts = #{
@@ -56,12 +53,11 @@ init([]) ->
             [
                 party_client:child_spec(party_client, PartyClient),
                 hg_machine:get_child_spec(MachineHandlers),
-                pm_machine:get_child_spec(PMMachineHandlers),
-                get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts)
+                get_api_child_spec(MachineHandlers, Opts)
             ]
         }}.
 
-get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
+get_api_child_spec(MachineHandlers, Opts) ->
     {ok, Ip} = inet:parse_address(genlib_app:env(?MODULE, ip, "::")),
     HealthRoutes = construct_health_routes(genlib_app:env(?MODULE, health_check, #{})),
     EventHandlerOpts = genlib_app:env(?MODULE, scoper_event_handler_options, #{}),
@@ -75,10 +71,7 @@ get_api_child_spec(MachineHandlers, PMMachineHandlers, Opts) ->
             protocol_opts => genlib_app:env(?MODULE, protocol_opts, #{}),
             event_handler => {scoper_woody_event_handler, EventHandlerOpts},
             handlers => hg_machine:get_service_handlers(MachineHandlers, Opts) ++
-                pm_machine:get_service_handlers(PMMachineHandlers, Opts) ++
                 [
-                    construct_service_handler_pm(claim_committer, pm_claim_committer_handler, Opts),
-                    construct_service_handler_pm(party_management, pm_party_handler, Opts),
                     construct_service_handler(invoicing, hg_invoice, Opts),
                     construct_service_handler(invoice_templating, hg_invoice_template, Opts),
                     construct_service_handler(customer_management, hg_customer, Opts),
@@ -102,11 +95,6 @@ construct_service_handler(Name, Module, Opts) ->
     FullOpts = maps:merge(#{handler => Module}, Opts),
     {Path, Service} = hg_proto:get_service_spec(Name),
     {Path, {Service, {hg_woody_wrapper, FullOpts}}}.
-
-construct_service_handler_pm(Name, Module, Opts) ->
-    FullOpts = maps:merge(#{handler => Module}, Opts),
-    {Path, Service} = pm_proto:get_service_spec(Name),
-    {Path, {Service, {pm_woody_wrapper, FullOpts}}}.
 
 -spec get_prometheus_route() -> {iodata(), module(), _Opts :: any()}.
 get_prometheus_route() ->

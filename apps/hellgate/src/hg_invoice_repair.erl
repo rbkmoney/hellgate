@@ -20,7 +20,7 @@
 -type action_type() ::
     fail_pre_processing
     | skip_inspector
-    | fail_session.
+    | repair_session.
 
 -type scenario_result() ::
     hg_invoice_payment:machine_result()
@@ -44,8 +44,17 @@ check_for_action(
     {result, {done, {[?payment_status_changed(?failed({failure, Failure}))], hg_machine_action:instant()}}};
 check_for_action(skip_inspector, {skip_inspector, #payproc_InvoiceRepairSkipInspector{risk_score = RiskScore}}) ->
     {result, RiskScore};
-check_for_action(fail_session, {fail_session, #payproc_InvoiceRepairFailSession{failure = Failure}}) ->
-    ProxyResult = #prxprv_PaymentProxyResult{intent = {finish, #'prxprv_FinishIntent'{status = {failure, Failure}}}},
+check_for_action(repair_session, {fail_session, #payproc_InvoiceRepairFailSession{failure = Failure, trx = Trx}}) ->
+    ProxyResult = #prxprv_PaymentProxyResult{
+        intent = {finish, #'prxprv_FinishIntent'{status = {failure, Failure}}},
+        trx = Trx
+    },
+    {result, ProxyResult};
+check_for_action(repair_session, {fulfill_session, #payproc_InvoiceRepairFulfillSession{trx = Trx}}) ->
+    ProxyResult = #prxprv_PaymentProxyResult{
+        intent = {finish, #'prxprv_FinishIntent'{status = {success, #'prxprv_Success'{}}}},
+        trx = Trx
+    },
     {result, ProxyResult};
 check_for_action(_Type, _Scenario) ->
     call.
@@ -81,9 +90,13 @@ check_activity_compatibility({skip_inspector, #payproc_InvoiceRepairSkipInspecto
         Activity =:= {payment, risk_scoring}
 ->
     ok;
-check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, Activity) when
+check_activity_compatibility({fulfill_session, #payproc_InvoiceRepairFulfillSession{}}, Activity) when
     Activity =:= {payment, processing_session}
 ->
+    ok;
+check_activity_compatibility({fulfill_session, #payproc_InvoiceRepairFulfillSession{}}, {refund_session, _}) ->
+    ok;
+check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, {payment, processing_session}) ->
     ok;
 check_activity_compatibility({fail_session, #payproc_InvoiceRepairFailSession{}}, {refund_session, _}) ->
     ok;

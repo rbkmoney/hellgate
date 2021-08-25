@@ -102,27 +102,23 @@ init_per_suite(C) ->
     % _ = dbg:p(all, c),
     % _ = dbg:tpl({woody_client, '_', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
-    {Apps, Ret} = hg_ct_helper:start_apps([
-        woody,
-        scoper,
-        dmt_client,
-        party_management,
-        hellgate,
-        {cowboy, CowboySpec}
-    ]),
+    {Apps, Ret} = hg_ct_helper:start_apps(
+        [woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}]
+    ),
     _ = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-    PartyClient = hg_client_party:start(PartyID, hg_ct_helper:create_client(RootUrl, PartyID)),
+    PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
     CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
-    Shop1ID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    Shop2ID = hg_ct_helper:create_party_and_shop(?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    _ = timer:sleep(5000),
+    _ = hg_ct_helper:create_party(PartyID, PartyClient),
+    Shop1ID = hg_ct_helper:create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    Shop2ID = hg_ct_helper:create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     C1 = [
         {apps, Apps},
         {root_url, RootUrl},
-        {party_client, PartyClient},
         {customer_client, CustomerClient},
         {party_id, PartyID},
         {shop_id, Shop1ID},
@@ -132,6 +128,9 @@ init_per_suite(C) ->
     ],
     ok = start_proxies([{hg_dummy_provider, 1, C1}, {hg_dummy_inspector, 2, C1}]),
     C1.
+
+user_info() ->
+    #{user_info => #{id => <<"test">>, realm => <<"service">>}}.
 
 -spec end_per_suite(config()) -> config().
 end_per_suite(C) ->
