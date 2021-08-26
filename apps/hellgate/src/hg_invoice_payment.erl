@@ -1894,7 +1894,7 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, [], St, Action)
     end.
 
-handle_gathered_route_result({[_|_] = RoutesNoOverflow, _}, Routes, Revision) ->
+handle_gathered_route_result({[_ | _] = RoutesNoOverflow, _}, Routes, Revision) ->
     {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
     _ = log_route_choice_meta(ChoiceMeta, Revision),
     [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
