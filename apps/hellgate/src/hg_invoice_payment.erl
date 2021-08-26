@@ -1884,7 +1884,7 @@ process_routing(Action, St) ->
             end,
         Clocks = hold_limit_routes(Routes, VS4, St),
         Events = handle_gathered_route_result(
-            filter_limit_overflow_routes(Routes, VS4, store(Clocks, St)),
+            get_limit_overflow_routes(Routes, VS4, store(Clocks, St)),
             [hg_routing:to_payment_route(R) || R <- Routes],
             Revision
         ),
@@ -1894,11 +1894,11 @@ process_routing(Action, St) ->
             handle_choose_route_error(Reason, [], St, Action)
     end.
 
-handle_gathered_route_result({ok, RoutesNoOverflow}, Routes, Revision) ->
+handle_gathered_route_result({[_|_] = RoutesNoOverflow, _}, Routes, Revision) ->
     {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
     _ = log_route_choice_meta(ChoiceMeta, Revision),
     [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
-handle_gathered_route_result({error, not_found}, Routes, _) ->
+handle_gathered_route_result({[], _}, Routes, _) ->
     Failure =
         {failure,
             payproc_errors:construct(
@@ -2551,14 +2551,6 @@ get_provider_terms(St, Revision) ->
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     get_provider_terminal_terms(Route, VS1, Revision).
-
-filter_limit_overflow_routes(Routes, VS, St) ->
-    case get_limit_overflow_routes(Routes, VS, St) of
-        {[], _RejectedRoutes} ->
-            {error, not_found};
-        {RoutesNoOverflow, _} ->
-            {ok, RoutesNoOverflow}
-    end.
 
 get_limit_overflow_routes(Routes, VS, St) ->
     Revision = get_payment_revision(St),
