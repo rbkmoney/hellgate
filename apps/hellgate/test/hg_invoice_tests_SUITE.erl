@@ -4517,6 +4517,7 @@ terms_retrieval(C) ->
     } = TermSet1,
     Revision = hg_domain:head(),
     _ = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
+    _ = timer:sleep(5000),
     Timestamp2 = hg_datetime:format_now(),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp2}, Client),
     #domain_TermSet{
