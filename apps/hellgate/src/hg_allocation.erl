@@ -1,15 +1,11 @@
--module(hg_allocations).
+-module(hg_allocation).
 
 -include("domain.hrl").
--include_lib("damsel/include/dmsl_base_thrift.hrl").
--include_lib("damsel/include/dmsl_domain_thrift.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
--export([construct_target/1]).
--export([calculate_allocation/3]).
 -export([calculate_allocation/4]).
--export([calculate_refund_allocation/5]).
+-export([sub/5]).
 -export([assert_allocatable/2]).
 
 -export_type([allocation_prototype/0]).
@@ -28,6 +24,20 @@
     shop_id => shop_id()
 }.
 
+-type sub_errors() ::
+    no_transaction_to_sub |
+    multiple_transactions_to_sub |
+    transaction_amount_sub_too_much |
+    sub_currency_mismatch |
+    sub_body_from_undefined |
+    sub_undefined_from_body |
+    sub_body_target_mismatch |
+    sub_from_undefined_fee |
+    sub_undefined_fee |
+    sub_from_undefined_details |
+    sub_from_undefined_cart |
+    allocations_and_cost_do_not_match.
+
 -spec calculate_allocation(allocation_prototype() | undefined, owner_id(), shop_id(), cash()) ->
     allocation() | undefined.
 calculate_allocation(AllocationPrototype, OwnerID, ShopID, Cost) ->
@@ -44,176 +54,6 @@ construct_target(#{owner_id := OwnerID, shop_id := ShopID}) ->
         shop_id = ShopID
     }}.
 
--spec calculate_refund_allocation(allocation(), allocation_prototype(), owner_id(), shop_id(), cash()) -> allocation().
-calculate_refund_allocation(Allocation, AllocationPrototype, OwnerID, ShopID, Cost) ->
-    #domain_Allocation{
-        transactions = Transactions
-    } = Allocation,
-    #domain_AllocationPrototype{
-        transactions = TransactionsPrototype
-    } = AllocationPrototype,
-    FeeTarget = construct_target(#{
-        owner_id => OwnerID,
-        shop_id => ShopID
-    }),
-    #domain_Allocation{
-        transactions = calculate_refund_transactions(Transactions, TransactionsPrototype, FeeTarget, Cost)
-    }.
-
-calculate_refund_transactions(Transactions, TransactionPrototypes, FeeTarget, Cost) ->
-    calculate_refund_transactions(Transactions, TransactionPrototypes, FeeTarget, Cost, []).
-
-calculate_refund_transactions(Transactions0, [], FeeTarget, Cost0, Acc0) ->
-    {Cost1, Transactions1} = lists:foldl(
-        fun(T, {?cash(AccCost, SymCode), Acc}) ->
-            case T of
-                #domain_AllocationTransaction{target = FeeTarget} ->
-                    {?cash(AccCost, SymCode), Acc};
-                #domain_AllocationTransaction{amount = ?cash(Amount, SymCode)} = T ->
-                    {?cash(AccCost - Amount, SymCode), [T | Acc]}
-            end
-        end,
-        {Cost0, []},
-        Transactions0
-    ),
-    Acc1 = Transactions1 ++ Acc0,
-    genlib_list:compact([construct_aggregator_transaction(FeeTarget, Cost1) | Acc1]);
-calculate_refund_transactions(Transactions, [TP | TransactionPrototypes], FeeTarget, ?cash(Cost, SymCode), Acc0) ->
-    #domain_AllocationTransactionPrototype{
-        target = Target
-    } = TP,
-    {[RefundTargetTransaction], RemainingTransactions} =
-        lists:partition(
-            fun(T) ->
-                case T of
-                    #domain_AllocationTransaction{target = Target} ->
-                        true;
-                    _ ->
-                        false
-                end
-            end,
-            Transactions
-        ),
-    {?cash(Amount, SymCode), RefundedTransaction} = calculate_refunded_transaction(RefundTargetTransaction, TP),
-    Acc1 = [RefundedTransaction | Acc0],
-    calculate_refund_transactions(
-        RemainingTransactions,
-        TransactionPrototypes,
-        FeeTarget,
-        ?cash(Cost - Amount, SymCode),
-        Acc1
-    ).
-
-calculate_refunded_transaction(Transaction, TransactionPrototype) ->
-    #domain_AllocationTransaction{
-        id = ID,
-        target = Target,
-        amount = Amount,
-        body = Body,
-        details = Details
-    } = Transaction,
-    #domain_AllocationTransactionPrototype{
-        % TODO Do something with it
-        id = _IDPrototype,
-        target = Target,
-        body = RefundBody,
-        details = RefundDetails
-    } = TransactionPrototype,
-    _ = validate_prototype_body_currency(Amount, RefundBody),
-    {?cash(RefundedAmount, SymCode), RefundedBody} = calculate_refund_body(Amount, Body, RefundBody),
-    case RefundedAmount of
-        _ when RefundedAmount == 0 ->
-            {?cash(RefundedAmount, SymCode), undefined};
-        _ when RefundedAmount < 0 ->
-            %% TODO make real exception
-            throw(allocation_refund_too_much);
-        _ ->
-            {?cash(RefundedAmount, SymCode), #domain_AllocationTransaction{
-                id = ID,
-                target = Target,
-                amount = ?cash(RefundedAmount, SymCode),
-                body = RefundedBody,
-                details = calculate_refunded_details(Details, RefundDetails)
-            }}
-    end.
-
-validate_prototype_body_currency(
-    ?cash(_, SymCode),
-    {amount, #domain_AllocationTransactionPrototypeBodyAmount{amount = ?cash(_, OtherSymCode)}}
-) when SymCode /= OtherSymCode ->
-    throw(#payproc_InconsistentRefundCurrency{currency = SymCode});
-validate_prototype_body_currency(
-    ?cash(_, SymCode),
-    {total, #domain_AllocationTransactionPrototypeBodyTotal{total = ?cash(_, OtherSymCode)}}
-) when SymCode /= OtherSymCode ->
-    throw(#payproc_InconsistentRefundCurrency{currency = SymCode});
-validate_prototype_body_currency(_Cash, _PrototypeBody) ->
-    ok.
-
-calculate_refund_body(_Cash, undefined, {total, _}) ->
-    %% TODO change to real exception
-    throw(unrefundable);
-calculate_refund_body(?cash(Cash, SymCode), undefined, {amount, Amount}) ->
-    #domain_AllocationTransactionPrototypeBodyAmount{
-        amount = ?cash(RefundAmount, SymCode)
-    } = Amount,
-    {?cash(Cash - RefundAmount, SymCode), undefined};
-calculate_refund_body(_Cash, Body, {total, Amount}) ->
-    #domain_AllocationTransactionPrototypeBodyTotal{
-        total = ?cash(RefundAmount, SymCode) = TotalRefund,
-        fee = Fee
-    } = Amount,
-    #domain_AllocationTransactionBodyTotal{
-        fee_target = FeeTarget,
-        total = ?cash(Total, SymCode),
-        fee_amount = ?cash(FeeAmount, SymCode),
-        fee = FeeShare
-    } = Body,
-    _ = validate_same_fee_type(Fee, FeeShare),
-    {?cash(RefundFee, SymCode), _} = calculate_allocation_transactions_fee(Fee, TotalRefund),
-    {
-        ?cash(Total - RefundAmount, SymCode),
-        #domain_AllocationTransactionBodyTotal{
-            fee_target = FeeTarget,
-            total = ?cash(Total - RefundAmount, SymCode),
-            fee_amount = ?cash(FeeAmount - RefundFee, SymCode),
-            fee = FeeShare
-        }
-    }.
-
-validate_same_fee_type({fixed, _}, undefined) ->
-    ok;
-validate_same_fee_type({share, _}, #domain_AllocationTransactionFeeShare{}) ->
-    ok;
-validate_same_fee_type(_Fee, _FeeShare) ->
-    %% TODO make real exception
-    throw(fee_type_mismatch).
-
-calculate_refunded_details(undefined, _RefundDetails) ->
-    undefined;
-calculate_refunded_details(Details, undefined) ->
-    Details;
-calculate_refunded_details(
-    #domain_AllocationTransactionDetails{
-        cart = Cart
-    },
-    #domain_AllocationTransactionDetails{
-        cart = RefundCart
-    }
-) ->
-    #domain_AllocationTransactionDetails{
-        cart = calculate_refunded_cart(Cart, RefundCart)
-    }.
-
-calculate_refunded_cart(undefined, _RefundCart) ->
-    undefined;
-calculate_refunded_cart(Cart, undefined) ->
-    Cart;
-calculate_refunded_cart(#domain_InvoiceCart{lines = Lines}, #domain_InvoiceCart{lines = RefundLines}) ->
-    #domain_InvoiceCart{
-        lines = lists:subtract(Lines, RefundLines)
-    }.
-
 -spec calculate_allocation(allocation_prototype() | undefined, target(), cash()) -> allocation() | undefined.
 calculate_allocation(undefined, _FeeTarget, _Cost) ->
     undefined;
@@ -222,7 +62,186 @@ calculate_allocation(#domain_AllocationPrototype{transactions = Transactions}, F
         transactions = calculate_allocation_transactions(Transactions, FeeTarget, Cost)
     }.
 
--spec assert_allocatable(allocation_prototype() | undefined, allocation_terms()) -> ok | no_return().
+-spec sub(allocation(), allocation(), owner_id(), shop_id(), cash()) ->
+    {ok, allocation()} | {error, sub_errors()}.
+sub(Allocation, SubAllocation, OwnerID, ShopID, Cost) ->
+    FeeTarget = construct_target(#{
+        owner_id => OwnerID,
+        shop_id => ShopID
+    }),
+    #domain_Allocation{
+        transactions = Transactions
+    } = Allocation,
+    #domain_Allocation{
+        transactions = SubTransactions
+    } = SubAllocation,
+    try sub_transactions(Transactions, SubTransactions, FeeTarget, Cost) of
+        ResTransactions ->
+            {ok, #domain_Allocation{
+                transactions = ResTransactions
+            }}
+    catch
+        throw:Error ->
+            {error, Error}
+    end.
+
+sub_transactions(Transactions, SubTransactions, FeeTarget, Cost) ->
+    sub_transactions(Transactions, SubTransactions, FeeTarget, Cost, []).
+
+sub_transactions(Transactions0, [], FeeTarget, Cost0, Acc0) ->
+    {Cost1, Transactions1} = lists:foldl(
+        fun(T, {AccCost, Acc}) ->
+            case T of
+                #domain_AllocationTransaction{target = FeeTarget} ->
+                    {AccCost, Acc};
+                #domain_AllocationTransaction{amount = Amount} = T ->
+                    {sub_amount(AccCost, Amount), [T | Acc]}
+            end
+        end,
+        {Cost0, []},
+        Transactions0
+    ),
+    Acc1 = Transactions1 ++ Acc0,
+    genlib_list:compact([construct_aggregator_transaction(FeeTarget, Cost1) | Acc1]);
+sub_transactions(Transactions0, [ST | SubTransactions], FeeTarget, Cost, Acc0) ->
+    #domain_AllocationTransaction{
+        target = Target
+    } = ST,
+    {Transaction, Transactions1} = take_transaction(Target, Transactions0),
+    {ResAmount, ResTransaction} = sub_transaction(Transaction, ST),
+    Acc1 = [ResTransaction | Acc0],
+    sub_transactions(Transactions1, SubTransactions, FeeTarget, sub_amount(Cost, ResAmount), Acc1).
+
+take_transaction(Target, Transactions) ->
+    Fun = fun(T) ->
+        case T of
+            #domain_AllocationTransaction{target = Target} ->
+                true;
+            _ ->
+                false
+        end
+          end,
+    case lists:partition(Fun, Transactions) of
+        {[], Transactions} ->
+            throw(no_transaction_to_sub);
+        {[_Transaction1, _Transaction2 | _], _RemainingTransactions} ->
+            throw(multiple_transactions_to_sub);
+        {[Transaction], RemainingTransactions} ->
+            {Transaction, RemainingTransactions}
+    end.
+
+sub_transaction(Transaction, SubTransaction) ->
+    #domain_AllocationTransaction{
+        id = ID,
+        target = Target,
+        amount = Amount,
+        body = Body,
+        details = Details
+    } = Transaction,
+    #domain_AllocationTransaction{
+        id = _ID,
+        target = Target,
+        amount = SubAmount,
+        body = SubBody,
+        details = SubDetails
+    } = SubTransaction,
+    ResAmount = sub_amount(Amount, SubAmount),
+    ResBody = sub_body(Body, SubBody),
+    ResDetails = sub_details(Details, SubDetails),
+    case ResAmount of
+        ?cash(A, _) when A == 0 ->
+            {ResAmount, undefined};
+        ?cash(A, _) when A < 0 ->
+            throw(transaction_amount_sub_too_much);
+        _ ->
+            {ResAmount, #domain_AllocationTransaction{
+                id = ID,
+                target = Target,
+                amount = ResAmount,
+                body = ResBody,
+                details = ResDetails
+            }}
+    end.
+
+sub_amount(Amount, SubAmount) ->
+    try hg_cash:sub(Amount, SubAmount) of
+        Res ->
+            Res
+    catch
+        error:badarg ->
+            throw(sub_currency_mismatch)
+    end.
+
+sub_body(undefined, undefined) ->
+    undefined;
+sub_body(undefined, SubBody) when SubBody /= undefined ->
+    throw(sub_body_from_undefined);
+sub_body(Body, undefined) when Body /= undefined ->
+    throw(sub_undefined_from_body);
+sub_body(
+    #domain_AllocationTransactionBodyTotal{fee_target = FeeTarget1},
+    #domain_AllocationTransactionBodyTotal{fee_target = FeeTarget2}
+) when FeeTarget1 /= FeeTarget2 ->
+    throw(sub_body_target_mismatch);
+sub_body(Body, SubBody) ->
+    #domain_AllocationTransactionBodyTotal{
+        fee_target = FeeTarget,
+        total = Total,
+        fee_amount = FeeAmount,
+        fee = Fee
+    } = Body,
+    #domain_AllocationTransactionBodyTotal{
+        fee_target = FeeTarget,
+        total = SubTotal,
+        fee_amount = SubFeeAmount,
+        fee = SubFee
+    } = SubBody,
+    #domain_AllocationTransactionBodyTotal{
+        fee_target = FeeTarget,
+        total = sub_amount(Total, SubTotal),
+        fee_amount = sub_amount(FeeAmount, SubFeeAmount),
+        fee = sub_fee(Fee, SubFee)
+    }.
+
+sub_fee(undefined, undefined) ->
+    undefined;
+sub_fee(undefined, #domain_AllocationTransactionFeeShare{}) ->
+    throw(sub_from_undefined_fee);
+sub_fee(#domain_AllocationTransactionFeeShare{}, undefined) ->
+    throw(sub_undefined_fee);
+sub_fee(Fee, _SubFee) ->
+    Fee. %% TODO Do something smarter about it
+
+sub_details(undefined, undefined) ->
+    undefined;
+sub_details(undefined, _SubDetails) ->
+    throw(sub_from_undefined_details);
+sub_details(Details, undefined) ->
+    Details;
+sub_details(
+    #domain_AllocationTransactionDetails{
+        cart = Cart
+    },
+    #domain_AllocationTransactionDetails{
+        cart = SubCart
+    }
+) ->
+    #domain_AllocationTransactionDetails{
+        cart = sub_cart(Cart, SubCart)
+    }.
+
+sub_cart(undefined, undefined) ->
+    undefined;
+sub_cart(undefined, _SubCart) ->
+    throw(sub_from_undefined_cart);
+sub_cart(Cart, undefined) ->
+    Cart;
+sub_cart(#domain_InvoiceCart{lines = Lines}, #domain_InvoiceCart{lines = SubLines}) ->
+    #domain_InvoiceCart{
+        lines = lists:subtract(Lines, SubLines)
+    }.
+
+-spec assert_allocatable(allocation_prototype() | undefined, allocation_terms()) -> ok | {error, unallocatable}.
 assert_allocatable(undefined, _AllocationTerms) ->
     ok;
 assert_allocatable(_Allocation, #domain_PaymentAllocationServiceTerms{allow = Allow}) ->
@@ -230,9 +249,7 @@ assert_allocatable(_Allocation, #domain_PaymentAllocationServiceTerms{allow = Al
         {constant, true} ->
             ok;
         _ ->
-            throw(#payproc_InvoiceTermsViolated{
-                reason = {invoice_unallocatable, #payproc_InvoiceUnallocatable{}}
-            })
+            {error, unallocatable}
     end.
 
 calculate_allocation_transactions(Transactions, FeeTarget, Cost) ->
@@ -321,7 +338,6 @@ construct_transaction_id(
 construct_aggregator_transaction(_FeeTarget, ?cash(Cost, _SymCode)) when Cost == 0 ->
     undefined;
 construct_aggregator_transaction(_FeeTarget, ?cash(Cost, _SymCode)) when Cost < 0 ->
-    %% TODO Real exception
     throw(allocations_and_cost_do_not_match);
 construct_aggregator_transaction(FeeTarget, Cost) ->
     #domain_AllocationTransaction{
