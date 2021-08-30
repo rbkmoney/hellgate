@@ -105,7 +105,7 @@ init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps(
         [woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}]
     ),
-    ok = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
+    _ = hg_domain:insert(construct_domain_fixture(construct_term_set_w_recurrent_paytools())),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
@@ -134,7 +134,7 @@ user_info() ->
 
 -spec end_per_suite(config()) -> config().
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 -spec init_per_group(group_name(), config()) -> config().
@@ -255,7 +255,7 @@ cancelled_first_payment_test(C) ->
 
 -spec not_permitted_recurrent_test(config()) -> test_result().
 not_permitted_recurrent_test(C) ->
-    ok = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
+    _ = hg_domain:upsert(construct_domain_fixture(construct_simple_term_set())),
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     PaymentParams = make_payment_params(),
@@ -299,7 +299,8 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    ok = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies),
+    ok.
 
 start_service_handler(Module, C, HandlerOpts) ->
     start_service_handler(Module, Module, C, HandlerOpts).

@@ -432,7 +432,7 @@ init_per_suite(C) ->
         [woody, scoper, dmt_client, party_client, hellgate, snowflake, {cowboy, CowboySpec}]
     ),
 
-    ok = hg_domain:insert(construct_domain_fixture()),
+    _ = hg_domain:insert(construct_domain_fixture()),
     {ok, #limiter_config_LimitConfig{}} = hg_dummy_limiter:create_config(
         limiter_create_params(?LIMIT_ID),
         hg_dummy_limiter:new()
@@ -484,7 +484,7 @@ user_info() ->
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     _ = [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
 
@@ -614,7 +614,7 @@ init_per_testcase(Name, C) when
 ->
     Revision = hg_domain:head(),
     Fixture = get_payment_adjustment_fixture(Revision),
-    ok = hg_domain:upsert(Fixture),
+    _ = hg_domain:upsert(Fixture),
     [{original_domain_revision, Revision} | init_per_testcase(C)];
 init_per_testcase(Name, C) when
     Name == rounding_cashflow_volume;
@@ -640,7 +640,7 @@ init_per_testcase(Name, C) when
             invalid_permit_partial_capture_in_provider ->
                 construct_term_set_for_partial_capture_provider_permit(Revision)
         end,
-    ok = hg_domain:upsert(Fixture),
+    _ = hg_domain:upsert(Fixture),
     [{original_domain_revision, Revision} | init_per_testcase(C)];
 init_per_testcase(_Name, C) ->
     init_per_testcase(C).
@@ -658,7 +658,7 @@ end_per_testcase(_Name, C) ->
     _ =
         case cfg(original_domain_revision, C) of
             Revision when is_integer(Revision) ->
-                ok = hg_domain:reset(Revision);
+                _ = hg_domain:reset(Revision);
             undefined ->
                 ok
         end.
@@ -2309,7 +2309,7 @@ payment_temporary_unavailability_too_many_retries(C) ->
     ).
 
 update_payment_terms_cashflow(ProviderRef, CashFlow) ->
-    Provider = hg_domain:get(hg_domain:head(), {provider, ProviderRef}),
+    Provider = hg_domain:get({provider, ProviderRef}),
     ProviderTerms = Provider#domain_Provider.terms,
     PaymentTerms = ProviderTerms#domain_ProvisionTermSet.payments,
     NewProvider = Provider#domain_Provider{
@@ -2319,12 +2319,13 @@ update_payment_terms_cashflow(ProviderRef, CashFlow) ->
             }
         }
     },
-    ok = hg_domain:upsert(
+    _ = hg_domain:upsert(
         {provider, #domain_ProviderObject{
             ref = ProviderRef,
             data = NewProvider
         }}
-    ).
+    ),
+    ok.
 
 get_cashflow_account(Type, CF) ->
     [ID] = [
@@ -2388,7 +2389,7 @@ external_account_posting(C) ->
     ],
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
-    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
+    } = hg_domain:get({external_account_set, ?eas(2)}).
 
 -spec terminal_cashflow_overrides_provider(config()) -> test_return().
 terminal_cashflow_overrides_provider(C) ->
@@ -2423,7 +2424,7 @@ terminal_cashflow_overrides_provider(C) ->
     ],
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
-    } = hg_domain:get(hg_domain:head(), {external_account_set, ?eas(2)}).
+    } = hg_domain:get({external_account_set, ?eas(2)}).
 
 %%  CHARGEBACKS
 
@@ -3944,7 +3945,7 @@ payment_manual_refund(C) ->
     % prevent proxy access
     OriginalRevision = hg_domain:head(),
     Fixture = payment_manual_refund_fixture(OriginalRevision),
-    ok = hg_domain:upsert(Fixture),
+    _ = hg_domain:upsert(Fixture),
     % create refund
     ?refund_id(RefundID) = hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     [
@@ -3962,7 +3963,7 @@ payment_manual_refund(C) ->
     ?invalid_payment_status(?refunded()) =
         hg_client_invoicing:refund_payment_manual(InvoiceID, PaymentID, RefundParams, Client),
     % reenable proxy
-    ok = hg_domain:reset(OriginalRevision).
+    _ = hg_domain:reset(OriginalRevision).
 
 -spec payment_partial_refunds_success(config()) -> _ | no_return().
 payment_partial_refunds_success(C) ->
@@ -4534,7 +4535,7 @@ terms_retrieval(C) ->
         }
     } = TermSet1,
     Revision = hg_domain:head(),
-    ok = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
+    _ = hg_domain:update(construct_term_set_for_cost(1000, 2000)),
     _ = timer:sleep(5000),
     Timestamp2 = hg_datetime:format_now(),
     TermSet2 = hg_client_invoicing:compute_terms(InvoiceID, {timestamp, Timestamp2}, Client),
@@ -4543,7 +4544,7 @@ terms_retrieval(C) ->
             payment_methods = {value, [?pmt(bank_card_deprecated, visa)]}
         }
     } = TermSet2,
-    ok = hg_domain:reset(Revision).
+    _ = hg_domain:reset(Revision).
 
 %%
 
@@ -5054,7 +5055,8 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    ok = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies),
+    ok.
 
 start_kv_store(SupPid) ->
     ChildSpec = #{

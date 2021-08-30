@@ -99,7 +99,7 @@ init_per_suite(C) ->
         hellgate,
         {cowboy, CowboySpec}
     ]),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    _ = hg_domain:insert(construct_domain_fixture()),
     PartyID = hg_utils:unique_id(),
     PartyClient = party_client:create_client(),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
@@ -120,24 +120,20 @@ init_per_suite(C) ->
 end_per_suite(C) ->
     SupPid = cfg(test_sup, C),
     ok = supervisor:terminate_child(SupPid, hg_dummy_fault_detector),
-    ok = hg_domain:cleanup().
+    _ = hg_domain:cleanup().
 
 -spec init_per_group(group_name(), config()) -> config().
 init_per_group(base_routing_rule, C) ->
-    Revision = hg_domain:head(),
-    ok = hg_domain:upsert(base_routing_rules_fixture(Revision)),
+    _ = hg_domain:upsert(base_routing_rules_fixture(latest)),
     C;
 init_per_group(routing_with_risk_coverage_set, C) ->
-    Revision = hg_domain:head(),
-    ok = hg_domain:upsert(routing_with_risk_score_fixture(Revision, true)),
+    _ = hg_domain:upsert(routing_with_risk_score_fixture(latest, true)),
     C;
 init_per_group(routing_with_fail_rate, C) ->
-    Revision = hg_domain:head(),
-    ok = hg_domain:upsert(routing_with_risk_score_fixture(Revision, false)),
+    _ = hg_domain:upsert(routing_with_risk_score_fixture(latest, false)),
     C;
 init_per_group(terminal_priority, C) ->
-    Revision = hg_domain:head(),
-    ok = hg_domain:upsert(terminal_priority_fixture(Revision)),
+    _ = hg_domain:upsert(terminal_priority_fixture(latest)),
     C;
 init_per_group(_, C) ->
     C.
@@ -146,7 +142,7 @@ init_per_group(_, C) ->
 end_per_group(_GroupName, C) ->
     case cfg(original_domain_revision, C) of
         Revision when is_integer(Revision) ->
-            ok = hg_domain:reset(Revision);
+            _ = hg_domain:reset(Revision);
         undefined ->
             ok
     end.
