@@ -1884,7 +1884,7 @@ process_routing(Action, St) ->
             end,
         Clocks = hold_limit_routes(Routes, VS4, St),
         Events = handle_gathered_route_result(
-            get_limit_overflow_routes(Routes, VS4, store(Clocks, St)),
+            get_limit_overflow_routes(Routes, VS4, store_limit_clocks(Clocks, St)),
             [hg_routing:to_payment_route(R) || R <- Routes],
             Revision
         ),
@@ -2561,7 +2561,7 @@ get_limit_overflow_routes(Routes, VS, St) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
             ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
             Limits = get_turnover_limits(ProviderTerms),
-            case hg_limiter:check_limits(bind_up(Limits, St), Invoice, Payment) of
+            case hg_limiter:check_limits(bind_up_limit_clocks(Limits, St), Invoice, Payment) of
                 {ok, _} ->
                     {[Route | Accepted], Rejected};
                 {error, {limit_overflow, IDs}} ->
@@ -2582,7 +2582,7 @@ hold_limit_routes(Routes, VS, St) ->
         PaymentRoute = hg_routing:to_payment_route(Route),
         ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
         Limits = get_turnover_limits(ProviderTerms),
-        hg_limiter:hold_payment_limits(bind_up(Limits, St), PaymentRoute, Invoice, Payment)
+        hg_limiter:hold_payment_limits(bind_up_limit_clocks(Limits, St), PaymentRoute, Invoice, Payment)
     end,
     lists:flatten([HoldLimitsFun(R) || R <- Routes]).
 
@@ -2593,7 +2593,7 @@ commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
     ProviderTerms = get_provider_terms(St, get_payment_revision(St)),
     Limits = get_turnover_limits(ProviderTerms),
-    hg_limiter:commit_payment_limits(bind_up(Limits, St), Route, Invoice, Payment, CapturedCash).
+    hg_limiter:commit_payment_limits(bind_up_limit_clocks(Limits, St), Route, Invoice, Payment, CapturedCash).
 
 rollback_payment_limits(Routes, St) ->
     Revision = get_payment_revision(St),
@@ -2605,7 +2605,7 @@ rollback_payment_limits(Routes, St) ->
     RollbackFun = fun(Route) ->
         ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
         Limits = get_turnover_limits(ProviderTerms),
-        hg_limiter:rollback_payment_limits(bind_up(Limits, St), Route, Invoice, Payment)
+        hg_limiter:rollback_payment_limits(bind_up_limit_clocks(Limits, St), Route, Invoice, Payment)
     end,
     lists:flatten([RollbackFun(R) || R <- Routes]).
 
@@ -2617,31 +2617,31 @@ get_turnover_limits(ProviderTerms) ->
     TurnoverLimitSelector = ProviderTerms#domain_PaymentsProvisionTerms.turnover_limits,
     hg_limiter:get_turnover_limits(TurnoverLimitSelector).
 
--spec bind_up([hg_limiter:turnover_limit()], st()) -> [hg_limiter:turnover_w_clock()].
-bind_up(Limits, #st{limits_clock = Clocks}) ->
+-spec bind_up_limit_clocks([hg_limiter:turnover_limit()], st()) -> [hg_limiter:turnover_w_clock()].
+bind_up_limit_clocks(Limits, #st{limits_clock = Clocks}) ->
     [{Item, maps:get(ID, Clocks, undefined)} || #domain_TurnoverLimit{id = ID} = Item <- Limits].
 
--spec store([hg_limiter:limit_result()], st()) -> st().
-store(Results, #st{limits_clock = StateClocks} = St) ->
+-spec store_limit_clocks([hg_limiter:limit_result()], st()) -> st().
+store_limit_clocks(Results, #st{limits_clock = StateClocks} = St) ->
     LocClocks = maps:from_list([{ID, Clock} || ?LIMIT_RESULT(ID, Clock) <- Results]),
     St#st{limits_clock = maps:merge(StateClocks, LocClocks)}.
 
 hold_refund_limits(RefundSt, St) ->
-    do_refund(fun hg_limiter:hold_refund_limits/4, RefundSt, St).
+    do_refund_limits(fun hg_limiter:hold_refund_limits/4, RefundSt, St).
 
 commit_refund_limits(RefundSt, St) ->
-    do_refund(fun hg_limiter:commit_refund_limits/4, RefundSt, St).
+    do_refund_limits(fun hg_limiter:commit_refund_limits/4, RefundSt, St).
 
 rollback_refund_limits(RefundSt, St) ->
-    do_refund(fun hg_limiter:rollback_refund_limits/4, RefundSt, St).
+    do_refund_limits(fun hg_limiter:rollback_refund_limits/4, RefundSt, St).
 
-do_refund(Func, RefundSt, St) ->
+do_refund_limits(Func, RefundSt, St) ->
     Invoice = get_invoice(get_opts(St)),
     Refund = get_refund(RefundSt),
     Payment = get_payment(St),
     ProviderTerms = get_provider_terms(St, get_refund_revision(RefundSt)),
     Limits = get_turnover_limits(ProviderTerms),
-    Func(bind_up(Limits, St), Invoice, Payment, Refund).
+    Func(bind_up_limit_clocks(Limits, St), Invoice, Payment, Refund).
 
 commit_payment_cashflow(St) ->
     hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
@@ -3224,7 +3224,7 @@ merge_change(Change = ?session_ev(Target, Event), St = #st{activity = Activity},
             St2
     end;
 merge_change(?limits_clock_update(Result), St = #st{activity = {refund_new, _}}, _Opts) ->
-    store(Result, St);
+    store_limit_clocks(Result, St);
 merge_change(Change = ?limits_clock_update(Result), St, Opts) ->
     _ = validate_transition(
         [
@@ -3239,7 +3239,7 @@ merge_change(Change = ?limits_clock_update(Result), St, Opts) ->
         St,
         Opts
     ),
-    store(Result, St).
+    store_limit_clocks(Result, St).
 
 save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
     St#st{retry_attempts = maps:update_with(get_target_type(Target), fun(N) -> N + 1 end, 0, Attempts)}.
