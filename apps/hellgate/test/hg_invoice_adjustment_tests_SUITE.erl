@@ -73,10 +73,8 @@ init_per_suite(C) ->
     % _ = dbg:tpl({'hg_invoice_payment', 'p', '_'}, x),
     CowboySpec = hg_dummy_provider:get_http_cowboy_spec(),
 
-    {Apps, Ret} = hg_ct_helper:start_apps(
-        [woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}]
-    ),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    {Apps, Ret} = hg_ct_helper:start_apps([woody, scoper, dmt_client, party_client, hellgate, {cowboy, CowboySpec}]),
+    _ = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
 
     PartyID = hg_utils:unique_id(),
@@ -105,7 +103,7 @@ user_info() ->
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     _ = [application:stop(App) || App <- cfg(apps, C)],
     exit(cfg(test_sup, C), shutdown).
 
@@ -755,7 +753,8 @@ start_proxies(Proxies) ->
     ).
 
 setup_proxies(Proxies) ->
-    ok = hg_domain:upsert(Proxies).
+    _ = hg_domain:upsert(Proxies),
+    ok.
 
 get_random_port() ->
     rand:uniform(32768) + 32767.

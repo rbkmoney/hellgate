@@ -85,7 +85,7 @@ init_per_suite(C) ->
     {Apps, Ret} = hg_ct_helper:start_apps(
         [woody, scoper, dmt_client, party_client, hellgate, snowflake]
     ),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    _ = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     Client = {party_client:create_client(), party_client:create_context(user_info())},
@@ -104,7 +104,7 @@ user_info() ->
 
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
@@ -456,7 +456,7 @@ terms_retrieval(C) ->
             payment_methods = undefined
         }
     } = TermSet1,
-    ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
+    _ = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
 
     _ = timer:sleep(5000),
 
