@@ -152,7 +152,7 @@
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
     latest_change_at :: undefined | hg_datetime:timestamp(),
-    allocation :: undefined | hg_allocations:allocation()
+    allocation :: undefined | hg_allocation:allocation()
 }).
 
 -record(refund_st, {
@@ -161,7 +161,7 @@
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
     failure :: undefined | failure(),
-    allocation :: undefined | hg_allocations:allocation()
+    allocation :: undefined | hg_allocation:allocation()
 }).
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
@@ -275,7 +275,7 @@ get_route(#st{route = Route}) ->
 get_adjustments(#st{adjustments = As}) ->
     As.
 
--spec get_allocation(st()) -> hg_allocations:allocation().
+-spec get_allocation(st()) -> hg_allocation:allocation().
 get_allocation(#st{allocation = Allocation}) ->
     Allocation.
 
@@ -1013,7 +1013,7 @@ start_partial_capture(Reason, Cost, Cart, FinalCashflow, Allocation) ->
         ?cash_flow_changed(FinalCashflow)
     ].
 
--spec capture(st(), binary(), cash() | undefined, cart() | undefined, hg_allocations:allocation_prototype(), opts()) ->
+-spec capture(st(), binary(), cash() | undefined, cart() | undefined, hg_allocation:allocation_prototype(), opts()) ->
     {ok, result()}.
 capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Payment = get_payment(St),
@@ -1026,7 +1026,7 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ok = validate_allocatable(AllocationPrototype, MerchantTerms),
-    Allocation = hg_allocations:calculate_allocation(
+    Allocation = hg_allocation:calculate(
         AllocationPrototype,
         Payment#domain_InvoicePayment.owner_id,
         Payment#domain_InvoicePayment.shop_id,
@@ -1228,13 +1228,13 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         owner_id = OwnerID,
         shop_id = ShopID
     } = get_invoice(Opts),
-    Allocation = hg_allocations:calculate_refund_allocation(
-        get_allocation(St),
+    Allocation = hg_allocation:calculate(
         Params#payproc_InvoicePaymentRefundParams.allocation,
         OwnerID,
         ShopID,
-        get_remaining_payment_amount(Cash, St)
+        Cash
     ),
+    ok = validate_allocation(St, Allocation, Cash),
     #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
         created_at = CreatedAt,
@@ -1252,8 +1252,22 @@ validate_allocatable(Allocation, PaymentTerms) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
-    _ = hg_allocations:assert_allocatable(Allocation, AllocationSelector),
+    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector),
     ok.
+
+validate_allocation(St, SubAllocation, Cash) ->
+    Allocation = get_allocation(St),
+    RemainingCash = get_remaining_payment_amount(Cash, St),
+    #domain_InvoicePayment{
+        owner_id = OwnerID,
+        shop_id = ShopID
+    } = get_payment(St),
+    case hg_allocation:sub(Allocation, SubAllocation, OwnerID, ShopID, RemainingCash) of
+        {ok, _} ->
+            ok;
+        {error, Error} ->
+            throw(Error) %% TODO add error handling
+    end.
 
 make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS) ->
     Route = get_route(St),
@@ -3321,8 +3335,15 @@ try_get_chargeback_state(ID, #st{chargebacks = CBs}) ->
             undefined
     end.
 
-set_refund_state(ID, RefundSt = #refund_st{allocation = Allocation}, St = #st{refunds = Rs}) ->
-    St#st{refunds = Rs#{ID => RefundSt}, allocation = Allocation}.
+set_refund_state(ID, RefundSt, St) ->
+    #st{refunds = Rs} = St,
+    RefundAllocation = get_refund_allocation(RefundSt),
+    Allocation = get_allocation(St),
+    #domain_InvoicePayment{owner_id = OwnerID, shop_id = ShopID} = get_payment(St),
+    #domain_InvoicePaymentRefund{cash = RefundCash} = get_refund(RefundSt),
+    RemainingCash = get_remaining_payment_amount(RefundCash, St),
+    {ok, FinalAllocation} = hg_allocation:sub(Allocation, RefundAllocation, OwnerID, ShopID, RemainingCash),
+    St#st{refunds = Rs#{ID => RefundSt}, allocation = FinalAllocation}.
 
 get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when Cost /= undefined ->
     Cost;
@@ -3363,6 +3384,9 @@ set_refund_status(Status, Refund = #domain_InvoicePaymentRefund{}) ->
 
 get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
     CashFlow.
+
+get_refund_allocation(#refund_st{allocation = Allocation}) ->
+    Allocation.
 
 define_refund_cash(undefined, St) ->
     get_remaining_payment_balance(St);

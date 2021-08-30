@@ -4,7 +4,7 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
--export([calculate_allocation/4]).
+-export([calculate/4]).
 -export([sub/5]).
 -export([assert_allocatable/2]).
 
@@ -28,7 +28,7 @@
     no_transaction_to_sub |
     multiple_transactions_to_sub |
     transaction_amount_sub_too_much |
-    sub_currency_mismatch |
+    currency_mismatch |
     sub_body_from_undefined |
     sub_undefined_from_body |
     sub_body_target_mismatch |
@@ -38,29 +38,24 @@
     sub_from_undefined_cart |
     allocations_and_cost_do_not_match.
 
--spec calculate_allocation(allocation_prototype() | undefined, owner_id(), shop_id(), cash()) ->
-    allocation() | undefined.
-calculate_allocation(AllocationPrototype, OwnerID, ShopID, Cost) ->
+-type calculate_errors() ::
+    currency_mismatch |
+    allocations_and_cost_do_not_match.
+
+-spec calculate(allocation_prototype(), owner_id(), shop_id(), cash()) ->
+{ok, allocation()} | {error, calculate_errors()}.
+calculate(AllocationPrototype, OwnerID, ShopID, Cost) ->
     FeeTarget = construct_target(#{
         owner_id => OwnerID,
         shop_id => ShopID
     }),
-    calculate_allocation(AllocationPrototype, FeeTarget, Cost).
-
--spec construct_target(target_map()) -> target().
-construct_target(#{owner_id := OwnerID, shop_id := ShopID}) ->
-    {shop, #domain_AllocationTransactionTargetShop{
-        owner_id = OwnerID,
-        shop_id = ShopID
-    }}.
-
--spec calculate_allocation(allocation_prototype() | undefined, target(), cash()) -> allocation() | undefined.
-calculate_allocation(undefined, _FeeTarget, _Cost) ->
-    undefined;
-calculate_allocation(#domain_AllocationPrototype{transactions = Transactions}, FeeTarget, Cost) ->
-    #domain_Allocation{
-        transactions = calculate_allocation_transactions(Transactions, FeeTarget, Cost)
-    }.
+    try calculate_allocation(AllocationPrototype, FeeTarget, Cost) of
+        Result ->
+            {ok, Result}
+    catch
+        throw:Error ->
+            {error, Error}
+    end.
 
 -spec sub(allocation(), allocation(), owner_id(), shop_id(), cash()) ->
     {ok, allocation()} | {error, sub_errors()}.
@@ -84,6 +79,30 @@ sub(Allocation, SubAllocation, OwnerID, ShopID, Cost) ->
         throw:Error ->
             {error, Error}
     end.
+
+-spec assert_allocatable(allocation_prototype() | undefined, allocation_terms()) -> ok | {error, unallocatable}.
+assert_allocatable(undefined, _AllocationTerms) ->
+    ok;
+assert_allocatable(_Allocation, #domain_PaymentAllocationServiceTerms{allow = Allow}) ->
+    case Allow of
+        {constant, true} ->
+            ok;
+        _ ->
+            {error, unallocatable}
+    end.
+
+-spec construct_target(target_map()) -> target().
+construct_target(#{owner_id := OwnerID, shop_id := ShopID}) ->
+    {shop, #domain_AllocationTransactionTargetShop{
+        owner_id = OwnerID,
+        shop_id = ShopID
+    }}.
+
+-spec calculate_allocation(allocation_prototype(), target(), cash()) -> allocation().
+calculate_allocation(#domain_AllocationPrototype{transactions = Transactions}, FeeTarget, Cost) ->
+    #domain_Allocation{
+        transactions = calculate_allocation_transactions(Transactions, FeeTarget, Cost)
+    }.
 
 sub_transactions(Transactions, SubTransactions, FeeTarget, Cost) ->
     sub_transactions(Transactions, SubTransactions, FeeTarget, Cost, []).
@@ -169,7 +188,7 @@ sub_amount(Amount, SubAmount) ->
             Res
     catch
         error:badarg ->
-            throw(sub_currency_mismatch)
+            throw(currency_mismatch)
     end.
 
 sub_body(undefined, undefined) ->
@@ -241,41 +260,30 @@ sub_cart(#domain_InvoiceCart{lines = Lines}, #domain_InvoiceCart{lines = SubLine
         lines = lists:subtract(Lines, SubLines)
     }.
 
--spec assert_allocatable(allocation_prototype() | undefined, allocation_terms()) -> ok | {error, unallocatable}.
-assert_allocatable(undefined, _AllocationTerms) ->
-    ok;
-assert_allocatable(_Allocation, #domain_PaymentAllocationServiceTerms{allow = Allow}) ->
-    case Allow of
-        {constant, true} ->
-            ok;
-        _ ->
-            {error, unallocatable}
-    end.
-
 calculate_allocation_transactions(Transactions, FeeTarget, Cost) ->
     calculate_allocation_transactions(Transactions, FeeTarget, Cost, []).
 
 calculate_allocation_transactions([], FeeTarget, Cost, Acc) ->
     genlib_list:compact([construct_aggregator_transaction(FeeTarget, Cost) | Acc]);
-calculate_allocation_transactions([Head | Transactions], FeeTarget, ?cash(Cost, SymCode), Acc0) ->
+calculate_allocation_transactions([Head | Transactions], FeeTarget, Cost, Acc0) ->
     #domain_AllocationTransactionPrototype{
         id = ID,
         target = Target,
         body = Body,
         details = Details
     } = Head,
-    {TransformedBody, ?cash(TransactionCash, SymCode)} = calculate_allocation_transactions_body(Body, FeeTarget),
+    {TransformedBody, TransactionCash} = calculate_allocation_transactions_body(Body, FeeTarget),
     Acc1 = [
         #domain_AllocationTransaction{
             id = ID,
             target = Target,
-            amount = ?cash(TransactionCash, SymCode),
+            amount = TransactionCash,
             body = TransformedBody,
             details = Details
         }
         | Acc0
     ],
-    calculate_allocation_transactions(Transactions, FeeTarget, ?cash(Cost - TransactionCash, SymCode), Acc1).
+    calculate_allocation_transactions(Transactions, FeeTarget, sub_amount(Cost, TransactionCash), Acc1).
 
 calculate_allocation_transactions_body({amount, Body}, _FeeTarget) ->
     #domain_AllocationTransactionPrototypeBodyAmount{
@@ -287,15 +295,14 @@ calculate_allocation_transactions_body({total, Body}, FeeTarget) ->
         total = Total,
         fee = Fee
     } = Body,
-    {?cash(CalculatedFee, SymCode), FeeShare} = calculate_allocation_transactions_fee(Fee, Total),
+    {CalculatedFee, FeeShare} = calculate_allocation_transactions_fee(Fee, Total),
     TransformedBody = #domain_AllocationTransactionBodyTotal{
         fee_target = FeeTarget,
         total = Total,
-        fee_amount = ?cash(CalculatedFee, SymCode),
+        fee_amount = CalculatedFee,
         fee = FeeShare
     },
-    ?cash(TotalAmount, SymCode) = Total,
-    {TransformedBody, ?cash(TotalAmount - CalculatedFee, SymCode)}.
+    {TransformedBody, sub_amount(Total, CalculatedFee)}.
 
 calculate_allocation_transactions_fee({fixed, Fee}, _Total) ->
     #domain_AllocationTransactionPrototypeFeeFixed{
@@ -489,7 +496,7 @@ allocation_1_test() ->
                 }
             }
         ]
-    } = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
+    } = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
 
 -spec allocation_2_test() -> _.
 allocation_2_test() ->
@@ -591,7 +598,7 @@ allocation_2_test() ->
                 }
             }
         ]
-    } = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
+    } = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
 -spec allocation_refund_one_transaction_1_test() -> _.
 allocation_refund_one_transaction_1_test() ->
@@ -681,7 +688,7 @@ allocation_refund_one_transaction_1_test() ->
             }
         ]
     },
-    Allocation = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
     #domain_Allocation{
         transactions = [
             #domain_AllocationTransaction{
@@ -839,7 +846,7 @@ allocation_refund_one_transaction_2_test() ->
             }
         ]
     },
-    Allocation = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
     #domain_Allocation{
         transactions = [
             #domain_AllocationTransaction{
@@ -991,7 +998,7 @@ allocation_refund_one_transaction_3_test() ->
             }
         ]
     },
-    Allocation = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
     #domain_Allocation{
         transactions = [
             #domain_AllocationTransaction{
@@ -1161,7 +1168,7 @@ allocation_partial_transaction_refund_1_test() ->
             }
         ]
     },
-    Allocation = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
     #domain_Allocation{
         transactions = [
             #domain_AllocationTransaction{
@@ -1389,7 +1396,7 @@ allocation_partial_transaction_refund_1_continue_test() ->
             }
         ]
     },
-    Allocation0 = calculate_allocation(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    Allocation0 = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
     Allocation1 = calculate_refund_allocation(
         Allocation0,
         RefundAllocationPrototype0,

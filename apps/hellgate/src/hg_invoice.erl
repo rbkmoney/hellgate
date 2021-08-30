@@ -15,7 +15,6 @@
 -module(hg_invoice).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
--include_lib("damsel/include/dmsl_base_thrift.hrl").
 -include("payment_events.hrl").
 -include("invoice_events.hrl").
 -include("domain.hrl").
@@ -1044,7 +1043,7 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
         template_id = InvoiceTplID,
         external_id = V#payproc_InvoiceParams.external_id,
         client_info = V#payproc_InvoiceParams.client_info,
-        allocation = hg_allocations:calculate_allocation(V#payproc_InvoiceParams.allocation, OwnerID, ShopID, Cost)
+        allocation = hg_allocation:calculate(V#payproc_InvoiceParams.allocation, OwnerID, ShopID, Cost)
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -1300,7 +1299,7 @@ validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
-    _ = hg_allocations:assert_allocatable(Allocation, AllocationSelector),
+    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector),
     ok.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
