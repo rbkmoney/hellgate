@@ -1,6 +1,7 @@
 -module(hg_allocation).
 
 -include("domain.hrl").
+-include("allocation.hrl").
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
@@ -295,12 +296,12 @@ calculate_allocation_transactions_body({total, Body}, FeeTarget) ->
         total = Total,
         fee = Fee
     } = Body,
-    {CalculatedFee, FeeShare} = calculate_allocation_transactions_fee(Fee, Total),
+    CalculatedFee = calculate_allocation_transactions_fee(Fee, Total),
     TransformedBody = #domain_AllocationTransactionBodyTotal{
         fee_target = FeeTarget,
         total = Total,
         fee_amount = CalculatedFee,
-        fee = FeeShare
+        fee = get_fee_share(Fee)
     },
     {TransformedBody, sub_amount(Total, CalculatedFee)}.
 
@@ -308,9 +309,9 @@ calculate_allocation_transactions_fee({fixed, Fee}, _Total) ->
     #domain_AllocationTransactionPrototypeFeeFixed{
         amount = Amount
     } = Fee,
-    {Amount, undefined};
+    Amount;
 calculate_allocation_transactions_fee({share, Fee}, ?cash(Total, SymCode)) ->
-    #domain_AllocationTransactionPrototypeFeeShare{
+    #domain_AllocationTransactionFeeShare{
         parts = #'Rational'{
             p = P,
             q = Q
@@ -320,14 +321,12 @@ calculate_allocation_transactions_fee({share, Fee}, ?cash(Total, SymCode)) ->
     RoundingMethod1 = get_rounding_method(RoundingMethod0),
     R = genlib_rational:new(P * Total, Q),
     Amount = ?cash(genlib_rational:round(R, RoundingMethod1), SymCode),
-    FinalParts = #'Rational'{
-        p = P * Total,
-        q = Q
-    },
-    {Amount, #domain_AllocationTransactionFeeShare{
-        parts = FinalParts,
-        rounding_method = RoundingMethod1
-    }}.
+    Amount.
+
+get_fee_share({fixed, _Fee}) ->
+    undefined;
+get_fee_share({share, Fee}) ->
+    Fee.
 
 get_rounding_method(undefined) ->
     round_half_away_from_zero;
@@ -358,394 +357,165 @@ construct_aggregator_transaction(FeeTarget, Cost) ->
 
 -spec test() -> _.
 
+generic_prototype() ->
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction_prototype(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction_prototype(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_share(15, 100)
+            ),
+            ?allocation_transaction_details(Cart)
+        )
+    ]).
+
 -spec allocation_1_test() -> _.
 allocation_1_test() ->
-    Cart = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"PARTY0_SHOP0">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                amount = ?cash(25, <<"RUB">>)
-            },
-            #domain_AllocationTransaction{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                amount = ?cash(25, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(5, <<"RUB">>)
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                amount = ?cash(20, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(10, <<"RUB">>)
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                amount = ?cash(30, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    } = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = generic_prototype(),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"PARTY0_SHOP0">>,
+            ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+            ?cash(25, <<"RUB">>)
+        ),
+        ?allocation_transaction(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?cash(25, <<"RUB">>),
+            ?allocation_transaction_details(Cart),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(5, <<"RUB">>),
+                ?allocation_transaction_fee_share(15, 100)
+            )
+        ),
+        ?allocation_transaction(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?cash(20, <<"RUB">>),
+            ?allocation_transaction_details(Cart),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(10, <<"RUB">>)
+            )
+        ),
+        ?allocation_transaction(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?cash(30, <<"RUB">>),
+            ?allocation_transaction_details(Cart)
+        )
+    ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
 
 -spec allocation_2_test() -> _.
 allocation_2_test() ->
-    Cart = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                amount = ?cash(30, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                amount = ?cash(30, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                amount = ?cash(30, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    } = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction_prototype(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction_prototype(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_transaction_details(Cart)
+        )
+    ]),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?cash(30, <<"RUB">>),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?cash(30, <<"RUB">>),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?cash(30, <<"RUB">>),
+            ?allocation_transaction_details(Cart)
+        )
+    ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
 -spec allocation_refund_one_transaction_1_test() -> _.
 allocation_refund_one_transaction_1_test() ->
-    Cart = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    RefundAllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }}
-            }
-        ]
-    },
-    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"PARTY0_SHOP0">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                amount = ?cash(15, <<"RUB">>)
-            },
-            #domain_AllocationTransaction{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                amount = ?cash(20, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(10, <<"RUB">>)
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                amount = ?cash(25, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(5, <<"RUB">>)
-                }
-            }
-        ]
-    } = calculate_refund_allocation(
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = generic_prototype(),
+    RefundAllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>))
+        )
+    ]),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(40, <<"RUB">>)),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?cash(20, <<"RUB">>),
+            ?allocation_transaction_details(Cart),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(10, <<"RUB">>)
+            )
+        ),
+        ?allocation_transaction(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?cash(25, <<"RUB">>),
+            ?allocation_transaction_details(Cart),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(5, <<"RUB">>),
+                ?allocation_transaction_fee_share(15, 100)
+            )
+        ),
+        ?allocation_transaction(
+            <<"PARTY0_SHOP0">>,
+            ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+            ?cash(15, <<"RUB">>)
+        )
+    ])} = sub(
         Allocation,
-        RefundAllocationPrototype,
+        RefundAllocation,
         <<"PARTY0">>,
         <<"SHOP0">>,
         ?cash(60, <<"RUB">>)
@@ -753,148 +523,48 @@ allocation_refund_one_transaction_1_test() ->
 
 -spec allocation_refund_one_transaction_2_test() -> _.
 allocation_refund_one_transaction_2_test() ->
-    Cart = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    RefundAllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"PARTY0_SHOP0">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                amount = ?cash(15, <<"RUB">>)
-            },
-            #domain_AllocationTransaction{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                amount = ?cash(30, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                amount = ?cash(25, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(5, <<"RUB">>)
-                }
-            }
-        ]
-    } = calculate_refund_allocation(
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = generic_prototype(),
+    RefundAllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_transaction_details(Cart)
+        )
+    ]),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?cash(30, <<"RUB">>),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?cash(25, <<"RUB">>),
+            ?allocation_transaction_details(Cart),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(5, <<"RUB">>),
+                ?allocation_transaction_fee_share(15, 100)
+            )
+        ),
+        ?allocation_transaction(
+            <<"PARTY0_SHOP0">>,
+            ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+            ?cash(15, <<"RUB">>)
+        )
+    ])} = sub(
         Allocation,
-        RefundAllocationPrototype,
+        RefundAllocation,
         <<"PARTY0">>,
         <<"SHOP0">>,
         ?cash(70, <<"RUB">>)
@@ -902,151 +572,47 @@ allocation_refund_one_transaction_2_test() ->
 
 -spec allocation_refund_one_transaction_3_test() -> _.
 allocation_refund_one_transaction_3_test() ->
-    Cart = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    RefundAllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            }
-        ]
-    },
-    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"PARTY0_SHOP0">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                amount = ?cash(20, <<"RUB">>)
-            },
-            #domain_AllocationTransaction{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                amount = ?cash(30, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                amount = ?cash(20, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(10, <<"RUB">>)
-                }
-            }
-        ]
-    } = calculate_refund_allocation(
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = generic_prototype(),
+    RefundAllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_share(15, 100)
+            ),
+            ?allocation_transaction_details(Cart)
+        )
+    ]),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?cash(30, <<"RUB">>),
+            ?allocation_transaction_details(Cart)
+        ),
+        ?allocation_transaction(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?cash(20, <<"RUB">>),
+            ?allocation_transaction_details(Cart),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(10, <<"RUB">>)
+            )
+        ),
+        ?allocation_transaction(
+            <<"PARTY0_SHOP0">>,
+            ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+            ?cash(20, <<"RUB">>)
+        )
+    ])} = sub(
         Allocation,
-        RefundAllocationPrototype,
+        RefundAllocation,
         <<"PARTY0">>,
         <<"SHOP0">>,
         ?cash(70, <<"RUB">>)
@@ -1054,199 +620,87 @@ allocation_refund_one_transaction_3_test() ->
 
 -spec allocation_partial_transaction_refund_1_test() -> _.
 allocation_partial_transaction_refund_1_test() ->
-    Cart0 = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    Cart1 = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(12, <<"RUB">>),
-                metadata = #{}
-            },
-            #domain_InvoiceLine{
-                product = <<"STRING2">>,
-                quantity = 1,
-                price = ?cash(18, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart1
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart0
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart0
-                }
-            }
-        ]
-    },
-    RefundAllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(18, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = #domain_InvoiceCart{
-                        lines = [
-                            #domain_InvoiceLine{
-                                product = <<"STRING2">>,
-                                quantity = 1,
-                                price = ?cash(18, <<"RUB">>),
-                                metadata = #{}
-                            }
-                        ]
-                    }
-                }
-            }
-        ]
-    },
-    Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"PARTY0_SHOP0">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                amount = ?cash(19, <<"RUB">>)
-            },
-            #domain_AllocationTransaction{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                amount = ?cash(20, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(10, <<"RUB">>)
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                amount = ?cash(25, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(5, <<"RUB">>)
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                amount = ?cash(12, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = #domain_InvoiceCart{
-                        lines = [
-                            #domain_InvoiceLine{
-                                product = <<"STRING">>,
-                                quantity = 1,
-                                price = ?cash(12, <<"RUB">>),
-                                metadata = #{}
-                            }
-                        ]
-                    }
-                }
-            }
-        ]
-    } = calculate_refund_allocation(
+    Cart0 = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    Cart1 = ?invoice_cart([
+        ?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>)),
+        ?invoice_line(<<"STRING">>, 1, ?cash(18, <<"RUB">>))
+    ]),
+    AllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_transaction_details(Cart1)
+        ),
+        ?allocation_transaction_prototype(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_transaction_details(Cart0)
+        ),
+        ?allocation_transaction_prototype(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_share(15, 100)
+            ),
+            ?allocation_transaction_details(Cart0)
+        )
+    ]),
+    RefundAllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(18, <<"RUB">>)),
+            ?allocation_transaction_details(?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(18, <<"RUB">>))]))
+        )
+    ]),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(24, <<"RUB">>)),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?cash(20, <<"RUB">>),
+            ?allocation_transaction_details(Cart0),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(10, <<"RUB">>)
+            )
+        ),
+        ?allocation_transaction(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?cash(25, <<"RUB">>),
+            ?allocation_transaction_details(Cart0),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(5, <<"RUB">>),
+                ?allocation_transaction_fee_share(15, 100)
+            )
+        ),
+        ?allocation_transaction(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?cash(12, <<"RUB">>),
+            ?allocation_transaction_details(?invoice_cart([
+                ?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>))
+            ]))
+        ),
+        ?allocation_transaction(
+            <<"PARTY0_SHOP0">>,
+            ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+            ?cash(19, <<"RUB">>)
+        )
+    ])} = sub(
         Allocation,
-        RefundAllocationPrototype,
+        RefundAllocation,
         <<"PARTY0">>,
         <<"SHOP0">>,
         ?cash(76, <<"RUB">>)
@@ -1254,213 +708,95 @@ allocation_partial_transaction_refund_1_test() ->
 
 -spec allocation_partial_transaction_refund_1_continue_test() -> _.
 allocation_partial_transaction_refund_1_continue_test() ->
-    Cart0 = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(30, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    Cart1 = #domain_InvoiceCart{
-        lines = [
-            #domain_InvoiceLine{
-                product = <<"STRING">>,
-                quantity = 1,
-                price = ?cash(12, <<"RUB">>),
-                metadata = #{}
-            },
-            #domain_InvoiceLine{
-                product = <<"STRING2">>,
-                quantity = 1,
-                price = ?cash(18, <<"RUB">>),
-                metadata = #{}
-            }
-        ]
-    },
-    AllocationPrototype = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(30, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart1
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
-                                amount = ?cash(10, <<"RUB">>)
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart0
-                }
-            },
-            #domain_AllocationTransactionPrototype{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                body =
-                    {total, #domain_AllocationTransactionPrototypeBodyTotal{
-                        total = ?cash(30, <<"RUB">>),
-                        fee =
-                            {share, #domain_AllocationTransactionPrototypeFeeShare{
-                                parts = #'Rational'{
-                                    p = 15,
-                                    q = 100
-                                }
-                            }}
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart0
-                }
-            }
-        ]
-    },
-    RefundAllocationPrototype0 = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(18, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = #domain_InvoiceCart{
-                        lines = [
-                            #domain_InvoiceLine{
-                                product = <<"STRING2">>,
-                                quantity = 1,
-                                price = ?cash(18, <<"RUB">>),
-                                metadata = #{}
-                            }
-                        ]
-                    }
-                }
-            }
-        ]
-    },
-    RefundAllocationPrototype1 = #domain_AllocationPrototype{
-        transactions = [
-            #domain_AllocationTransactionPrototype{
-                id = <<"1">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY1">>,
-                        shop_id = <<"SHOP1">>
-                    }},
-                body =
-                    {amount, #domain_AllocationTransactionPrototypeBodyAmount{
-                        amount = ?cash(12, <<"RUB">>)
-                    }},
-                details = #domain_AllocationTransactionDetails{
-                    cart = #domain_InvoiceCart{
-                        lines = [
-                            #domain_InvoiceLine{
-                                product = <<"STRING">>,
-                                quantity = 1,
-                                price = ?cash(12, <<"RUB">>),
-                                metadata = #{}
-                            }
-                        ]
-                    }
-                }
-            }
-        ]
-    },
-    Allocation0 = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    Allocation1 = calculate_refund_allocation(
+    Cart0 = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    Cart1 = ?invoice_cart([
+        ?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>)),
+        ?invoice_line(<<"STRING">>, 1, ?cash(18, <<"RUB">>))
+    ]),
+    AllocationPrototype = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_transaction_details(Cart1)
+        ),
+        ?allocation_transaction_prototype(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_transaction_details(Cart0)
+        ),
+        ?allocation_transaction_prototype(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?allocation_transaction_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_transaction_prototype_fee_share(15, 100)
+            ),
+            ?allocation_transaction_details(Cart0)
+        )
+    ]),
+    RefundAllocationPrototype0 = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(18, <<"RUB">>)),
+            ?allocation_transaction_details(?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(18, <<"RUB">>))]))
+        )
+    ]),
+    RefundAllocationPrototype1 = ?allocation_prototype([
+        ?allocation_transaction_prototype(
+            <<"1">>,
+            ?allocation_transaction_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+            ?allocation_transaction_prototype_body_amount(?cash(12, <<"RUB">>)),
+            ?allocation_transaction_details(?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>))]))
+        )
+    ]),
+    {ok, Allocation0} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, RefundAllocation0} = calculate(RefundAllocationPrototype0, <<"PARTY0">>, <<"SHOP0">>, ?cash(24, <<"RUB">>)),
+    {ok, Allocation1} = sub(
         Allocation0,
-        RefundAllocationPrototype0,
+        RefundAllocation0,
         <<"PARTY0">>,
         <<"SHOP0">>,
         ?cash(76, <<"RUB">>)
     ),
-    #domain_Allocation{
-        transactions = [
-            #domain_AllocationTransaction{
-                id = <<"PARTY0_SHOP0">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY0">>,
-                        shop_id = <<"SHOP0">>
-                    }},
-                amount = ?cash(15, <<"RUB">>)
-            },
-            #domain_AllocationTransaction{
-                id = <<"3">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY3">>,
-                        shop_id = <<"SHOP3">>
-                    }},
-                amount = ?cash(25, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(5, <<"RUB">>)
-                }
-            },
-            #domain_AllocationTransaction{
-                id = <<"2">>,
-                target =
-                    {shop, #domain_AllocationTransactionTargetShop{
-                        owner_id = <<"PARTY2">>,
-                        shop_id = <<"SHOP2">>
-                    }},
-                amount = ?cash(20, <<"RUB">>),
-                details = #domain_AllocationTransactionDetails{
-                    cart = Cart
-                },
-                body = #domain_AllocationTransactionBodyTotal{
-                    fee_target =
-                        {shop, #domain_AllocationTransactionTargetShop{
-                            owner_id = <<"PARTY0">>,
-                            shop_id = <<"SHOP0">>
-                        }},
-                    total = ?cash(30, <<"RUB">>),
-                    fee_amount = ?cash(10, <<"RUB">>)
-                }
-            }
-        ]
-    } = calculate_refund_allocation(
+    {ok, RefundAllocation1} = calculate(RefundAllocationPrototype1, <<"PARTY0">>, <<"SHOP0">>, ?cash(16, <<"RUB">>)),
+    {ok, ?allocation([
+        ?allocation_transaction(
+            <<"3">>,
+            ?allocation_transaction_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+            ?cash(25, <<"RUB">>),
+            ?allocation_transaction_details(Cart0),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(5, <<"RUB">>),
+                ?allocation_transaction_fee_share(15, 100)
+            )
+        ),
+        ?allocation_transaction(
+            <<"2">>,
+            ?allocation_transaction_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+            ?cash(20, <<"RUB">>),
+            ?allocation_transaction_details(Cart0),
+            ?allocation_transaction_body_total(
+                ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(30, <<"RUB">>),
+                ?cash(10, <<"RUB">>)
+            )
+        ),
+        ?allocation_transaction(
+            <<"PARTY0_SHOP0">>,
+            ?allocation_transaction_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+            ?cash(15, <<"RUB">>)
+        )
+    ])} = sub(
         Allocation1,
-        RefundAllocationPrototype1,
+        RefundAllocation1,
         <<"PARTY0">>,
         <<"SHOP0">>,
         ?cash(60, <<"RUB">>)
