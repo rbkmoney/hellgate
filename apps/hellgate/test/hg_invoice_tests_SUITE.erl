@@ -61,7 +61,9 @@
 -export([payment_w_another_party_customer/1]).
 -export([payment_w_deleted_customer/1]).
 -export([payment_w_mobile_commerce/1]).
+-export([payment_w_mobile_commerce_new/1]).
 -export([payment_suspend_timeout_failure/1]).
+-export([payment_suspend_timeout_failure_new/1]).
 -export([payments_w_bank_card_issuer_conditions/1]).
 -export([payments_w_bank_conditions/1]).
 -export([payment_success_on_second_try/1]).
@@ -287,7 +289,9 @@ groups() ->
             payment_w_another_party_customer,
             payment_w_deleted_customer,
             payment_w_mobile_commerce,
+            payment_w_mobile_commerce_new,
             payment_suspend_timeout_failure,
+            payment_suspend_timeout_failure_new,
             payment_success_on_second_try,
             payment_fail_after_silent_callback,
             payment_temporary_unavailability_retry_success,
@@ -1565,42 +1569,49 @@ payment_bank_card_category_condition(C) ->
 
 -spec payment_w_mobile_commerce(config()) -> _ | no_return().
 payment_w_mobile_commerce(C) ->
+    payment_w_mobile_commerce(C, mts, success).
+
+-spec payment_w_mobile_commerce_new(config()) -> _ | no_return().
+payment_w_mobile_commerce_new(C) ->
+    payment_w_mobile_commerce(C, ?mob(<<"mts-ref">>), success).
+
+-spec payment_suspend_timeout_failure(config()) -> _ | no_return().
+payment_suspend_timeout_failure(C) ->
+    payment_w_mobile_commerce(C, mts, failure).
+
+-spec payment_suspend_timeout_failure_new(config()) -> _ | no_return().
+payment_suspend_timeout_failure_new(C) ->
+    payment_w_mobile_commerce(C, ?mob(<<"mts-ref">>), failure).
+
+payment_w_mobile_commerce(C, Operator, Expectation) ->
     Client = cfg(client, C),
     PayCash = 1001,
     InvoiceID = start_invoice(<<"oatmeal">>, make_due_date(10), PayCash, C),
-    PaymentParams = make_mobile_commerce_params(success),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({mobile_commerce, Expectation}, Operator),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
     hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
     _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
-    ] = next_event(InvoiceID, Client).
-
--spec payment_suspend_timeout_failure(config()) -> _ | no_return().
-payment_suspend_timeout_failure(C) ->
-    Client = cfg(client, C),
-    PayCash = 1001,
-    InvoiceID = start_invoice(<<"oatmeal">>, make_due_date(10), PayCash, C),
-    PaymentParams = make_mobile_commerce_params(failure),
-    _ = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
-    ] = next_event(InvoiceID, Client),
-    _ = await_payment_cash_flow(InvoiceID, PaymentID, Client),
-    PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
-    [
-        ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
-        ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
-    ] = next_event(InvoiceID, Client),
-    [
-        ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
-    ] = next_event(InvoiceID, Client).
+    case Expectation of
+        success ->
+            [
+                ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
+            ] = next_event(InvoiceID, Client),
+            [
+                ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
+            ] = next_event(InvoiceID, Client);
+        failure ->
+            [
+                ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+                ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
+            ] = next_event(InvoiceID, Client),
+            [
+                ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
+            ] = next_event(InvoiceID, Client)
+    end.
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 payment_w_wallet_success(C) ->
@@ -4509,6 +4520,7 @@ terms_retrieval(C) ->
                     ?pmt(crypto_currency_deprecated, bitcoin),
                     ?pmt(digital_wallet_deprecated, qiwi),
                     ?pmt(empty_cvv_bank_card_deprecated, visa),
+                    ?pmt(mobile, ?mob(<<"mts-ref">>)),
                     ?pmt(mobile_deprecated, mts),
                     ?pmt(payment_terminal_deprecated, euroset),
                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
@@ -5113,10 +5125,6 @@ make_terminal_payment_params() ->
 
 make_crypto_currency_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency, bitcoin),
-    make_payment_params(PaymentTool, Session, instant).
-
-make_mobile_commerce_params(Expectation) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({mobile_commerce, Expectation}, mts),
     make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params() ->
@@ -5863,7 +5871,8 @@ construct_domain_fixture() ->
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
-                                    ?pmt(mobile_deprecated, mts)
+                                    ?pmt(mobile_deprecated, mts),
+                                    ?pmt(mobile, ?mob(<<"mts-ref">>))
                                 ])}
                     }
                 ]},
