@@ -636,6 +636,7 @@ get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = 
 -type payment_system() ::
     dmsl_domain_thrift:'LegacyBankCardPaymentSystem'()
     | dmsl_domain_thrift:'PaymentServiceRef'()
+    | dmsl_domain_thrift:'PaymentSystemRef'()
     | dmsl_domain_thrift:'LegacyTerminalPaymentProvider'()
     | dmsl_domain_thrift:'LegacyDigitalWalletProvider'()
     | dmsl_domain_thrift:'LegacyMobileOperator'()

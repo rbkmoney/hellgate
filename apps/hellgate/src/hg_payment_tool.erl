@@ -58,7 +58,7 @@ get_possible_methods({bank_card, #domain_BankCard{payment_system = PS} = BankCar
             id =
                 {bank_card, #domain_BankCardPaymentMethod{
                     payment_system = PS,
-                    is_cvv_empty = BankCard#domain_BankCard.is_cvv_empty,
+                    is_cvv_empty = genlib:define(BankCard#domain_BankCard.is_cvv_empty, false),
                     payment_token = BankCard#domain_BankCard.payment_token,
                     tokenization_method = BankCard#domain_BankCard.tokenization_method
                 }}

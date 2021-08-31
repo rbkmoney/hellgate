@@ -151,7 +151,9 @@
 -export([retry_temporary_unavailability_refund/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
+-export([payment_with_offsite_preauth_success_new/1]).
 -export([payment_with_offsite_preauth_failed/1]).
+-export([payment_with_offsite_preauth_failed_new/1]).
 -export([payment_with_tokenized_bank_card/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
@@ -401,7 +403,9 @@ groups() ->
 
         {offsite_preauth_payment, [parallel], [
             payment_with_offsite_preauth_success,
-            payment_with_offsite_preauth_failed
+            payment_with_offsite_preauth_success_new,
+            payment_with_offsite_preauth_failed,
+            payment_with_offsite_preauth_failed_new
         ]},
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
@@ -4514,6 +4518,7 @@ terms_retrieval(C) ->
         payments = #domain_PaymentsServiceTerms{
             payment_methods =
                 {value, [
+                    ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
@@ -4672,9 +4677,24 @@ adhoc_repair_force_invalid_transition(C) ->
 
 -spec payment_with_offsite_preauth_success(config()) -> test_return().
 payment_with_offsite_preauth_success(C) ->
+    payment_with_offsite_preauth_success(C, jcb).
+
+-spec payment_with_offsite_preauth_success_new(config()) -> test_return().
+payment_with_offsite_preauth_success_new(C) ->
+    payment_with_offsite_preauth_success(C, ?pmt_sys(<<"jcb-ref">>)).
+
+-spec payment_with_offsite_preauth_failed(config()) -> test_return().
+payment_with_offsite_preauth_failed(C) ->
+    payment_with_offsite_preauth_failed(C, jcb).
+
+-spec payment_with_offsite_preauth_failed_new(config()) -> test_return().
+payment_with_offsite_preauth_failed_new(C) ->
+    payment_with_offsite_preauth_failed(C, ?pmt_sys(<<"jcb-ref">>)).
+
+payment_with_offsite_preauth_success(C, BankCard) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite, jcb),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite, BankCard),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -4688,11 +4708,10 @@ payment_with_offsite_preauth_success(C) ->
         [?payment_state(?payment_w_status(PaymentID, ?captured()))]
     ) = hg_client_invoicing:get(InvoiceID, Client).
 
--spec payment_with_offsite_preauth_failed(config()) -> test_return().
-payment_with_offsite_preauth_failed(C) ->
+payment_with_offsite_preauth_failed(C, BankCard) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite, jcb),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds_offsite, BankCard),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
@@ -5866,6 +5885,7 @@ construct_domain_fixture() ->
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
+                                    ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                                     ?pmt(payment_terminal_deprecated, euroset),
                                     ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
@@ -6511,6 +6531,7 @@ construct_domain_fixture() ->
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
+                                    ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
@@ -6592,6 +6613,30 @@ construct_domain_fixture() ->
                                             {payment_tool,
                                                 {bank_card, #domain_BankCardCondition{
                                                     definition = {payment_system_is, jcb}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(20, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {bank_card, #domain_BankCardCondition{
+                                                    definition =
+                                                        {payment_system, #domain_PaymentSystemCondition{
+                                                            payment_system_is = ?pmt_sys(<<"jcb-ref">>)
+                                                        }}
                                                 }}}},
                                     then_ =
                                         {value, [
