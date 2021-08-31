@@ -1609,7 +1609,9 @@ payment_w_mobile_commerce(C, Operator, Expectation) ->
             ] = next_event(InvoiceID, Client);
         failure ->
             [
-                ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))),
+                ?payment_ev(
+                    PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
+                ),
                 ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
             ] = next_event(InvoiceID, Client),
             [

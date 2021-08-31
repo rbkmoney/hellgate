@@ -624,7 +624,9 @@ get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
     crypto_currency_deprecated;
 get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce;
-get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator = {domain_MobileOperatorRef,<<"mts-ref">>}}}) ->
+get_payment_tool_scenario(
+    {'mobile_commerce', #domain_MobileCommerce{operator = {domain_MobileOperatorRef, <<"mts-ref">>}}}
+) ->
     mobile_commerce.
 
 -type tokenized_bank_card_payment_system() ::
