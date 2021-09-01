@@ -115,6 +115,7 @@
 -export([reject_payment_chargeback_inconsistent/1]).
 -export([reject_payment_chargeback/1]).
 -export([reject_payment_chargeback_no_fees/1]).
+-export([reject_payment_chargeback_no_fees_new/1]).
 -export([reject_payment_chargeback_new_levy/1]).
 -export([accept_payment_chargeback_inconsistent/1]).
 -export([accept_payment_chargeback_exceeded/1]).
@@ -335,6 +336,7 @@ groups() ->
             reject_payment_chargeback_inconsistent,
             reject_payment_chargeback,
             reject_payment_chargeback_no_fees,
+            reject_payment_chargeback_no_fees_new,
             reject_payment_chargeback_new_levy,
             accept_payment_chargeback_inconsistent,
             accept_payment_chargeback_exceeded,
@@ -2707,6 +2709,13 @@ reject_payment_chargeback(C) ->
 
 -spec reject_payment_chargeback_no_fees(config()) -> _ | no_return().
 reject_payment_chargeback_no_fees(C) ->
+    reject_payment_chargeback_no_fees(C, qiwi).
+
+-spec reject_payment_chargeback_no_fees_new(config()) -> _ | no_return().
+reject_payment_chargeback_no_fees_new(C) ->
+    reject_payment_chargeback_no_fees(C, ?pmt_srv(<<"qiwi-ref">>)).
+
+reject_payment_chargeback_no_fees(C, PmtSrv) ->
     Client = cfg(client, C),
     Cost = 42000,
     Fee = 1890,
@@ -2714,7 +2723,7 @@ reject_payment_chargeback_no_fees(C) ->
     LevyAmount = 4000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_wallet_payment_params(qiwi)),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_wallet_payment_params(PmtSrv)),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
