@@ -57,6 +57,7 @@
 -export([payment_w_crypto_currency_success/1]).
 -export([payment_bank_card_category_condition/1]).
 -export([payment_w_wallet_success/1]).
+-export([payment_w_wallet_success_new/1]).
 -export([payment_w_customer_success/1]).
 -export([payment_w_another_shop_customer/1]).
 -export([payment_w_another_party_customer/1]).
@@ -288,6 +289,7 @@ groups() ->
             payment_w_terminal_success_new,
             payment_w_crypto_currency_success,
             payment_w_wallet_success,
+            payment_w_wallet_success_new,
             payment_w_customer_success,
             payment_w_another_shop_customer,
             payment_w_another_party_customer,
@@ -1631,9 +1633,16 @@ payment_w_mobile_commerce(C, Operator, Expectation) ->
 
 -spec payment_w_wallet_success(config()) -> _ | no_return().
 payment_w_wallet_success(C) ->
+    payment_w_wallet(C, qiwi).
+
+-spec payment_w_wallet_success_new(config()) -> _ | no_return().
+payment_w_wallet_success_new(C) ->
+    payment_w_wallet(C, ?pmt_srv(<<"qiwi-ref">>)).
+
+payment_w_wallet(C, PmtSrv) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"bubbleblob">>, make_due_date(10), 42000, C),
-    PaymentParams = make_wallet_payment_params(),
+    PaymentParams = make_wallet_payment_params(PmtSrv),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -2705,7 +2714,7 @@ reject_payment_chargeback_no_fees(C) ->
     LevyAmount = 4000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_wallet_payment_params()),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_wallet_payment_params(qiwi)),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
@@ -4535,6 +4544,7 @@ terms_retrieval(C) ->
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
                     ?pmt(crypto_currency_deprecated, bitcoin),
+                    ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                     ?pmt(digital_wallet_deprecated, qiwi),
                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                     ?pmt(mobile, ?mob(<<"mts-ref">>)),
@@ -5155,8 +5165,8 @@ make_crypto_currency_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency, bitcoin),
     make_payment_params(PaymentTool, Session, instant).
 
-make_wallet_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet, qiwi),
+make_wallet_payment_params(PmtSrv) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet, PmtSrv),
     make_payment_params(PaymentTool, Session, instant).
 
 make_tds_payment_params() ->
@@ -5898,6 +5908,7 @@ construct_domain_fixture() ->
                                     ?pmt(payment_terminal_deprecated, euroset),
                                     ?pmt(payment_terminal, ?pmt_srv(<<"euroset-ref">>)),
                                     ?pmt(digital_wallet_deprecated, qiwi),
+                                    ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
@@ -6040,6 +6051,7 @@ construct_domain_fixture() ->
                 {value,
                     ?ordset([
                         ?pmt(digital_wallet_deprecated, qiwi),
+                        ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                         ?pmt(bank_card_deprecated, visa),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])},
@@ -6538,6 +6550,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(digital_wallet_deprecated, qiwi),
+                                    ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card_deprecated, jcb),
@@ -6560,6 +6573,27 @@ construct_domain_fixture() ->
                                             {payment_tool,
                                                 {digital_wallet, #domain_DigitalWalletCondition{
                                                     definition = {provider_is_deprecated, qiwi}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(18, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {digital_wallet, #domain_DigitalWalletCondition{
+                                                    definition = {payment_service_is, ?pmt_srv(<<"qiwi-ref">>)}
                                                 }}}},
                                     then_ =
                                         {value, [
@@ -7009,7 +7043,8 @@ construct_domain_fixture() ->
                                 ?ordset([
                                     ?pmt(payment_terminal_deprecated, euroset),
                                     ?pmt(payment_terminal, ?pmt_srv(<<"euroset-ref">>)),
-                                    ?pmt(digital_wallet_deprecated, qiwi)
+                                    ?pmt(digital_wallet_deprecated, qiwi),
+                                    ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>))
                                 ])},
                         cash_limit =
                             {value,
