@@ -53,6 +53,7 @@
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_additional_info/1]).
 -export([payment_w_terminal_success/1]).
+-export([payment_w_terminal_success_new/1]).
 -export([payment_w_crypto_currency_success/1]).
 -export([payment_bank_card_category_condition/1]).
 -export([payment_w_wallet_success/1]).
@@ -284,6 +285,7 @@ groups() ->
             payment_success_additional_info,
             payment_bank_card_category_condition,
             payment_w_terminal_success,
+            payment_w_terminal_success_new,
             payment_w_crypto_currency_success,
             payment_w_wallet_success,
             payment_w_customer_success,
@@ -1521,9 +1523,17 @@ repair_failed_cancel(InvoiceID, PaymentID, Reason, Client) ->
 
 -spec payment_w_terminal_success(config()) -> _ | no_return().
 payment_w_terminal_success(C) ->
+    payment_w_terminal(C, euroset, success).
+
+-spec payment_w_terminal_success_new(config()) -> _ | no_return().
+payment_w_terminal_success_new(C) ->
+    payment_w_terminal(C, ?pmt_srv(<<"euroset-ref">>), success).
+
+payment_w_terminal(C, PmtSrv, success) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberruble">>, make_due_date(10), 42000, C),
-    PaymentParams = make_terminal_payment_params(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal, PmtSrv),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     %% simulate user interaction
@@ -4529,6 +4539,7 @@ terms_retrieval(C) ->
                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                     ?pmt(mobile, ?mob(<<"mts-ref">>)),
                     ?pmt(mobile_deprecated, mts),
+                    ?pmt(payment_terminal, ?pmt_srv(<<"euroset-ref">>)),
                     ?pmt(payment_terminal_deprecated, euroset),
                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                 ]}
@@ -5139,10 +5150,6 @@ update_invoice_tpl(TplID, Cost, Config) ->
 
 delete_invoice_tpl(TplID, Config) ->
     hg_client_invoice_templating:delete(TplID, cfg(client_tpl, Config)).
-
-make_terminal_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(terminal, euroset),
-    make_payment_params(PaymentTool, Session, instant).
 
 make_crypto_currency_payment_params() ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency, bitcoin),
@@ -5889,6 +5896,7 @@ construct_domain_fixture() ->
                                     ?pmt(bank_card_deprecated, jcb),
                                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                                     ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(payment_terminal, ?pmt_srv(<<"euroset-ref">>)),
                                     ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
@@ -7000,6 +7008,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(payment_terminal_deprecated, euroset),
+                                    ?pmt(payment_terminal, ?pmt_srv(<<"euroset-ref">>)),
                                     ?pmt(digital_wallet_deprecated, qiwi)
                                 ])},
                         cash_limit =

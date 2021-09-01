@@ -616,6 +616,10 @@ get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"unexpected_f
 get_payment_tool_scenario({'bank_card', #domain_BankCard{token = <<"scenario_", BinScenario/binary>>}}) ->
     Scenario = decode_failure_scenario(BinScenario),
     {temporary_unavailability, Scenario};
+get_payment_tool_scenario(
+    {'payment_terminal', #domain_PaymentTerminal{payment_service = #domain_PaymentServiceRef{id = <<"euroset-ref">>}}}
+) ->
+    terminal;
 get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_type_deprecated = euroset}}) ->
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider_deprecated = qiwi}}) ->
