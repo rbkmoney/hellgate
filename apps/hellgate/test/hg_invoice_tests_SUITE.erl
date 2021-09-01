@@ -110,7 +110,9 @@
 -export([create_chargeback_idempotency/1]).
 -export([cancel_payment_chargeback/1]).
 -export([cancel_partial_payment_chargeback/1]).
+-export([cancel_partial_payment_chargeback_new/1]).
 -export([cancel_partial_payment_chargeback_exceeded/1]).
+-export([cancel_partial_payment_chargeback_exceeded_new/1]).
 -export([cancel_payment_chargeback_refund/1]).
 -export([reject_payment_chargeback_inconsistent/1]).
 -export([reject_payment_chargeback/1]).
@@ -331,7 +333,9 @@ groups() ->
             create_chargeback_idempotency,
             cancel_payment_chargeback,
             cancel_partial_payment_chargeback,
+            cancel_partial_payment_chargeback_new,
             cancel_partial_payment_chargeback_exceeded,
+            cancel_partial_payment_chargeback_exceeded_new,
             cancel_payment_chargeback_refund,
             reject_payment_chargeback_inconsistent,
             reject_payment_chargeback,
@@ -2565,6 +2569,13 @@ cancel_payment_chargeback(C) ->
 
 -spec cancel_partial_payment_chargeback(config()) -> _ | no_return().
 cancel_partial_payment_chargeback(C) ->
+    cancel_partial_payment_chargeback(C, mastercard).
+
+-spec cancel_partial_payment_chargeback_new(config()) -> _ | no_return().
+cancel_partial_payment_chargeback_new(C) ->
+    cancel_partial_payment_chargeback(C, ?pmt_sys(<<"mastercard-ref">>)).
+
+cancel_partial_payment_chargeback(C, PmtSys) ->
     Client = cfg(client, C),
     Cost = 42000,
     Fee = 450,
@@ -2573,7 +2584,7 @@ cancel_partial_payment_chargeback(C) ->
     Paid = Partial - Fee,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback_partial_capture(C, Cost, Partial, CBParams),
+    {IID, PID, SID, CB} = start_chargeback_partial_capture(C, Cost, Partial, CBParams, PmtSys),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
@@ -2601,13 +2612,20 @@ cancel_partial_payment_chargeback(C) ->
 
 -spec cancel_partial_payment_chargeback_exceeded(config()) -> _ | no_return().
 cancel_partial_payment_chargeback_exceeded(C) ->
+    cancel_partial_payment_chargeback_exceeded(C, mastercard).
+
+-spec cancel_partial_payment_chargeback_exceeded_new(config()) -> _ | no_return().
+cancel_partial_payment_chargeback_exceeded_new(C) ->
+    cancel_partial_payment_chargeback_exceeded(C, ?pmt_sys(<<"mastercard-ref">>)).
+
+cancel_partial_payment_chargeback_exceeded(C, PmtSys) ->
     Cost = 42000,
     LevyAmount = 4000,
     Partial = 10000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     Body = ?cash(Cost, <<"RUB">>),
     CBParams = make_chargeback_params(Levy, Body),
-    {_IID, _PID, _SID, CB} = start_chargeback_partial_capture(C, Cost, Partial, CBParams),
+    {_IID, _PID, _SID, CB} = start_chargeback_partial_capture(C, Cost, Partial, CBParams, PmtSys),
     ?assertMatch(?invoice_payment_amount_exceeded(?cash(10000, <<"RUB">>)), CB).
 
 -spec cancel_payment_chargeback_refund(config()) -> _ | no_return().
@@ -3669,7 +3687,7 @@ start_chargeback(C, Cost, CBParams, PaymentParams) ->
     Chargeback = hg_client_invoicing:create_chargeback(InvoiceID, PaymentID, CBParams, Client),
     {InvoiceID, PaymentID, SettlementID, Chargeback}.
 
-start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
+start_chargeback_partial_capture(C, Cost, Partial, CBParams, PmtSys) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     Cash = ?cash(Partial, <<"RUB">>),
@@ -3683,7 +3701,7 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams) ->
     % Fee          = 450, % 0.045
     ?assertEqual(0, maps:get(min_available_amount, Settlement0)),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), Cost, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, mastercard),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Cash, Client),
@@ -4549,6 +4567,7 @@ terms_retrieval(C) ->
             payment_methods =
                 {value, [
                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
+                    ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
@@ -5912,6 +5931,7 @@ construct_domain_fixture() ->
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
+                                    ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, jcb),
                                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                                     ?pmt(payment_terminal_deprecated, euroset),
@@ -5987,6 +6007,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
                 lifetime =
@@ -6002,6 +6023,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
                 fees =
@@ -6034,6 +6056,7 @@ construct_domain_fixture() ->
                 {value,
                     ordsets:from_list([
                         ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])}
         }
@@ -6062,6 +6085,7 @@ construct_domain_fixture() ->
                         ?pmt(digital_wallet_deprecated, qiwi),
                         ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                         ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])},
             cash_limit =
@@ -6130,6 +6154,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
                 lifetime =
@@ -6140,6 +6165,18 @@ construct_domain_fixture() ->
                                     {payment_tool,
                                         {bank_card, #domain_BankCardCondition{
                                             definition = {payment_system_is, mastercard}
+                                        }}}},
+                            then_ = {value, ?hold_lifetime(120)}
+                        },
+                        #domain_HoldLifetimeDecision{
+                            if_ =
+                                {condition,
+                                    {payment_tool,
+                                        {bank_card, #domain_BankCardCondition{
+                                            definition =
+                                                {payment_system, #domain_PaymentSystemCondition{
+                                                    payment_system_is = ?pmt_sys(<<"mastercard-ref">>)
+                                                }}
                                         }}}},
                             then_ = {value, ?hold_lifetime(120)}
                         },
@@ -6165,6 +6202,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
                 fees = {value, []},
@@ -6562,6 +6600,7 @@ construct_domain_fixture() ->
                                     ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                                     ?pmt(bank_card_deprecated, visa),
                                     ?pmt(bank_card_deprecated, mastercard),
+                                    ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, jcb),
                                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
@@ -6660,6 +6699,31 @@ construct_domain_fixture() ->
                                             )
                                         ]}
                                 },
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {bank_card, #domain_BankCardCondition{
+                                                    definition =
+                                                        {payment_system, #domain_PaymentSystemCondition{
+                                                            payment_system_is = ?pmt_sys(<<"mastercard-ref">>)
+                                                        }}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(19, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
+
                                 #domain_CashFlowDecision{
                                     if_ =
                                         {condition,
@@ -6802,6 +6866,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard)
                                 ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
@@ -6851,6 +6916,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard)
                                 ])},
                         cash_limit =
@@ -6883,6 +6949,18 @@ construct_domain_fixture() ->
                                                         definition = {payment_system_is, visa}
                                                     }}}},
                                         then_ = {value, ?hold_lifetime(5)}
+                                    },
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition =
+                                                            {payment_system, #domain_PaymentSystemCondition{
+                                                                payment_system_is = ?pmt_sys(<<"mastercard-ref">>)
+                                                            }}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(120)}
                                     },
                                     #domain_HoldLifetimeDecision{
                                         if_ =
@@ -7957,6 +8035,7 @@ construct_term_set_for_partial_capture_service_permit() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
                 lifetime =
@@ -8116,6 +8195,7 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard)
                                 ])},
                         cash_value = {value, ?cash(1000, <<"RUB">>)}
