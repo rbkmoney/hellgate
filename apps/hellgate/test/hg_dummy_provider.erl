@@ -624,7 +624,9 @@ get_payment_tool_scenario({'payment_terminal', #domain_PaymentTerminal{terminal_
     terminal;
 get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{provider_deprecated = qiwi}}) ->
     digital_wallet;
-get_payment_tool_scenario({'digital_wallet', #domain_DigitalWallet{payment_service = #domain_PaymentServiceRef{id = <<"qiwi-ref">>}}}) ->
+get_payment_tool_scenario(
+    {'digital_wallet', #domain_DigitalWallet{payment_service = #domain_PaymentServiceRef{id = <<"qiwi-ref">>}}}
+) ->
     digital_wallet;
 get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
     crypto_currency_deprecated;
