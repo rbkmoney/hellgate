@@ -31,6 +31,7 @@
 -define(crypta(ID), #domain_CryptoCurrencyRef{id = ID}).
 -define(token_srv(ID), #domain_BankCardTokenServiceRef{id = ID}).
 -define(bank_card(ID), #domain_BankCardPaymentMethod{payment_system = ?pmt_sys(ID)}).
+-define(bank_card_no_cvv(ID), #domain_BankCardPaymentMethod{payment_system = ?pmt_sys(ID), is_cvv_empty = true}).
 -define(token_bank_card(ID, Prv), ?token_bank_card(ID, Prv, dpan)).
 -define(token_bank_card(ID, Prv, Method), #domain_BankCardPaymentMethod{
     payment_system = ?pmt_sys(ID),

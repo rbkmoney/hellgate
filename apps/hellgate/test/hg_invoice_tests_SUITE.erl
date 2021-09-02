@@ -51,11 +51,14 @@
 
 -export([processing_deadline_reached_test/1]).
 -export([payment_success_empty_cvv/1]).
+-export([payment_success_empty_cvv_new/1]).
 -export([payment_success_additional_info/1]).
+-export([payment_success_additional_info_new/1]).
 -export([payment_w_terminal_success/1]).
 -export([payment_w_terminal_success_new/1]).
 -export([payment_w_crypto_currency_success/1]).
 -export([payment_bank_card_category_condition/1]).
+-export([payment_bank_card_category_condition_new/1]).
 -export([payment_w_wallet_success/1]).
 -export([payment_w_wallet_success_new/1]).
 -export([payment_w_customer_success/1]).
@@ -286,8 +289,11 @@ groups() ->
             payment_success_ruleset,
             processing_deadline_reached_test,
             payment_success_empty_cvv,
+            payment_success_empty_cvv_new,
             payment_success_additional_info,
+            payment_success_additional_info_new,
             payment_bank_card_category_condition,
+            payment_bank_card_category_condition_new,
             payment_w_terminal_success,
             payment_w_terminal_success_new,
             payment_w_crypto_currency_success,
@@ -1308,9 +1314,16 @@ processing_deadline_reached_test(C) ->
 
 -spec payment_success_empty_cvv(config()) -> test_return().
 payment_success_empty_cvv(C) ->
+    payment_success_empty_cvv(C, visa).
+
+-spec payment_success_empty_cvv_new(config()) -> test_return().
+payment_success_empty_cvv_new(C) ->
+    payment_success_empty_cvv(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_success_empty_cvv(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
@@ -1320,9 +1333,16 @@ payment_success_empty_cvv(C) ->
 
 -spec payment_success_additional_info(config()) -> test_return().
 payment_success_additional_info(C) ->
+    payment_success_additional_info(C, visa).
+
+-spec payment_success_additional_info_new(config()) -> test_return().
+payment_success_additional_info_new(C) ->
+    payment_success_additional_info(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_success_additional_info(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
@@ -1573,10 +1593,17 @@ payment_w_crypto_currency_success(C) ->
 
 -spec payment_bank_card_category_condition(config()) -> _ | no_return().
 payment_bank_card_category_condition(C) ->
+    payment_bank_card_category_condition(C, visa).
+
+-spec payment_bank_card_category_condition_new(config()) -> _ | no_return().
+payment_bank_card_category_condition_new(C) ->
+    payment_bank_card_category_condition(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_bank_card_category_condition(C, PmtSys) ->
     Client = cfg(client, C),
     PayCash = 2000,
     InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
-    {{bank_card, BC}, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, visa),
+    {{bank_card, BC}, Session} = hg_dummy_provider:make_payment_tool(empty_cvv, PmtSys),
     BankCard = BC#domain_BankCard{
         category = <<"CORPORATE CARD">>
     },
@@ -4568,6 +4595,7 @@ terms_retrieval(C) ->
                 {value, [
                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
+                    ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
@@ -5939,6 +5967,7 @@ construct_domain_fixture() ->
                                     ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
                                     ?pmt(mobile_deprecated, mts),
@@ -6241,6 +6270,7 @@ construct_domain_fixture() ->
 
         hg_ct_fixture:construct_payment_method(?pmt(mobile, ?mob(<<"mts-ref">>))),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"visa-ref">>))),
+        hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>))),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"mastercard-ref">>))),
         hg_ct_fixture:construct_payment_method(?pmt(bank_card, ?bank_card(<<"jcb-ref">>))),
         hg_ct_fixture:construct_payment_method(?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>))),
@@ -6604,6 +6634,7 @@ construct_domain_fixture() ->
                                     ?pmt(bank_card_deprecated, jcb),
                                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                                 ])},
@@ -6663,6 +6694,30 @@ construct_domain_fixture() ->
                                             {payment_tool,
                                                 {bank_card, #domain_BankCardCondition{
                                                     definition = {payment_system_is, visa}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(18, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {bank_card, #domain_BankCardCondition{
+                                                    definition =
+                                                        {payment_system, #domain_PaymentSystemCondition{
+                                                            payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                        }}
                                                 }}}},
                                     then_ =
                                         {value, [
