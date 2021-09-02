@@ -27,7 +27,6 @@
 
 -type sub_errors() ::
     no_transaction_to_sub |
-    multiple_transactions_to_sub |
     transaction_amount_sub_too_much |
     currency_mismatch |
     sub_body_from_undefined |
@@ -141,8 +140,6 @@ take_trx(Target, Transactions) ->
     case lists:partition(Fun, Transactions) of
         {[], Transactions} ->
             throw(no_transaction_to_sub);
-        {[_Transaction1, _Transaction2 | _], _RemainingTransactions} ->
-            throw(multiple_transactions_to_sub);
         {[Transaction], RemainingTransactions} ->
             {Transaction, RemainingTransactions}
     end.
