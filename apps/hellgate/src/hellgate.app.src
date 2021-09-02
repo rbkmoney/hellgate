@@ -24,7 +24,8 @@
         erl_health,
         prometheus,
         prometheus_cowboy,
-        limiter_proto
+        limiter_proto,
+        bender_client
     ]},
     {env, []},
     {modules, []},

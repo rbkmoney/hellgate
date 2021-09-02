@@ -8,29 +8,31 @@
     transactions = Transactions
 }).
 
--define(allocation_transaction_prototype(ID, Target, Body), ?allocation_transaction_prototype(ID, Target, Body, undefined)).
+-define(allocation_trx_prototype(Target, Body), ?allocation_trx_prototype(Target, Body, undefined)).
 
--define(allocation_transaction_prototype(ID, Target, Body, Details), #domain_AllocationTransactionPrototype{
-    id = ID,
+-define(allocation_trx_prototype(Target, Body, Details), #domain_AllocationTransactionPrototype{
     target = Target,
     body = Body,
     details = Details
 }).
 
--define(allocation_transaction_prototype_body_amount(Amount), {amount, #domain_AllocationTransactionPrototypeBodyAmount{
+-define(allocation_trx_prototype_body_amount(Amount), {amount, #domain_AllocationTransactionPrototypeBodyAmount{
     amount = Amount
 }}).
 
--define(allocation_transaction_prototype_body_total(Total, Fee), {total, #domain_AllocationTransactionPrototypeBodyTotal{
+-define(allocation_trx_prototype_body_total(Total, Fee), {total, #domain_AllocationTransactionPrototypeBodyTotal{
     total = Total,
     fee = Fee
 }}).
 
--define(allocation_transaction_prototype_fee_fixed(Amount), {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
+-define(allocation_trx_prototype_fee_fixed(Amount), {fixed, #domain_AllocationTransactionPrototypeFeeFixed{
     amount = Amount
 }}).
 
--define(allocation_transaction_prototype_fee_share(P, Q), {share, ?allocation_transaction_fee_share(P, Q, undefined)}).
+-define(allocation_trx_prototype_fee_share(P, Q), {share, ?allocation_trx_fee_share(P, Q)}).
+
+-define(allocation_trx_prototype_fee_share(P, Q, RoundingMethod),
+    {share, ?allocation_trx_fee_share(P, Q, RoundingMethod)}).
 
 %% Final
 
@@ -38,11 +40,11 @@
     transactions = Transactions
 }).
 
--define(allocation_transaction(ID, Target, Amount), ?allocation_transaction(ID, Target, Amount, undefined, undefined)).
+-define(allocation_trx(ID, Target, Amount), ?allocation_trx(ID, Target, Amount, undefined, undefined)).
 
--define(allocation_transaction(ID, Target, Amount, Details), ?allocation_transaction(ID, Target, Amount, Details, undefined)).
+-define(allocation_trx(ID, Target, Amount, Details), ?allocation_trx(ID, Target, Amount, Details, undefined)).
 
--define(allocation_transaction(ID, Target, Amount, Details, Body), #domain_AllocationTransaction{
+-define(allocation_trx(ID, Target, Amount, Details, Body), #domain_AllocationTransaction{
     id = ID,
     target = Target,
     amount = Amount,
@@ -50,28 +52,28 @@
     body = Body
 }).
 
--define(allocation_transaction_target_shop(OwnerID, ShopID), {shop, #domain_AllocationTransactionTargetShop{
+-define(allocation_trx_target_shop(OwnerID, ShopID), {shop, #domain_AllocationTransactionTargetShop{
     owner_id = OwnerID,
     shop_id = ShopID
 }}).
 
--define(allocation_transaction_details(Cart), #domain_AllocationTransactionDetails{
+-define(allocation_trx_details(Cart), #domain_AllocationTransactionDetails{
     cart = Cart
 }).
 
--define(allocation_transaction_body_total(FeeTarget, Total, FeeAmount),
-    ?allocation_transaction_body_total(FeeTarget, Total, FeeAmount, undefined)).
+-define(allocation_trx_body_total(FeeTarget, Total, FeeAmount),
+    ?allocation_trx_body_total(FeeTarget, Total, FeeAmount, undefined)).
 
--define(allocation_transaction_body_total(FeeTarget, Total, FeeAmount, Fee), #domain_AllocationTransactionBodyTotal{
+-define(allocation_trx_body_total(FeeTarget, Total, FeeAmount, Fee), #domain_AllocationTransactionBodyTotal{
     fee_target = FeeTarget,
     total = Total,
     fee_amount = FeeAmount,
     fee = Fee
 }).
 
--define(allocation_transaction_fee_share(P, Q), ?allocation_transaction_fee_share(P, Q, undefined)).
+-define(allocation_trx_fee_share(P, Q), ?allocation_trx_fee_share(P, Q, undefined)).
 
--define(allocation_transaction_fee_share(P, Q, RoundingMethod), #domain_AllocationTransactionFeeShare{
+-define(allocation_trx_fee_share(P, Q, RoundingMethod), #domain_AllocationTransactionFeeShare{
     parts = #'Rational'{
         p = P,
         q = Q
