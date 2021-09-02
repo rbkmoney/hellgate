@@ -70,7 +70,9 @@
 -export([payment_suspend_timeout_failure/1]).
 -export([payment_suspend_timeout_failure_new/1]).
 -export([payments_w_bank_card_issuer_conditions/1]).
+-export([payments_w_bank_card_issuer_conditions_new/1]).
 -export([payments_w_bank_conditions/1]).
+-export([payments_w_bank_conditions_new/1]).
 -export([payment_success_on_second_try/1]).
 -export([payment_fail_after_silent_callback/1]).
 -export([invoice_success_on_third_payment/1]).
@@ -226,8 +228,9 @@ all() ->
         % With constant domain config
         {group, all_non_destructive_tests},
 
-        payments_w_bank_card_issuer_conditions,
+        payments_w_bank_card_issuer_conditions_new,
         payments_w_bank_conditions,
+        payments_w_bank_conditions_new,
 
         % With variable domain config
         {group, adjustments},
@@ -643,7 +646,9 @@ init_per_testcase(Name, C) when
 init_per_testcase(Name, C) when
     Name == rounding_cashflow_volume;
     Name == payments_w_bank_card_issuer_conditions;
+    Name == payments_w_bank_card_issuer_conditions_new;
     Name == payments_w_bank_conditions;
+    Name == payments_w_bank_conditions_new;
     Name == ineligible_payment_partial_refund;
     Name == invalid_permit_partial_capture_in_service;
     Name == invalid_permit_partial_capture_in_provider
@@ -655,7 +660,11 @@ init_per_testcase(Name, C) when
                 get_cashflow_rounding_fixture(Revision);
             payments_w_bank_card_issuer_conditions ->
                 payments_w_bank_card_issuer_conditions_fixture(Revision);
+            payments_w_bank_card_issuer_conditions_new ->
+                payments_w_bank_card_issuer_conditions_fixture(Revision);
             payments_w_bank_conditions ->
+                payments_w_bank_conditions_fixture(Revision);
+            payments_w_bank_conditions_new ->
                 payments_w_bank_conditions_fixture(Revision);
             ineligible_payment_partial_refund ->
                 construct_term_set_for_refund_eligibility_time(1);
@@ -1770,6 +1779,13 @@ payment_fail_after_silent_callback(C) ->
 
 -spec payments_w_bank_card_issuer_conditions(config()) -> test_return().
 payments_w_bank_card_issuer_conditions(C) ->
+    payments_w_bank_card_issuer_conditions(C, visa).
+
+-spec payments_w_bank_card_issuer_conditions_new(config()) -> test_return().
+payments_w_bank_card_issuer_conditions_new(C) ->
+    payments_w_bank_card_issuer_conditions(C, ?pmt_sys(<<"visa-ref">>)).
+
+payments_w_bank_card_issuer_conditions(C, PmtSys) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     _ = timer:sleep(5000),
@@ -1783,7 +1799,7 @@ payments_w_bank_card_issuer_conditions(C) ->
     ),
     %kaz success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
-    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     KazBankCard = BankCard#domain_BankCard{
         issuer_country = kaz,
         metadata = #{<<?MODULE_STRING>> => {obj, #{{str, <<"vsn">>} => {i, 42}}}}
@@ -1798,7 +1814,7 @@ payments_w_bank_card_issuer_conditions(C) ->
     ),
     %rus success
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     RusBankCard = BankCard1#domain_BankCard{
         issuer_country = rus,
         metadata = #{<<?MODULE_STRING>> => {obj, #{{str, <<"vsn">>} => {i, 42}}}}
@@ -1807,7 +1823,7 @@ payments_w_bank_card_issuer_conditions(C) ->
     _SecondPayment = execute_payment(ThirdInvoice, RusPaymentParams, Client),
     %fail with undefined issuer_country
     FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {UndefBankCard, Session2} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {UndefBankCard, Session2} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     UndefPaymentParams = make_payment_params(UndefBankCard, Session2, instant),
     %fix me
     ?assertException(
@@ -1818,6 +1834,13 @@ payments_w_bank_card_issuer_conditions(C) ->
 
 -spec payments_w_bank_conditions(config()) -> test_return().
 payments_w_bank_conditions(C) ->
+    payments_w_bank_conditions(C, visa).
+
+-spec payments_w_bank_conditions_new(config()) -> test_return().
+payments_w_bank_conditions_new(C) ->
+    payments_w_bank_conditions(C, ?pmt_sys(<<"visa-ref">>)).
+
+payments_w_bank_conditions(C, PmtSys) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     _ = timer:sleep(5000),
@@ -1831,7 +1854,7 @@ payments_w_bank_conditions(C) ->
     ),
     %bank 1 success
     FirstInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1000, C),
-    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {{bank_card, BankCard}, Session} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     TestBankCard = BankCard#domain_BankCard{
         bank_name = <<"TEST BANK">>
     },
@@ -1845,7 +1868,7 @@ payments_w_bank_conditions(C) ->
     ),
     %bank 1 /w different wildcard fail
     ThirdInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {{bank_card, BankCard1}, Session1} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     WildBankCard = BankCard1#domain_BankCard{
         bank_name = <<"TESTBANK">>
     },
@@ -1856,7 +1879,7 @@ payments_w_bank_conditions(C) ->
     ),
     %some other bank success
     FourthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 10000, C),
-    {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {{bank_card, BankCard2}, Session2} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     OthrBankCard = BankCard2#domain_BankCard{
         bank_name = <<"SOME OTHER BANK">>
     },
@@ -1864,7 +1887,7 @@ payments_w_bank_conditions(C) ->
     _ThirdPayment = execute_payment(FourthInvoice, OthrPaymentParams, Client),
     %test fallback to bins with undefined bank_name
     FifthInvoice = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 1001, C),
-    {{bank_card, BankCard3}, Session3} = hg_dummy_provider:make_payment_tool(no_preauth, visa),
+    {{bank_card, BankCard3}, Session3} = hg_dummy_provider:make_payment_tool(no_preauth, PmtSys),
     FallbackBankCard = BankCard3#domain_BankCard{
         bin = <<"42424242">>
     },
@@ -4595,6 +4618,7 @@ terms_retrieval(C) ->
                 {value, [
                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
+                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                     ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
@@ -5958,6 +5982,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, jcb),
@@ -6114,6 +6139,7 @@ construct_domain_fixture() ->
                         ?pmt(digital_wallet_deprecated, qiwi),
                         ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                         ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                         ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])},
@@ -6629,6 +6655,7 @@ construct_domain_fixture() ->
                                     ?pmt(digital_wallet_deprecated, qiwi),
                                     ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard),
                                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, jcb),
@@ -6971,6 +6998,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard)
                                 ])},
@@ -7091,6 +7119,7 @@ construct_domain_fixture() ->
                         payment_methods =
                             {value,
                                 ?ordset([
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card_deprecated, visa)
                                 ])},
                         cash_limit =
@@ -7644,6 +7673,7 @@ get_payment_adjustment_fixture(Revision) ->
                         payment_methods =
                             {value,
                                 ?ordset([
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card_deprecated, visa)
                                 ])},
                         cash_flow = {value, get_payment_adjustment_provider_cashflow(initial)},
