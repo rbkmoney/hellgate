@@ -639,8 +639,8 @@ get_payment_tool_scenario(
 
 -type tokenized_bank_card_payment_system() ::
     {
-        dmsl_domain_thrift:'LegacyBankCardPaymentSystem'(),
-        dmsl_domain_thrift:'LegacyBankCardTokenProvider'(),
+        dmsl_domain_thrift:'LegacyBankCardPaymentSystem'() | dmsl_domain_thrift:'PaymentSystemRef'(),
+        dmsl_domain_thrift:'LegacyBankCardTokenProvider'() | dmsl_domain_thrift:'BankCardTokenServiceRef'(),
         dmsl_domain_thrift:'TokenizationMethod'()
     }.
 -type payment_system() ::

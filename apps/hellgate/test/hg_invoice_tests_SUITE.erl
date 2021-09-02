@@ -171,6 +171,7 @@
 -export([payment_with_offsite_preauth_failed/1]).
 -export([payment_with_offsite_preauth_failed_new/1]).
 -export([payment_with_tokenized_bank_card/1]).
+-export([payment_with_tokenized_bank_card_new/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
 -export([payment_last_trx_correct/1]).
@@ -279,6 +280,7 @@ groups() ->
             {group, offsite_preauth_payment},
 
             payment_with_tokenized_bank_card,
+            payment_with_tokenized_bank_card_new,
 
             {group, adhoc_repairs},
 
@@ -4685,6 +4687,7 @@ terms_retrieval(C) ->
                     ?pmt(bank_card, ?bank_card(<<"jcb-ref">>)),
                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                     ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
+                    ?pmt(bank_card, ?token_bank_card(<<"visa-ref">>, <<"applepay-ref">>)),
                     ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
@@ -4913,9 +4916,17 @@ payment_with_offsite_preauth_failed(C, BankCard) ->
 
 -spec payment_with_tokenized_bank_card(config()) -> test_return().
 payment_with_tokenized_bank_card(C) ->
+    payment_with_tokenized_bank_card(C, {visa, applepay, dpan}).
+
+-spec payment_with_tokenized_bank_card_new(config()) -> test_return().
+payment_with_tokenized_bank_card_new(C) ->
+    payment_with_tokenized_bank_card(C, {?pmt_sys(<<"visa-ref">>), ?token_srv(<<"applepay-ref">>), dpan}).
+
+payment_with_tokenized_bank_card(C, PmtSrv) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_tokenized_bank_card_payment_params(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card, PmtSrv),
+    PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -5369,10 +5380,6 @@ make_customer_payment_params(CustomerID) ->
             }},
         flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}}
     }.
-
-make_tokenized_bank_card_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(tokenized_bank_card, {visa, applepay, dpan}),
-    make_payment_params(PaymentTool, Session).
 
 make_scenario_payment_params(Scenario) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, visa),
@@ -6099,6 +6106,7 @@ construct_domain_fixture() ->
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
+                                    ?pmt(bank_card, ?token_bank_card(<<"visa-ref">>, <<"applepay-ref">>)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
                                     ?pmt(mobile_deprecated, mts),
                                     ?pmt(mobile, ?mob(<<"mts-ref">>))
@@ -6770,6 +6778,7 @@ construct_domain_fixture() ->
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
+                                    ?pmt(bank_card, ?token_bank_card(<<"visa-ref">>, <<"applepay-ref">>)),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                                 ])},
                         cash_limit =
