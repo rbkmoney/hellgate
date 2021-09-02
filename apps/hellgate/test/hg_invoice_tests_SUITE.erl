@@ -191,8 +191,10 @@
 -export([repair_complex_succeeded_second/1]).
 -export([repair_complex_succeeded_second_new/1]).
 -export([repair_fulfill_session_succeeded/1]).
+-export([repair_fulfill_session_succeeded_new/1]).
 -export([repair_fulfill_session_on_pre_processing_failed/1]).
 -export([repair_fulfill_session_with_trx_succeeded/1]).
+-export([repair_fulfill_session_with_trx_succeeded_new/1]).
 
 -export([consistent_account_balances/1]).
 
@@ -449,7 +451,9 @@ groups() ->
             repair_complex_succeeded_second,
             repair_complex_succeeded_second_new,
             repair_fulfill_session_succeeded,
+            repair_fulfill_session_succeeded_new,
             repair_fulfill_session_on_pre_processing_failed,
+            repair_fulfill_session_with_trx_succeeded_new,
             repair_fulfill_session_with_trx_succeeded
         ]}
     ].
@@ -5045,9 +5049,16 @@ repair_complex_succeeded_second(C, PmtSys) ->
 
 -spec repair_fulfill_session_succeeded(config()) -> test_return().
 repair_fulfill_session_succeeded(C) ->
+    repair_fulfill_session_succeeded(C, visa).
+
+-spec repair_fulfill_session_succeeded_new(config()) -> test_return().
+repair_fulfill_session_succeeded_new(C) ->
+    repair_fulfill_session_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
+
+repair_fulfill_session_succeeded(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -5096,9 +5107,16 @@ repair_fulfill_session_on_pre_processing_failed(C) ->
 
 -spec repair_fulfill_session_with_trx_succeeded(config()) -> test_return().
 repair_fulfill_session_with_trx_succeeded(C) ->
+    repair_fulfill_session_with_trx_succeeded(C, visa).
+
+-spec repair_fulfill_session_with_trx_succeeded_new(config()) -> test_return().
+repair_fulfill_session_with_trx_succeeded_new(C) ->
+    repair_fulfill_session_with_trx_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
+
+repair_fulfill_session_with_trx_succeeded(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure_no_trx, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
