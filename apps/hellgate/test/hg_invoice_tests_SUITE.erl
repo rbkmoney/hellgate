@@ -37,6 +37,7 @@
 -export([invoice_cancellation/1]).
 -export([overdue_invoice_cancellation/1]).
 -export([invoice_cancellation_after_payment_timeout/1]).
+-export([invoice_cancellation_after_payment_timeout_new/1]).
 -export([invalid_payment_amount/1]).
 
 -export([payment_start_idempotency/1]).
@@ -74,14 +75,18 @@
 -export([payments_w_bank_conditions/1]).
 -export([payments_w_bank_conditions_new/1]).
 -export([payment_success_on_second_try/1]).
+-export([payment_success_on_second_try_new/1]).
 -export([payment_fail_after_silent_callback/1]).
+-export([payment_fail_after_silent_callback_new/1]).
 -export([invoice_success_on_third_payment/1]).
+-export([invoice_success_on_third_payment_new/1]).
 -export([party_revision_check/1]).
 -export([payment_customer_risk_score_check/1]).
 -export([payment_risk_score_check/1]).
 -export([payment_risk_score_check_fail/1]).
 -export([payment_risk_score_check_timeout/1]).
 -export([invalid_payment_adjustment/1]).
+-export([invalid_payment_adjustment_new/1]).
 -export([payment_adjustment_success/1]).
 -export([payment_adjustment_refunded_success/1]).
 -export([payment_adjustment_chargeback_success/1]).
@@ -107,6 +112,7 @@
 -export([invalid_amount_partial_capture/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
 -export([invalid_permit_partial_capture_in_provider/1]).
+-export([payment_hold_auto_capturing_new/1]).
 -export([payment_hold_auto_capturing/1]).
 
 -export([create_chargeback_not_allowed/1]).
@@ -291,6 +297,7 @@ groups() ->
             invoice_cancellation,
             overdue_invoice_cancellation,
             invoice_cancellation_after_payment_timeout,
+            invoice_cancellation_after_payment_timeout_new,
             invalid_payment_amount,
 
             payment_start_idempotency,
@@ -317,12 +324,15 @@ groups() ->
             payment_suspend_timeout_failure,
             payment_suspend_timeout_failure_new,
             payment_success_on_second_try,
+            payment_success_on_second_try_new,
             payment_fail_after_silent_callback,
+            payment_fail_after_silent_callback_new,
             payment_temporary_unavailability_retry_success,
             payment_temporary_unavailability_too_many_retries,
             payment_has_optional_fields,
             payment_last_trx_correct,
             invoice_success_on_third_payment,
+            invoice_success_on_third_payment_new,
             payment_capture_failed,
             payment_capture_retries_exceeded,
             payment_partial_capture_success,
@@ -332,6 +342,7 @@ groups() ->
 
         {adjustments, [], [
             invalid_payment_adjustment,
+            invalid_payment_adjustment_new,
             payment_adjustment_success,
             payment_adjustment_refunded_success,
             payment_adjustment_chargeback_success,
@@ -418,6 +429,7 @@ groups() ->
             payment_hold_partial_capturing,
             payment_hold_partial_capturing_with_cart,
             payment_hold_partial_capturing_with_cart_missing_cash,
+            payment_hold_auto_capturing_new,
             payment_hold_auto_capturing
         ]},
 
@@ -990,9 +1002,16 @@ overdue_invoice_cancellation(C) ->
 
 -spec invoice_cancellation_after_payment_timeout(config()) -> test_return().
 invoice_cancellation_after_payment_timeout(C) ->
+    invoice_cancellation_after_payment_timeout(C, visa).
+
+-spec invoice_cancellation_after_payment_timeout_new(config()) -> test_return().
+invoice_cancellation_after_payment_timeout_new(C) ->
+    invoice_cancellation_after_payment_timeout(C, ?pmt_sys(<<"visa-ref">>)).
+
+invoice_cancellation_after_payment_timeout(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberdusk">>, make_due_date(3), 1000, C),
-    PaymentParams = make_tds_payment_params(),
+    PaymentParams = make_tds_payment_params(instant, PmtSys),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     _UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     %% wait for payment timeout
@@ -1761,9 +1780,16 @@ payment_w_deleted_customer(C) ->
 
 -spec payment_success_on_second_try(config()) -> test_return().
 payment_success_on_second_try(C) ->
+    payment_success_on_second_try(C, visa).
+
+-spec payment_success_on_second_try_new(config()) -> test_return().
+payment_success_on_second_try_new(C) ->
+    payment_success_on_second_try(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_success_on_second_try(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
-    PaymentParams = make_tds_payment_params(),
+    PaymentParams = make_tds_payment_params(instant, PmtSys),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     %% simulate user interaction
@@ -1781,9 +1807,16 @@ payment_success_on_second_try(C) ->
 
 -spec payment_fail_after_silent_callback(config()) -> _ | no_return().
 payment_fail_after_silent_callback(C) ->
+    payment_fail_after_silent_callback(C, visa).
+
+-spec payment_fail_after_silent_callback_new(config()) -> _ | no_return().
+payment_fail_after_silent_callback_new(C) ->
+    payment_fail_after_silent_callback(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_fail_after_silent_callback(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberdick">>, make_due_date(20), 42000, C),
-    PaymentID = start_payment(InvoiceID, make_tds_payment_params(), Client),
+    PaymentID = start_payment(InvoiceID, make_tds_payment_params(instant, PmtSys), Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     {URL, Form} = get_post_request(UserInteraction),
     _ = assert_success_post_request({URL, hg_dummy_provider:construct_silent_callback(Form)}),
@@ -1911,9 +1944,16 @@ payments_w_bank_conditions(C, PmtSys) ->
 
 -spec invoice_success_on_third_payment(config()) -> test_return().
 invoice_success_on_third_payment(C) ->
+    invoice_success_on_third_payment(C, visa).
+
+-spec invoice_success_on_third_payment_new(config()) -> test_return().
+invoice_success_on_third_payment_new(C) ->
+    invoice_success_on_third_payment(C, ?pmt_sys(<<"visa-ref">>)).
+
+invoice_success_on_third_payment(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberdock">>, make_due_date(60), 42000, C),
-    PaymentParams = make_tds_payment_params(),
+    PaymentParams = make_tds_payment_params(instant, PmtSys),
     PaymentID1 = start_payment(InvoiceID, PaymentParams, Client),
     %% wait for payment timeout and start new one after
     _ = await_payment_process_interaction(InvoiceID, PaymentID1, Client),
@@ -2020,10 +2060,17 @@ party_revision_increment(PartyID, ShopID, {Client, Context} = PartyPair) ->
 
 -spec invalid_payment_adjustment(config()) -> test_return().
 invalid_payment_adjustment(C) ->
+    invalid_payment_adjustment(C, visa).
+
+-spec invalid_payment_adjustment_new(config()) -> test_return().
+invalid_payment_adjustment_new(C) ->
+    invalid_payment_adjustment(C, ?pmt_sys(<<"visa-ref">>)).
+
+invalid_payment_adjustment(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a smoker's payment
-    PaymentParams = make_tds_payment_params(),
+    PaymentParams = make_tds_payment_params(instant, PmtSys),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     %% no way to create adjustment for a payment not yet finished
     ?invalid_payment_status(?pending()) =
@@ -4575,9 +4622,16 @@ invalid_permit_partial_capture_in_provider(C) ->
 
 -spec payment_hold_auto_capturing(config()) -> _ | no_return().
 payment_hold_auto_capturing(C) ->
+    payment_hold_auto_capturing(C, visa).
+
+-spec payment_hold_auto_capturing_new(config()) -> _ | no_return().
+payment_hold_auto_capturing_new(C) ->
+    payment_hold_auto_capturing(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_auto_capturing(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_tds_payment_params({hold, capture}),
+    PaymentParams = make_tds_payment_params({hold, capture}, PmtSys),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     UserInteraction = await_payment_process_interaction(InvoiceID, PaymentID, Client),
     _ = assert_success_post_request(get_post_request(UserInteraction)),
@@ -5303,11 +5357,8 @@ make_wallet_payment_params(PmtSrv) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet, PmtSrv),
     make_payment_params(PaymentTool, Session, instant).
 
-make_tds_payment_params() ->
-    make_tds_payment_params(instant).
-
-make_tds_payment_params(FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds, visa),
+make_tds_payment_params(FlowType, PmtSys) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(preauth_3ds, PmtSys),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_customer_payment_params(CustomerID) ->
@@ -6115,6 +6166,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                             ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
@@ -6263,6 +6315,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                             ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
@@ -6964,6 +7017,18 @@ construct_domain_fixture() ->
                                                         definition = {payment_system_is, visa}
                                                     }}}},
                                         then_ = {value, ?hold_lifetime(12)}
+                                    },
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition =
+                                                            {payment_system, #domain_PaymentSystemCondition{
+                                                                payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                            }}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(12)}
                                     }
                                 ]}
                         },
@@ -7084,6 +7149,18 @@ construct_domain_fixture() ->
                                                 {payment_tool,
                                                     {bank_card, #domain_BankCardCondition{
                                                         definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(5)}
+                                    },
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition =
+                                                            {payment_system, #domain_PaymentSystemCondition{
+                                                                payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                            }}
                                                     }}}},
                                         then_ = {value, ?hold_lifetime(5)}
                                     },
@@ -7443,6 +7520,18 @@ construct_domain_fixture() ->
                                                         definition = {payment_system_is, visa}
                                                     }}}},
                                         then_ = {value, ?hold_lifetime(12)}
+                                    },
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition =
+                                                            {payment_system, #domain_PaymentSystemCondition{
+                                                                payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                            }}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(12)}
                                     }
                                 ]}
                         },
@@ -7740,6 +7829,18 @@ get_payment_adjustment_fixture(Revision) ->
                                                 {payment_tool,
                                                     {bank_card, #domain_BankCardCondition{
                                                         definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(10)}
+                                    },
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition =
+                                                            {payment_system, #domain_PaymentSystemCondition{
+                                                                payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                            }}
                                                     }}}},
                                         then_ = {value, ?hold_lifetime(10)}
                                     }
@@ -8173,6 +8274,7 @@ construct_term_set_for_partial_capture_service_permit() ->
                 payment_methods =
                     {value,
                         ?ordset([
+                            ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                             ?pmt(bank_card_deprecated, visa),
                             ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
@@ -8321,6 +8423,18 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                                                 {payment_tool,
                                                     {bank_card, #domain_BankCardCondition{
                                                         definition = {payment_system_is, visa}
+                                                    }}}},
+                                        then_ = {value, ?hold_lifetime(12)}
+                                    },
+                                    #domain_HoldLifetimeDecision{
+                                        if_ =
+                                            {condition,
+                                                {payment_tool,
+                                                    {bank_card, #domain_BankCardCondition{
+                                                        definition =
+                                                            {payment_system, #domain_PaymentSystemCondition{
+                                                                payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                            }}
                                                     }}}},
                                         then_ = {value, ?hold_lifetime(12)}
                                     }
