@@ -176,16 +176,20 @@
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
+-export([adhoc_repair_failed_succeeded_new/1]).
 -export([adhoc_repair_force_removal/1]).
 -export([adhoc_repair_invalid_changes_failed/1]).
+-export([adhoc_repair_invalid_changes_failed_new/1]).
 -export([adhoc_repair_force_invalid_transition/1]).
 
 -export([repair_fail_pre_processing_succeeded/1]).
 -export([repair_skip_inspector_succeeded/1]).
 -export([repair_fail_session_succeeded/1]).
+-export([repair_fail_session_succeeded_new/1]).
 -export([repair_fail_session_on_pre_processing/1]).
 -export([repair_complex_succeeded_first/1]).
 -export([repair_complex_succeeded_second/1]).
+-export([repair_complex_succeeded_second_new/1]).
 -export([repair_fulfill_session_succeeded/1]).
 -export([repair_fulfill_session_on_pre_processing_failed/1]).
 -export([repair_fulfill_session_with_trx_succeeded/1]).
@@ -429,17 +433,21 @@ groups() ->
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
             adhoc_repair_failed_succeeded,
+            adhoc_repair_failed_succeeded_new,
             adhoc_repair_force_removal,
             adhoc_repair_invalid_changes_failed,
+            adhoc_repair_invalid_changes_failed_new,
             adhoc_repair_force_invalid_transition
         ]},
         {repair_scenarios, [parallel], [
             repair_fail_pre_processing_succeeded,
             repair_skip_inspector_succeeded,
             repair_fail_session_succeeded,
+            repair_fail_session_succeeded_new,
             repair_fail_session_on_pre_processing,
             repair_complex_succeeded_first,
             repair_complex_succeeded_second,
+            repair_complex_succeeded_second_new,
             repair_fulfill_session_succeeded,
             repair_fulfill_session_on_pre_processing_failed,
             repair_fulfill_session_with_trx_succeeded
@@ -4665,9 +4673,16 @@ adhoc_repair_working_failed(C) ->
 
 -spec adhoc_repair_failed_succeeded(config()) -> _ | no_return().
 adhoc_repair_failed_succeeded(C) ->
+    adhoc_repair_failed_succeeded(C, visa).
+
+-spec adhoc_repair_failed_succeeded_new(config()) -> _ | no_return().
+adhoc_repair_failed_succeeded_new(C) ->
+    adhoc_repair_failed_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
+
+adhoc_repair_failed_succeeded(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -4706,9 +4721,16 @@ adhoc_repair_force_removal(C) ->
 
 -spec adhoc_repair_invalid_changes_failed(config()) -> _ | no_return().
 adhoc_repair_invalid_changes_failed(C) ->
+    adhoc_repair_invalid_changes_failed(C, visa).
+
+-spec adhoc_repair_invalid_changes_failed_new(config()) -> _ | no_return().
+adhoc_repair_invalid_changes_failed_new(C) ->
+    adhoc_repair_invalid_changes_failed(C, ?pmt_sys(<<"visa-ref">>)).
+
+adhoc_repair_invalid_changes_failed(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -4899,9 +4921,16 @@ repair_skip_inspector_succeeded(C) ->
 
 -spec repair_fail_session_succeeded(config()) -> test_return().
 repair_fail_session_succeeded(C) ->
+    repair_fail_session_succeeded(C, visa).
+
+-spec repair_fail_session_succeeded_new(config()) -> test_return().
+repair_fail_session_succeeded_new(C) ->
+    repair_fail_session_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
+
+repair_fail_session_succeeded(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
@@ -4984,9 +5013,16 @@ repair_complex_succeeded_first(C) ->
 
 -spec repair_complex_succeeded_second(config()) -> test_return().
 repair_complex_succeeded_second(C) ->
+    repair_complex_succeeded_second(C, visa).
+
+-spec repair_complex_succeeded_second_new(config()) -> test_return().
+repair_complex_succeeded_second_new(C) ->
+    repair_complex_succeeded_second(C, ?pmt_sys(<<"visa-ref">>)).
+
+repair_complex_succeeded_second(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, visa),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(unexpected_failure, PmtSys),
     PaymentParams = make_payment_params(PaymentTool, Session),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     [
