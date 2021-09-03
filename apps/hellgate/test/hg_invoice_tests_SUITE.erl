@@ -92,6 +92,7 @@
 -export([payment_adjustment_chargeback_success/1]).
 -export([payment_adjustment_captured_partial/1]).
 -export([payment_adjustment_captured_from_failed/1]).
+-export([payment_adjustment_captured_from_failed_new/1]).
 -export([payment_adjustment_failed_from_captured/1]).
 -export([status_adjustment_of_partial_refunded_payment/1]).
 -export([invalid_payment_w_deprived_party/1]).
@@ -153,18 +154,22 @@
 -export([payment_refund_success/1]).
 -export([payment_success_ruleset/1]).
 -export([payment_refund_failure/1]).
+-export([payment_refund_failure_new/1]).
 -export([deadline_doesnt_affect_payment_refund/1]).
 -export([payment_manual_refund/1]).
 -export([payment_partial_refunds_success/1]).
 -export([payment_refund_id_types/1]).
 -export([payment_temporary_unavailability_retry_success/1]).
+-export([payment_temporary_unavailability_retry_success_new/1]).
 -export([payment_temporary_unavailability_too_many_retries/1]).
+-export([payment_temporary_unavailability_too_many_retries_new/1]).
 -export([invalid_amount_payment_partial_refund/1]).
 -export([invalid_amount_partial_capture_and_refund/1]).
 -export([ineligible_payment_partial_refund/1]).
 -export([invalid_currency_payment_partial_refund/1]).
 -export([cant_start_simultaneous_partial_refunds/1]).
 -export([retry_temporary_unavailability_refund/1]).
+-export([retry_temporary_unavailability_refund_new/1]).
 -export([rounding_cashflow_volume/1]).
 -export([payment_with_offsite_preauth_success/1]).
 -export([payment_with_offsite_preauth_success_new/1]).
@@ -176,10 +181,14 @@
 -export([payment_has_optional_fields/1]).
 -export([payment_last_trx_correct/1]).
 -export([payment_capture_failed/1]).
+-export([payment_capture_failed_new/1]).
 -export([payment_capture_retries_exceeded/1]).
+-export([payment_capture_retries_exceeded_new/1]).
 -export([payment_partial_capture_success/1]).
 -export([payment_error_in_cancel_session_does_not_cause_payment_failure/1]).
+-export([payment_error_in_cancel_session_does_not_cause_payment_failure_new/1]).
 -export([payment_error_in_capture_session_does_not_cause_payment_failure/1]).
+-export([payment_error_in_capture_session_does_not_cause_payment_failure_new/1]).
 
 -export([adhoc_repair_working_failed/1]).
 -export([adhoc_repair_failed_succeeded/1]).
@@ -330,15 +339,21 @@ groups() ->
             payment_fail_after_silent_callback,
             payment_fail_after_silent_callback_new,
             payment_temporary_unavailability_retry_success,
+            payment_temporary_unavailability_retry_success_new,
             payment_temporary_unavailability_too_many_retries,
+            payment_temporary_unavailability_too_many_retries_new,
             payment_has_optional_fields,
             payment_last_trx_correct,
             invoice_success_on_third_payment,
             invoice_success_on_third_payment_new,
             payment_capture_failed,
+            payment_capture_failed_new,
             payment_capture_retries_exceeded,
+            payment_capture_retries_exceeded_new,
             payment_partial_capture_success,
             payment_error_in_cancel_session_does_not_cause_payment_failure,
+            payment_error_in_cancel_session_does_not_cause_payment_failure_new,
+            payment_error_in_capture_session_does_not_cause_payment_failure_new,
             payment_error_in_capture_session_does_not_cause_payment_failure
         ]},
 
@@ -350,6 +365,7 @@ groups() ->
             payment_adjustment_chargeback_success,
             payment_adjustment_captured_partial,
             payment_adjustment_captured_from_failed,
+            payment_adjustment_captured_from_failed_new,
             payment_adjustment_failed_from_captured,
             status_adjustment_of_partial_refunded_payment
         ]},
@@ -402,9 +418,11 @@ groups() ->
             invalid_refund_shop_status,
             {parallel, [parallel], [
                 retry_temporary_unavailability_refund,
+                retry_temporary_unavailability_refund_new,
                 payment_refund_idempotency,
                 payment_refund_success,
                 payment_refund_failure,
+                payment_refund_failure_new,
                 payment_partial_refunds_success,
                 invalid_amount_payment_partial_refund,
                 invalid_amount_partial_capture_and_refund,
@@ -663,6 +681,7 @@ init_per_testcase(Name, C) when
     Name == payment_adjustment_chargeback_success;
     Name == payment_adjustment_captured_partial;
     Name == payment_adjustment_captured_from_failed;
+    Name == payment_adjustment_captured_from_failed_new;
     Name == payment_adjustment_failed_from_captured
 ->
     Revision = hg_domain:head(),
@@ -1441,11 +1460,18 @@ payment_last_trx_correct(C) ->
 
 -spec payment_capture_failed(config()) -> test_return().
 payment_capture_failed(C) ->
+    payment_capture_failed(C, visa).
+
+-spec payment_capture_failed_new(config()) -> test_return().
+payment_capture_failed_new(C) ->
+    payment_capture_failed(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_capture_failed(C, PmtSys) ->
     Client = cfg(client, C),
     Amount = 42000,
     Cost = ?cash(Amount, <<"RUB">>),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), Amount, C),
-    PaymentParams = make_scenario_payment_params([good, fail]),
+    PaymentParams = make_scenario_payment_params([good, fail], PmtSys),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     [
         ?payment_ev(PaymentID, ?payment_capture_started(_)),
@@ -1461,11 +1487,18 @@ payment_capture_failed(C) ->
 
 -spec payment_capture_retries_exceeded(config()) -> test_return().
 payment_capture_retries_exceeded(C) ->
+    payment_capture_retries_exceeded(C, visa).
+
+-spec payment_capture_retries_exceeded_new(config()) -> test_return().
+payment_capture_retries_exceeded_new(C) ->
+    payment_capture_retries_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_capture_retries_exceeded(C, PmtSys) ->
     Client = cfg(client, C),
     Amount = 42000,
     Cost = ?cash(Amount, <<"RUB">>),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), Amount, C),
-    PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp]),
+    PaymentParams = make_scenario_payment_params([good, temp, temp, temp, temp], PmtSys),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Reason = ?timeout_reason(),
     Target = ?captured(Reason, Cost),
@@ -1516,6 +1549,13 @@ payment_partial_capture_success(C) ->
 
 -spec payment_error_in_cancel_session_does_not_cause_payment_failure(config()) -> test_return().
 payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
+    payment_error_in_cancel_session_does_not_cause_payment_failure(C, visa).
+
+-spec payment_error_in_cancel_session_does_not_cause_payment_failure_new(config()) -> test_return().
+payment_error_in_cancel_session_does_not_cause_payment_failure_new(C) ->
+    payment_error_in_cancel_session_does_not_cause_payment_failure(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_error_in_cancel_session_does_not_cause_payment_failure(C, PmtSys) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     {PartyClient, Context} = PartyPair = cfg(party_client, C),
@@ -1524,7 +1564,7 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     #domain_Shop{account = Account} = maps:get(ShopID, Party#domain_Party.shops),
     SettlementID = Account#domain_ShopAccount.settlement,
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, capture}),
+    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, capture}, PmtSys),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ?assertMatch(#{max_available_amount := 40110}, hg_accounting:get_balance(SettlementID)),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"cancel">>, Client),
@@ -1542,6 +1582,13 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
 
 -spec payment_error_in_capture_session_does_not_cause_payment_failure(config()) -> test_return().
 payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
+    payment_error_in_capture_session_does_not_cause_payment_failure(C, visa).
+
+-spec payment_error_in_capture_session_does_not_cause_payment_failure_new(config()) -> test_return().
+payment_error_in_capture_session_does_not_cause_payment_failure_new(C) ->
+    payment_error_in_capture_session_does_not_cause_payment_failure(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_error_in_capture_session_does_not_cause_payment_failure(C, PmtSys) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     {PartyClient, Context} = PartyPair = cfg(party_client, C),
@@ -1552,7 +1599,7 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     #domain_Shop{account = Account} = maps:get(ShopID, Party#domain_Party.shops),
     SettlementID = Account#domain_ShopAccount.settlement,
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(1000), Amount, C),
-    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, cancel}),
+    PaymentParams = make_scenario_payment_params([good, fail, good], {hold, cancel}, PmtSys),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ?assertMatch(#{min_available_amount := 0, max_available_amount := 40110}, hg_accounting:get_balance(SettlementID)),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
@@ -2283,6 +2330,13 @@ payment_adjustment_captured_partial(C) ->
 
 -spec payment_adjustment_captured_from_failed(config()) -> test_return().
 payment_adjustment_captured_from_failed(C) ->
+    payment_adjustment_captured_from_failed(C, visa).
+
+-spec payment_adjustment_captured_from_failed_new(config()) -> test_return().
+payment_adjustment_captured_from_failed_new(C) ->
+    payment_adjustment_captured_from_failed(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_adjustment_captured_from_failed(C, PmtSys) ->
     Client = cfg(client, C),
     PartyID = cfg(party_id, C),
     {PartyClient, PartyCtx} = PartyPair = cfg(party_client, C),
@@ -2290,7 +2344,7 @@ payment_adjustment_captured_from_failed(C) ->
     ok = hg_ct_helper:adjust_contract(PartyID, Shop#domain_Shop.contract_id, ?tmpl(1), PartyPair),
     Amount = 42000,
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(3), Amount, C),
-    PaymentParams = make_scenario_payment_params([temp, temp, temp, temp]),
+    PaymentParams = make_scenario_payment_params([temp, temp, temp, temp], PmtSys),
     CaptureAmount = Amount div 2,
     CaptureCost = ?cash(CaptureAmount, <<"RUB">>),
     Captured = {captured, #domain_InvoicePaymentCaptured{cost = CaptureCost}},
@@ -2427,9 +2481,16 @@ status_adjustment_of_partial_refunded_payment(C) ->
 
 -spec payment_temporary_unavailability_retry_success(config()) -> test_return().
 payment_temporary_unavailability_retry_success(C) ->
+    payment_temporary_unavailability_retry_success(C, visa).
+
+-spec payment_temporary_unavailability_retry_success_new(config()) -> test_return().
+payment_temporary_unavailability_retry_success_new(C) ->
+    payment_temporary_unavailability_retry_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_temporary_unavailability_retry_success(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([temp, temp, good, temp, temp]),
+    PaymentParams = make_scenario_payment_params([temp, temp, good, temp, temp], PmtSys),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client, 2),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, ?timeout_reason(), Client, 2),
     ?invoice_state(
@@ -2439,9 +2500,16 @@ payment_temporary_unavailability_retry_success(C) ->
 
 -spec payment_temporary_unavailability_too_many_retries(config()) -> test_return().
 payment_temporary_unavailability_too_many_retries(C) ->
+    payment_temporary_unavailability_too_many_retries(C, visa).
+
+-spec payment_temporary_unavailability_too_many_retries_new(config()) -> test_return().
+payment_temporary_unavailability_too_many_retries_new(C) ->
+    payment_temporary_unavailability_too_many_retries(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_temporary_unavailability_too_many_retries(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([temp, temp, temp, temp]),
+    PaymentParams = make_scenario_payment_params([temp, temp, temp, temp], PmtSys),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     {failed, PaymentID, {failure, Failure}} =
@@ -3957,6 +4025,13 @@ payment_refund_success(C) ->
 
 -spec payment_refund_failure(config()) -> _ | no_return().
 payment_refund_failure(C) ->
+    payment_refund_failure(C, visa).
+
+-spec payment_refund_failure_new(config()) -> _ | no_return().
+payment_refund_failure_new(C) ->
+    payment_refund_failure(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_refund_failure(C, PmtSys) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(
@@ -3968,7 +4043,7 @@ payment_refund_failure(C) ->
         PartyClient
     ),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, good, fail], {hold, capture}),
+    PaymentParams = make_scenario_payment_params([good, good, fail], {hold, capture}, PmtSys),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     RefundParams = make_refund_params(),
     % not finished yet
@@ -4343,6 +4418,13 @@ ineligible_payment_partial_refund(C) ->
 
 -spec retry_temporary_unavailability_refund(config()) -> _ | no_return().
 retry_temporary_unavailability_refund(C) ->
+    retry_temporary_unavailability_refund(C, visa).
+
+-spec retry_temporary_unavailability_refund_new(config()) -> _ | no_return().
+retry_temporary_unavailability_refund_new(C) ->
+    retry_temporary_unavailability_refund(C, ?pmt_sys(<<"visa-ref">>)).
+
+retry_temporary_unavailability_refund(C, PmtSys) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(
@@ -4354,7 +4436,7 @@ retry_temporary_unavailability_refund(C) ->
         PartyClient
     ),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_scenario_payment_params([good, good, temp, temp]),
+    PaymentParams = make_scenario_payment_params([good, good, temp, temp], PmtSys),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     RefundParams1 = make_refund_params(1000, <<"RUB">>),
     ?refund_id(RefundID1) = hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
@@ -5381,12 +5463,12 @@ make_customer_payment_params(CustomerID) ->
         flow = {instant, #payproc_InvoicePaymentParamsFlowInstant{}}
     }.
 
-make_scenario_payment_params(Scenario) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, visa),
+make_scenario_payment_params(Scenario, PmtSys) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, PmtSys),
     make_payment_params(PaymentTool, Session, instant).
 
-make_scenario_payment_params(Scenario, FlowType) ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, visa),
+make_scenario_payment_params(Scenario, FlowType, PmtSys) ->
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool({scenario, Scenario}, PmtSys),
     make_payment_params(PaymentTool, Session, FlowType).
 
 make_payment_params() ->
@@ -6191,6 +6273,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                             ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
@@ -6372,6 +6455,7 @@ construct_domain_fixture() ->
                     {value,
                         ?ordset([
                             ?pmt(bank_card_deprecated, visa),
+                            ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                             ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                             ?pmt(bank_card_deprecated, mastercard)
                         ])},
