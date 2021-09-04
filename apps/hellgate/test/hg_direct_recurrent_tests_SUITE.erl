@@ -26,9 +26,13 @@
 -export([second_recurrent_payment_success_test/1]).
 -export([second_recurrent_payment_success_test_new/1]).
 -export([another_shop_test/1]).
+-export([another_shop_test_new/1]).
 -export([not_recurring_first_test/1]).
+-export([not_recurring_first_test_new/1]).
 -export([customer_paytools_as_first_test/1]).
+-export([customer_paytools_as_first_test_new/1]).
 -export([cancelled_first_payment_test/1]).
+-export([cancelled_first_payment_test_new/1]).
 -export([not_permitted_recurrent_test/1]).
 -export([not_permitted_recurrent_test_new/1]).
 -export([not_exists_invoice_test/1]).
@@ -92,9 +96,13 @@ groups() ->
             second_recurrent_payment_success_test,
             second_recurrent_payment_success_test_new,
             another_shop_test,
+            another_shop_test_new,
             not_recurring_first_test,
+            not_recurring_first_test_new,
             customer_paytools_as_first_test,
+            customer_paytools_as_first_test_new,
             cancelled_first_payment_test,
+            cancelled_first_payment_test_new,
             not_exists_invoice_test,
             not_exists_invoice_test_new,
             not_exists_payment_test_new,
@@ -220,56 +228,84 @@ second_recurrent_payment_success_test(C, PmtSys) ->
 
 -spec another_shop_test(config()) -> test_result().
 another_shop_test(C) ->
+    another_shop_test(C, visa).
+
+-spec another_shop_test_new(config()) -> test_result().
+another_shop_test_new(C) ->
+    another_shop_test(C, ?pmt_sys(<<"visa-ref">>)).
+
+another_shop_test(C, PmtSys) ->
     Client = cfg(client, C),
     Invoice1ID = start_invoice(cfg(another_shop_id, C), <<"rubberduck">>, make_due_date(10), 42000, C),
     %% first payment in recurrent session
-    Payment1Params = make_payment_params(visa),
+    Payment1Params = make_payment_params(PmtSys),
     {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
     Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentParent, visa),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent, PmtSys),
     ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment refer to another shop">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 -spec not_recurring_first_test(config()) -> test_result().
 not_recurring_first_test(C) ->
+    not_recurring_first_test(C, visa).
+
+-spec not_recurring_first_test_new(config()) -> test_result().
+not_recurring_first_test_new(C) ->
+    not_recurring_first_test(C, ?pmt_sys(<<"visa-ref">>)).
+
+not_recurring_first_test(C, PmtSys) ->
     Client = cfg(client, C),
     Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     %% first payment in recurrent session
-    Payment1Params = make_payment_params(false, undefined, visa),
+    Payment1Params = make_payment_params(false, undefined, PmtSys),
     {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
     Payment1ID = await_payment_capture(Invoice1ID, Payment1ID, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentParent, visa),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent, PmtSys),
     ExpectedError = #payproc_InvalidRecurrentParentPayment{details = <<"Parent payment has no recurrent token">>},
     {error, ExpectedError} = start_payment(Invoice2ID, Payment2Params, Client).
 
 -spec customer_paytools_as_first_test(config()) -> test_result().
 customer_paytools_as_first_test(C) ->
+    customer_paytools_as_first_test(C, visa).
+
+-spec customer_paytools_as_first_test_new(config()) -> test_result().
+customer_paytools_as_first_test_new(C) ->
+    customer_paytools_as_first_test(C, ?pmt_sys(<<"visa-ref">>)).
+
+customer_paytools_as_first_test(C, PmtSys) ->
     Client = cfg(client, C),
     ShopID = cfg(shop_id, C),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    CustomerID = make_customer_w_rec_tool(cfg(party_id, C), ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(cfg(party_id, C), ShopID, cfg(customer_client, C), PmtSys),
     PaymentParams = make_customer_payment_params(CustomerID),
     ExpectedError = #'InvalidRequest'{errors = [<<"Invalid payer">>]},
     {error, ExpectedError} = start_payment(InvoiceID, PaymentParams, Client).
 
 -spec cancelled_first_payment_test(config()) -> test_result().
 cancelled_first_payment_test(C) ->
+    cancelled_first_payment_test(C, visa).
+
+-spec cancelled_first_payment_test_new(config()) -> test_result().
+cancelled_first_payment_test_new(C) ->
+    cancelled_first_payment_test(C, ?pmt_sys(<<"visa-ref">>)).
+
+cancelled_first_payment_test(C, PmtSys) ->
     Client = cfg(client, C),
     Invoice1ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     %% first payment in recurrent session
-    Payment1Params = make_payment_params({hold, cancel}, true, undefined, visa),
+    Payment1Params = make_payment_params({hold, cancel}, true, undefined, PmtSys),
     {ok, Payment1ID} = start_payment(Invoice1ID, Payment1Params, Client),
     Payment1ID = await_payment_cancel(Invoice1ID, Payment1ID, undefined, Client),
     %% second recurrent payment
     Invoice2ID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     RecurrentParent = ?recurrent_parent(Invoice1ID, Payment1ID),
-    Payment2Params = make_recurrent_payment_params(true, RecurrentParent, visa),
+    Payment2Params = make_recurrent_payment_params(true, RecurrentParent, PmtSys),
     {ok, Payment2ID} = start_payment(Invoice2ID, Payment2Params, Client),
     Payment2ID = await_payment_capture(Invoice2ID, Payment2ID, Client),
     ?invoice_state(
@@ -473,14 +509,14 @@ await_payment_cancel(InvoiceID, PaymentID, Reason, Client) ->
     {ok, _Events} = await_events(InvoiceID, Pattern, Client),
     PaymentID.
 
-make_customer_w_rec_tool(PartyID, ShopID, Client) ->
+make_customer_w_rec_tool(PartyID, ShopID, Client, PmtSys) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, <<"InvoicingTests">>),
     #payproc_Customer{id = CustomerID} =
         hg_client_customer:create(CustomerParams, Client),
     #payproc_CustomerBinding{id = BindingID} =
         hg_client_customer:start_binding(
             CustomerID,
-            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, visa)),
+            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, PmtSys)),
             Client
         ),
     ok = wait_for_binding_success(CustomerID, BindingID, Client),
