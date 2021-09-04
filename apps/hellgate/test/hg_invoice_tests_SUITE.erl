@@ -102,6 +102,7 @@
 -export([status_adjustment_of_partial_refunded_payment/1]).
 -export([status_adjustment_of_partial_refunded_payment_new/1]).
 -export([invalid_payment_w_deprived_party/1]).
+-export([invalid_payment_w_deprived_party_new/1]).
 -export([external_account_posting/1]).
 -export([external_account_posting_new/1]).
 -export([terminal_cashflow_overrides_provider/1]).
@@ -292,6 +293,7 @@ groups() ->
             party_revision_check_new,
 
             invalid_payment_w_deprived_party,
+            invalid_payment_w_deprived_party_new,
             external_account_posting,
             external_account_posting_new,
             terminal_cashflow_overrides_provider,
@@ -2629,10 +2631,13 @@ get_cashflow_account(Type, CF) ->
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
-    invalid_payment_w_deprived_party(C, visa).
+    invalid_payment_w_deprived_party(C, <<"DEPRIVED ONE">>, visa).
 
-invalid_payment_w_deprived_party(C, PmtSys) ->
-    PartyID = <<"DEPRIVED ONE">>,
+-spec invalid_payment_w_deprived_party_new(config()) -> test_return().
+invalid_payment_w_deprived_party_new(C) ->
+    invalid_payment_w_deprived_party(C, <<"DEPRIVED ONE-II">>, ?pmt_sys(<<"visa-ref">>)).
+
+invalid_payment_w_deprived_party(C, PartyID, PmtSys) ->
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     InvoicingClient = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
@@ -6263,6 +6268,10 @@ construct_domain_fixture() ->
                 {decisions, [
                     #domain_PaymentMethodDecision{
                         if_ = ?partycond(<<"DEPRIVED ONE">>, undefined),
+                        then_ = {value, ordsets:new()}
+                    },
+                    #domain_PaymentMethodDecision{
+                        if_ = ?partycond(<<"DEPRIVED ONE-II">>, undefined),
                         then_ = {value, ordsets:new()}
                     },
                     #domain_PaymentMethodDecision{
