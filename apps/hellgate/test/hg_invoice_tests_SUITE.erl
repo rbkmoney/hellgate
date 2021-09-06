@@ -116,15 +116,25 @@
 -export([payment_hold_auto_cancellation/1]).
 -export([payment_hold_auto_cancellation_new/1]).
 -export([payment_hold_capturing/1]).
+-export([payment_hold_capturing_new/1]).
 -export([payment_hold_double_capturing/1]).
+-export([payment_hold_double_capturing_new/1]).
 -export([payment_hold_capturing_cancelled/1]).
+-export([payment_hold_capturing_cancelled_new/1]).
 -export([deadline_doesnt_affect_payment_capturing/1]).
+-export([deadline_doesnt_affect_payment_capturing_new/1]).
 -export([payment_hold_partial_capturing/1]).
+-export([payment_hold_partial_capturing_new/1]).
 -export([payment_hold_partial_capturing_with_cart/1]).
+-export([payment_hold_partial_capturing_with_cart_new/1]).
 -export([payment_hold_partial_capturing_with_cart_missing_cash/1]).
+-export([payment_hold_partial_capturing_with_cart_missing_cash_new/1]).
 -export([invalid_currency_partial_capture/1]).
+-export([invalid_currency_partial_capture_new/1]).
 -export([invalid_amount_partial_capture/1]).
+-export([invalid_amount_partial_capture_new/1]).
 -export([invalid_permit_partial_capture_in_service/1]).
+-export([invalid_permit_partial_capture_in_service_new/1]).
 -export([invalid_permit_partial_capture_in_provider/1]).
 -export([payment_hold_auto_capturing_new/1]).
 -export([payment_hold_auto_capturing/1]).
@@ -472,20 +482,30 @@ groups() ->
             payment_hold_auto_cancellation,
             payment_hold_auto_cancellation_new,
             payment_hold_capturing,
+            payment_hold_capturing_new,
             payment_hold_double_capturing,
+            payment_hold_double_capturing_new,
             payment_hold_capturing_cancelled,
+            payment_hold_capturing_cancelled_new,
             deadline_doesnt_affect_payment_capturing,
+            deadline_doesnt_affect_payment_capturing_new,
             invalid_currency_partial_capture,
+            invalid_currency_partial_capture_new,
             invalid_amount_partial_capture,
+            invalid_amount_partial_capture_new,
             payment_hold_partial_capturing,
+            payment_hold_partial_capturing_new,
             payment_hold_partial_capturing_with_cart,
+            payment_hold_partial_capturing_with_cart_new,
             payment_hold_partial_capturing_with_cart_missing_cash,
+            payment_hold_partial_capturing_with_cart_missing_cash_new,
             payment_hold_auto_capturing_new,
             payment_hold_auto_capturing
         ]},
 
         {holds_management_with_custom_config, [], [
             invalid_permit_partial_capture_in_service,
+            invalid_permit_partial_capture_in_service_new,
             invalid_permit_partial_capture_in_provider
         ]},
 
@@ -4714,37 +4734,65 @@ payment_hold_auto_cancellation(C, PmtSys) ->
 
 -spec payment_hold_capturing(config()) -> _ | no_return().
 payment_hold_capturing(C) ->
+    payment_hold_capturing(C, visa).
+
+-spec payment_hold_capturing_new(config()) -> _ | no_return().
+payment_hold_capturing_new(C) ->
+    payment_hold_capturing(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_capturing(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(visa, {hold, cancel}), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(PmtSys, {hold, cancel}), Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
 
 -spec payment_hold_double_capturing(config()) -> _ | no_return().
 payment_hold_double_capturing(C) ->
+    payment_hold_double_capturing(C, visa).
+
+-spec payment_hold_double_capturing_new(config()) -> _ | no_return().
+payment_hold_double_capturing_new(C) ->
+    payment_hold_double_capturing(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_double_capturing(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(visa, {hold, cancel}), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(PmtSys, {hold, cancel}), Client),
     ?assertEqual(ok, hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client)),
     Result = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     ?assertMatch({exception, #payproc_InvalidPaymentStatus{}}, Result).
 
 -spec payment_hold_capturing_cancelled(config()) -> _ | no_return().
 payment_hold_capturing_cancelled(C) ->
+    payment_hold_capturing_cancelled(C, visa).
+
+-spec payment_hold_capturing_cancelled_new(config()) -> _ | no_return().
+payment_hold_capturing_cancelled_new(C) ->
+    payment_hold_capturing_cancelled(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_capturing_cancelled(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(visa, {hold, cancel}), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(PmtSys, {hold, cancel}), Client),
     ?assertEqual(ok, hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client)),
     Result = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     ?assertMatch({exception, #payproc_InvalidPaymentStatus{}}, Result).
 
 -spec deadline_doesnt_affect_payment_capturing(config()) -> _ | no_return().
 deadline_doesnt_affect_payment_capturing(C) ->
+    deadline_doesnt_affect_payment_capturing(C, visa).
+
+-spec deadline_doesnt_affect_payment_capturing_new(config()) -> _ | no_return().
+deadline_doesnt_affect_payment_capturing_new(C) ->
+    deadline_doesnt_affect_payment_capturing(C, ?pmt_sys(<<"visa-ref">>)).
+
+deadline_doesnt_affect_payment_capturing(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     % ms
     ProcessingDeadline = 4000,
-    PaymentParams = set_processing_deadline(ProcessingDeadline, make_payment_params(visa, {hold, cancel})),
+    PaymentParams = set_processing_deadline(ProcessingDeadline, make_payment_params(PmtSys, {hold, cancel})),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     timer:sleep(ProcessingDeadline),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
@@ -4752,9 +4800,16 @@ deadline_doesnt_affect_payment_capturing(C) ->
 
 -spec payment_hold_partial_capturing(config()) -> _ | no_return().
 payment_hold_partial_capturing(C) ->
+    payment_hold_partial_capturing(C, visa).
+
+-spec payment_hold_partial_capturing_new(config()) -> _ | no_return().
+payment_hold_partial_capturing_new(C) ->
+    payment_hold_partial_capturing(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_partial_capturing(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10000, <<"RUB">>),
     Reason = <<"ok">>,
@@ -4770,9 +4825,16 @@ payment_hold_partial_capturing(C) ->
 
 -spec payment_hold_partial_capturing_with_cart(config()) -> _ | no_return().
 payment_hold_partial_capturing_with_cart(C) ->
+    payment_hold_partial_capturing_with_cart(C, visa).
+
+-spec payment_hold_partial_capturing_with_cart_new(config()) -> _ | no_return().
+payment_hold_partial_capturing_with_cart_new(C) ->
+    payment_hold_partial_capturing_with_cart(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_partial_capturing_with_cart(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10000, <<"RUB">>),
     Cart = ?cart(Cash, #{}),
@@ -4789,9 +4851,16 @@ payment_hold_partial_capturing_with_cart(C) ->
 
 -spec payment_hold_partial_capturing_with_cart_missing_cash(config()) -> _ | no_return().
 payment_hold_partial_capturing_with_cart_missing_cash(C) ->
+    payment_hold_partial_capturing_with_cart_missing_cash(C, visa).
+
+-spec payment_hold_partial_capturing_with_cart_missing_cash_new(config()) -> _ | no_return().
+payment_hold_partial_capturing_with_cart_missing_cash_new(C) ->
+    payment_hold_partial_capturing_with_cart_missing_cash(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_partial_capturing_with_cart_missing_cash(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10000, <<"RUB">>),
     Cart = ?cart(Cash, #{}),
@@ -4808,9 +4877,16 @@ payment_hold_partial_capturing_with_cart_missing_cash(C) ->
 
 -spec invalid_currency_partial_capture(config()) -> _ | no_return().
 invalid_currency_partial_capture(C) ->
+    invalid_currency_partial_capture(C, visa).
+
+-spec invalid_currency_partial_capture_new(config()) -> _ | no_return().
+invalid_currency_partial_capture_new(C) ->
+    invalid_currency_partial_capture(C, ?pmt_sys(<<"visa-ref">>)).
+
+invalid_currency_partial_capture(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10000, <<"USD">>),
     Reason = <<"ok">>,
@@ -4819,9 +4895,16 @@ invalid_currency_partial_capture(C) ->
 
 -spec invalid_amount_partial_capture(config()) -> _ | no_return().
 invalid_amount_partial_capture(C) ->
+    invalid_amount_partial_capture(C, visa).
+
+-spec invalid_amount_partial_capture_new(config()) -> _ | no_return().
+invalid_amount_partial_capture_new(C) ->
+    invalid_amount_partial_capture(C, ?pmt_sys(<<"visa-ref">>)).
+
+invalid_amount_partial_capture(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(100000, <<"RUB">>),
     Reason = <<"ok">>,
@@ -4830,6 +4913,13 @@ invalid_amount_partial_capture(C) ->
 
 -spec invalid_permit_partial_capture_in_service(config()) -> _ | no_return().
 invalid_permit_partial_capture_in_service(C) ->
+    invalid_permit_partial_capture_in_service(C, visa).
+
+-spec invalid_permit_partial_capture_in_service_new(config()) -> _ | no_return().
+invalid_permit_partial_capture_in_service_new(C) ->
+    invalid_permit_partial_capture_in_service(C, ?pmt_sys(<<"visa-ref">>)).
+
+invalid_permit_partial_capture_in_service(C, PmtSys) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     _ = timer:sleep(5000),
@@ -4842,7 +4932,7 @@ invalid_permit_partial_capture_in_service(C) ->
         PartyClient
     ),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     Cash = ?cash(10000, <<"RUB">>),
     Reason = <<"ok">>,
