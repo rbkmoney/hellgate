@@ -108,9 +108,13 @@
 -export([terminal_cashflow_overrides_provider/1]).
 -export([terminal_cashflow_overrides_provider_new/1]).
 -export([payment_hold_cancellation/1]).
+-export([payment_hold_cancellation_new/1]).
 -export([payment_hold_double_cancellation/1]).
+-export([payment_hold_double_cancellation_new/1]).
 -export([payment_hold_cancellation_captured/1]).
+-export([payment_hold_cancellation_captured_new/1]).
 -export([payment_hold_auto_cancellation/1]).
+-export([payment_hold_auto_cancellation_new/1]).
 -export([payment_hold_capturing/1]).
 -export([payment_hold_double_capturing/1]).
 -export([payment_hold_capturing_cancelled/1]).
@@ -460,9 +464,13 @@ groups() ->
 
         {holds_management, [parallel], [
             payment_hold_cancellation,
+            payment_hold_cancellation_new,
             payment_hold_double_cancellation,
+            payment_hold_double_cancellation_new,
             payment_hold_cancellation_captured,
+            payment_hold_cancellation_captured_new,
             payment_hold_auto_cancellation,
+            payment_hold_auto_cancellation_new,
             payment_hold_capturing,
             payment_hold_double_capturing,
             payment_hold_capturing_cancelled,
@@ -4632,9 +4640,16 @@ payment_refund_id_types(C) ->
 
 -spec payment_hold_cancellation(config()) -> _ | no_return().
 payment_hold_cancellation(C) ->
+    payment_hold_cancellation(C, visa).
+
+-spec payment_hold_cancellation_new(config()) -> _ | no_return().
+payment_hold_cancellation_new(C) ->
+    payment_hold_cancellation(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_cancellation(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
-    PaymentParams = make_payment_params(visa, {hold, capture}),
+    PaymentParams = make_payment_params(PmtSys, {hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
     PaymentID = await_payment_cancel(InvoiceID, PaymentID, <<"whynot">>, Client),
@@ -4646,9 +4661,16 @@ payment_hold_cancellation(C) ->
 
 -spec payment_hold_double_cancellation(config()) -> _ | no_return().
 payment_hold_double_cancellation(C) ->
+    payment_hold_double_cancellation(C, visa).
+
+-spec payment_hold_double_cancellation_new(config()) -> _ | no_return().
+payment_hold_double_cancellation_new(C) ->
+    payment_hold_double_cancellation(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_double_cancellation(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 10000, C),
-    PaymentParams = make_payment_params(visa, {hold, capture}),
+    PaymentParams = make_payment_params(PmtSys, {hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ?assertEqual(ok, hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client)),
     Result = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
@@ -4656,18 +4678,32 @@ payment_hold_double_cancellation(C) ->
 
 -spec payment_hold_cancellation_captured(config()) -> _ | no_return().
 payment_hold_cancellation_captured(C) ->
+    payment_hold_cancellation_captured(C, visa).
+
+-spec payment_hold_cancellation_captured_new(config()) -> _ | no_return().
+payment_hold_cancellation_captured_new(C) ->
+    payment_hold_cancellation_captured(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_cancellation_captured(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID = process_payment(InvoiceID, make_payment_params(visa, {hold, cancel}), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(PmtSys, {hold, cancel}), Client),
     ?assertEqual(ok, hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client)),
     Result = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"whynot">>, Client),
     ?assertMatch({exception, #payproc_InvalidPaymentStatus{}}, Result).
 
 -spec payment_hold_auto_cancellation(config()) -> _ | no_return().
 payment_hold_auto_cancellation(C) ->
+    payment_hold_auto_cancellation(C, visa).
+
+-spec payment_hold_auto_cancellation_new(config()) -> _ | no_return().
+payment_hold_auto_cancellation_new(C) ->
+    payment_hold_auto_cancellation(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_hold_auto_cancellation(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(20), 10000, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_cancel(InvoiceID, PaymentID, undefined, Client),
     ?invoice_state(
