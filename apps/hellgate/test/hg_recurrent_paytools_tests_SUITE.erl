@@ -277,11 +277,11 @@ invalid_shop_status(C, PmtSys) ->
     ok = party_client_thrift:activate_shop(PartyID, ShopID, PartyClient, Context).
 
 invalid_payment_method(C) ->
-    Fun = fun (BCard) -> BCard#domain_BankCard{payment_system_deprecated = mastercard} end,
+    Fun = fun(BCard) -> BCard#domain_BankCard{payment_system_deprecated = mastercard} end,
     invalid_payment_method(C, Fun).
 
 invalid_payment_method_new(C) ->
-    Fun = fun (BCard) -> BCard#domain_BankCard{payment_system = ?pmt_sys(<<"mastercard-ref">>)} end,
+    Fun = fun(BCard) -> BCard#domain_BankCard{payment_system = ?pmt_sys(<<"mastercard-ref">>)} end,
     invalid_payment_method(C, Fun).
 
 invalid_payment_method(C, BCardFun) ->
