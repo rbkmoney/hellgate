@@ -1258,15 +1258,12 @@ validate_allocatable(Allocation, PaymentTerms) ->
 validate_allocation(St, SubAllocation, Cash) ->
     Allocation = get_allocation(St),
     RemainingCash = get_remaining_payment_amount(Cash, St),
-    #domain_InvoicePayment{
-        owner_id = OwnerID,
-        shop_id = ShopID
-    } = get_payment(St),
-    case hg_allocation:sub(Allocation, SubAllocation, OwnerID, ShopID, RemainingCash) of
+    case hg_allocation:sub(Allocation, SubAllocation, RemainingCash) of
         {ok, _} ->
             ok;
         {error, Error} ->
-            throw(Error) %% TODO add error handling
+            %% TODO add error handling
+            throw(Error)
     end.
 
 make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS) ->
@@ -3339,10 +3336,9 @@ set_refund_state(ID, RefundSt, St) ->
     #st{refunds = Rs} = St,
     RefundAllocation = get_refund_allocation(RefundSt),
     Allocation = get_allocation(St),
-    #domain_InvoicePayment{owner_id = OwnerID, shop_id = ShopID} = get_payment(St),
     #domain_InvoicePaymentRefund{cash = RefundCash} = get_refund(RefundSt),
     RemainingCash = get_remaining_payment_amount(RefundCash, St),
-    {ok, FinalAllocation} = hg_allocation:sub(Allocation, RefundAllocation, OwnerID, ShopID, RemainingCash),
+    {ok, FinalAllocation} = hg_allocation:sub(Allocation, RefundAllocation, RemainingCash),
     St#st{refunds = Rs#{ID => RefundSt}, allocation = FinalAllocation}.
 
 get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when Cost /= undefined ->

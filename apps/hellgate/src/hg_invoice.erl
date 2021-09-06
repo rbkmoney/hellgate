@@ -341,7 +341,7 @@ get_payment_state(PaymentSession) ->
         refunds = Refunds,
         sessions = hg_invoice_payment:get_sessions(PaymentSession),
         last_transaction_info = hg_invoice_payment:get_trx(PaymentSession),
-        allocaton = hg_invoice_payment:get_allocation(PaymentSession)
+        allocation = hg_invoice_payment:get_allocation(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->
