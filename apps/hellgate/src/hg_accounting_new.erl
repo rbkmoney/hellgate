@@ -293,6 +293,14 @@ construct_balance(
 
 call_accounter(Function, Args) ->
     %% Really not sure what to best do when we run out of retries
+    try
+        call_with_retry(Function, Args)
+    catch
+        throw:{error, no_more_retries} ->
+            error({accounter, not_ready})
+    end.
+
+call_with_retry(Function, Args) ->
     hg_retry:call_with_retry(
         fun() ->
             case hg_woody_wrapper:call(accounter_new, Function, Args) of
