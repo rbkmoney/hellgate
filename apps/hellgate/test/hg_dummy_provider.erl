@@ -315,6 +315,9 @@ process_payment(?processed(), undefined, PaymentInfo, _) ->
         crypto_currency_deprecated ->
             %% simple workflow
             sleep(1, <<"sleeping">>);
+        crypto_currency ->
+            %% simple workflow
+            sleep(1, <<"sleeping">>);
         mobile_commerce ->
             InvoiceID = get_invoice_id(PaymentInfo),
             PaymentID = get_payment_id(PaymentInfo),
@@ -630,6 +633,8 @@ get_payment_tool_scenario(
     digital_wallet;
 get_payment_tool_scenario({'crypto_currency_deprecated', bitcoin}) ->
     crypto_currency_deprecated;
+get_payment_tool_scenario({'crypto_currency', #domain_CryptoCurrencyRef{id = <<"bitcoin-ref">>}}) ->
+    crypto_currency;
 get_payment_tool_scenario({'mobile_commerce', #domain_MobileCommerce{operator_deprecated = mts}}) ->
     mobile_commerce;
 get_payment_tool_scenario(

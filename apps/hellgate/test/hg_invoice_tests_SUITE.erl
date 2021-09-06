@@ -68,6 +68,7 @@
 -export([payment_w_terminal_success/1]).
 -export([payment_w_terminal_success_new/1]).
 -export([payment_w_crypto_currency_success/1]).
+-export([payment_w_crypto_currency_success_new/1]).
 -export([payment_bank_card_category_condition/1]).
 -export([payment_bank_card_category_condition_new/1]).
 -export([payment_w_wallet_success/1]).
@@ -433,6 +434,7 @@ groups() ->
             payment_w_terminal_success,
             payment_w_terminal_success_new,
             payment_w_crypto_currency_success,
+            payment_w_crypto_currency_success_new,
             payment_w_wallet_success,
             payment_w_wallet_success_new,
             payment_w_customer_success,
@@ -1971,10 +1973,18 @@ payment_w_terminal(C, PmtSrv, success) ->
 
 -spec payment_w_crypto_currency_success(config()) -> _ | no_return().
 payment_w_crypto_currency_success(C) ->
+    payment_w_crypto_currency(C, bitcoin, success).
+
+-spec payment_w_crypto_currency_success_new(config()) -> _ | no_return().
+payment_w_crypto_currency_success_new(C) ->
+    payment_w_crypto_currency(C, ?crypta(<<"bitcoin-ref">>), success).
+
+payment_w_crypto_currency(C, Currency, success) ->
     Client = cfg(client, C),
     PayCash = 2000,
     InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
-    PaymentParams = make_crypto_currency_payment_params(),
+    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency, Currency),
+    PaymentParams = make_payment_params(PaymentTool, Session, instant),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
@@ -5610,6 +5620,7 @@ terms_retrieval(C) ->
                     ?pmt(bank_card_deprecated, jcb),
                     ?pmt(bank_card_deprecated, mastercard),
                     ?pmt(bank_card_deprecated, visa),
+                    ?pmt(crypto_currency, ?crypta(<<"bitcoin-ref">>)),
                     ?pmt(crypto_currency_deprecated, bitcoin),
                     ?pmt(digital_wallet, ?pmt_srv(<<"qiwi-ref">>)),
                     ?pmt(digital_wallet_deprecated, qiwi),
@@ -6333,10 +6344,6 @@ update_invoice_tpl(TplID, Cost, Config) ->
 
 delete_invoice_tpl(TplID, Config) ->
     hg_client_invoice_templating:delete(TplID, cfg(client_tpl, Config)).
-
-make_crypto_currency_payment_params() ->
-    {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency, bitcoin),
-    make_payment_params(PaymentTool, Session, instant).
 
 make_wallet_payment_params(PmtSrv) ->
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(digital_wallet, PmtSrv),
@@ -7077,6 +7084,7 @@ construct_domain_fixture() ->
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay)),
                                     ?pmt(bank_card, ?token_bank_card(<<"visa-ref">>, <<"applepay-ref">>)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
+                                    ?pmt(crypto_currency, ?crypta(<<"bitcoin-ref">>)),
                                     ?pmt(mobile_deprecated, mts),
                                     ?pmt(mobile, ?mob(<<"mts-ref">>))
                                 ])}
@@ -7090,6 +7098,20 @@ construct_domain_fixture() ->
                                 {payment_tool,
                                     {crypto_currency, #domain_CryptoCurrencyCondition{
                                         definition = {crypto_currency_is_deprecated, bitcoin}
+                                    }}}},
+                        then_ =
+                            {value,
+                                ?cashrng(
+                                    {inclusive, ?cash(10, <<"RUB">>)},
+                                    {inclusive, ?cash(4200000000, <<"RUB">>)}
+                                )}
+                    },
+                    #domain_CashLimitDecision{
+                        if_ =
+                            {condition,
+                                {payment_tool,
+                                    {crypto_currency, #domain_CryptoCurrencyCondition{
+                                        definition = {crypto_currency_is, ?crypta(<<"bitcoin-ref">>)}
                                     }}}},
                         then_ =
                             {value,
@@ -7750,6 +7772,7 @@ construct_domain_fixture() ->
                                     ?pmt(empty_cvv_bank_card_deprecated, visa),
                                     ?pmt(bank_card, ?bank_card_no_cvv(<<"visa-ref">>)),
                                     ?pmt(crypto_currency_deprecated, bitcoin),
+                                    ?pmt(crypto_currency, ?crypta(<<"bitcoin-ref">>)),
                                     ?pmt(bank_card, ?token_bank_card(<<"visa-ref">>, <<"applepay-ref">>)),
                                     ?pmt(tokenized_bank_card_deprecated, ?tkz_bank_card(visa, applepay))
                                 ])},
@@ -7971,6 +7994,27 @@ construct_domain_fixture() ->
                                             {payment_tool,
                                                 {crypto_currency, #domain_CryptoCurrencyCondition{
                                                     definition = {crypto_currency_is_deprecated, bitcoin}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(20, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {crypto_currency, #domain_CryptoCurrencyCondition{
+                                                    definition = {crypto_currency_is, ?crypta(<<"bitcoin-ref">>)}
                                                 }}}},
                                     then_ =
                                         {value, [
