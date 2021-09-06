@@ -202,6 +202,7 @@
 -export([payment_error_in_capture_session_does_not_cause_payment_failure_new/1]).
 
 -export([adhoc_repair_working_failed/1]).
+-export([adhoc_repair_working_failed_new/1]).
 -export([adhoc_repair_failed_succeeded/1]).
 -export([adhoc_repair_failed_succeeded_new/1]).
 -export([adhoc_repair_force_removal/1]).
@@ -488,6 +489,7 @@ groups() ->
         ]},
         {adhoc_repairs, [parallel], [
             adhoc_repair_working_failed,
+            adhoc_repair_working_failed_new,
             adhoc_repair_failed_succeeded,
             adhoc_repair_failed_succeeded_new,
             adhoc_repair_force_removal,
@@ -4921,9 +4923,16 @@ terms_retrieval(C) ->
 
 -spec adhoc_repair_working_failed(config()) -> _ | no_return().
 adhoc_repair_working_failed(C) ->
+    adhoc_repair_working_failed(C, visa).
+
+-spec adhoc_repair_working_failed_new(config()) -> _ | no_return().
+adhoc_repair_working_failed_new(C) ->
+    adhoc_repair_working_failed(C, ?pmt_sys(<<"visa-ref">>)).
+
+adhoc_repair_working_failed(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubbercrack">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     {exception, #'InvalidRequest'{}} = repair_invoice(InvoiceID, [], Client),
