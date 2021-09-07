@@ -39,16 +39,25 @@
 -export([invoice_cancellation_after_payment_timeout/1]).
 -export([invoice_cancellation_after_payment_timeout_new/1]).
 -export([invalid_payment_amount/1]).
+-export([invalid_payment_amount_new/1]).
 
 -export([payment_start_idempotency/1]).
+-export([payment_start_idempotency_new/1]).
 -export([payment_success/1]).
+-export([payment_success_new/1]).
 
 -export([payment_limit_success/1]).
+-export([payment_limit_success_new/1]).
 -export([payment_limit_other_shop_success/1]).
+-export([payment_limit_other_shop_success_new/1]).
 -export([payment_limit_overflow/1]).
+-export([payment_limit_overflow_new/1]).
 -export([refund_limit_success/1]).
+-export([refund_limit_success_new/1]).
 -export([payment_partial_capture_limit_success/1]).
+-export([payment_partial_capture_limit_success_new/1]).
 -export([switch_provider_after_limit_overflow/1]).
+-export([switch_provider_after_limit_overflow_new/1]).
 
 -export([processing_deadline_reached_test/1]).
 -export([payment_success_empty_cvv/1]).
@@ -340,9 +349,12 @@ groups() ->
             invoice_cancellation_after_payment_timeout,
             invoice_cancellation_after_payment_timeout_new,
             invalid_payment_amount,
+            invalid_payment_amount_new,
 
             payment_start_idempotency,
+            payment_start_idempotency_new,
             payment_success,
+            payment_success_new,
             payment_success_ruleset,
             processing_deadline_reached_test,
             payment_success_empty_cvv,
@@ -443,10 +455,16 @@ groups() ->
 
         {operation_limits, [], [
             payment_limit_success,
+            payment_limit_success_new,
             payment_limit_other_shop_success,
+            payment_limit_other_shop_success_new,
             payment_limit_overflow,
+            payment_limit_overflow_new,
             payment_partial_capture_limit_success,
+            payment_partial_capture_limit_success_new,
             switch_provider_after_limit_overflow,
+            switch_provider_after_limit_overflow_new,
+            refund_limit_success_new,
             refund_limit_success
         ]},
 
@@ -1097,8 +1115,15 @@ invoice_cancellation_after_payment_timeout(C, PmtSys) ->
 
 -spec invalid_payment_amount(config()) -> test_return().
 invalid_payment_amount(C) ->
+    invalid_payment_amount(C, visa).
+
+-spec invalid_payment_amount_new(config()) -> test_return().
+invalid_payment_amount_new(C) ->
+    invalid_payment_amount(C, ?pmt_sys(<<"visa-ref">>)).
+
+invalid_payment_amount(C, PmtSys) ->
     Client = cfg(client, C),
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     InvoiceID2 = start_invoice(<<"rubberduck">>, make_due_date(10), 430000000, C),
     {exception, #'InvalidRequest'{
         errors = [<<"Invalid amount, more", _/binary>>]
@@ -1106,9 +1131,16 @@ invalid_payment_amount(C) ->
 
 -spec payment_start_idempotency(config()) -> test_return().
 payment_start_idempotency(C) ->
+    payment_start_idempotency(C, visa).
+
+-spec payment_start_idempotency_new(config()) -> test_return().
+payment_start_idempotency_new(C) ->
+    payment_start_idempotency(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_start_idempotency(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams0 = make_payment_params(visa),
+    PaymentParams0 = make_payment_params(PmtSys),
     PaymentID1 = <<"1">>,
     ExternalID = <<"42">>,
     PaymentParams1 = PaymentParams0#payproc_InvoicePaymentParams{
@@ -1134,6 +1166,13 @@ payment_start_idempotency(C) ->
 
 -spec payment_success(config()) -> test_return().
 payment_success(C) ->
+    payment_success(C, visa).
+
+-spec payment_success_new(config()) -> test_return().
+payment_success_new(C) ->
+    payment_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_success(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
     Context = #'Content'{
@@ -1143,7 +1182,7 @@ payment_success(C) ->
     PayerSessionInfo = #domain_PayerSessionInfo{
         redirect_url = RedirectURL = <<"https://redirectly.io/merchant">>
     },
-    PaymentParams = (make_payment_params(visa))#payproc_InvoicePaymentParams{
+    PaymentParams = (make_payment_params(PmtSys))#payproc_InvoicePaymentParams{
         payer_session_info = PayerSessionInfo,
         context = Context
     },
@@ -1176,12 +1215,21 @@ payment_success(C) ->
 
 -spec init_operation_limits_group(config()) -> config().
 init_operation_limits_group(C) ->
-    PartyID = ?PARTY_ID_WITH_LIMIT,
-    _ = hg_ct_helper:create_party(PartyID, cfg(party_client, C)),
-    [{limits, #{party_id => PartyID}} | C].
+    PartyID1 = ?PARTY_ID_WITH_LIMIT,
+    PartyID2 = ?PARTY_ID_WITH_SEVERAL_LIMITS,
+    _ = hg_ct_helper:create_party(PartyID1, cfg(party_client, C)),
+    _ = hg_ct_helper:create_party(PartyID2, cfg(party_client, C)),
+    [{limits, #{party_id => PartyID1, party_id_w_several_limits => PartyID2}} | C].
 
 -spec payment_limit_success(config()) -> test_return().
 payment_limit_success(C) ->
+    payment_limit_success(C, visa).
+
+-spec payment_limit_success_new(config()) -> test_return().
+payment_limit_success_new(C) ->
+    payment_limit_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_limit_success(C, PmtSys) ->
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     #{party_id := PartyID} = cfg(limits, C),
@@ -1191,10 +1239,17 @@ payment_limit_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment)]
-    ) = create_payment(PartyID, ShopID, 10000, Client).
+    ) = create_payment(PartyID, ShopID, 10000, Client, PmtSys).
 
 -spec payment_limit_other_shop_success(config()) -> test_return().
 payment_limit_other_shop_success(C) ->
+    payment_limit_other_shop_success(C, visa).
+
+-spec payment_limit_other_shop_success_new(config()) -> test_return().
+payment_limit_other_shop_success_new(C) ->
+    payment_limit_other_shop_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_limit_other_shop_success(C, PmtSys) ->
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     #{party_id := PartyID} = cfg(limits, C),
@@ -1206,15 +1261,22 @@ payment_limit_other_shop_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment1)]
-    ) = create_payment(PartyID, ShopID1, PaymentAmount, Client),
+    ) = create_payment(PartyID, ShopID1, PaymentAmount, Client, PmtSys),
 
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment2)]
-    ) = create_payment(PartyID, ShopID2, PaymentAmount, Client).
+    ) = create_payment(PartyID, ShopID2, PaymentAmount, Client, PmtSys).
 
 -spec payment_limit_overflow(config()) -> test_return().
 payment_limit_overflow(C) ->
+    payment_limit_overflow(C, visa).
+
+-spec payment_limit_overflow_new(config()) -> test_return().
+payment_limit_overflow_new(C) ->
+    payment_limit_overflow(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_limit_overflow(C, PmtSys) ->
     RootUrl = cfg(root_url, C),
     #{party_id := PartyID} = cfg(limits, C),
     PartyClient = cfg(party_client, C),
@@ -1224,9 +1286,9 @@ payment_limit_overflow(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, PaymentAmount, Client),
+    ) = create_payment(PartyID, ShopID, PaymentAmount, Client, PmtSys),
 
-    Failure = create_payment_limit_overflow(PartyID, ShopID, 1000, Client),
+    Failure = create_payment_limit_overflow(PartyID, ShopID, 1000, Client, PmtSys),
     #domain_Invoice{id = ID} = Invoice,
     #domain_InvoicePayment{id = PaymentID} = Payment,
     Limit = get_payment_limit(PartyID, ShopID, ID, PaymentID, 1000),
@@ -1239,17 +1301,24 @@ payment_limit_overflow(C) ->
 
 -spec switch_provider_after_limit_overflow(config()) -> test_return().
 switch_provider_after_limit_overflow(C) ->
+    switch_provider_after_limit_overflow(C, visa, 7).
+
+-spec switch_provider_after_limit_overflow_new(config()) -> test_return().
+switch_provider_after_limit_overflow_new(C) ->
+    switch_provider_after_limit_overflow(C, ?pmt_sys(<<"visa-ref">>), 5).
+
+switch_provider_after_limit_overflow(C, PmtSys, ProviderID) ->
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
-    PartyID = ?PARTY_ID_WITH_SEVERAL_LIMITS,
+    #{party_id_w_several_limits := PartyID} = cfg(limits, C),
     PaymentAmount = 49999,
-    ShopID = hg_ct_helper:create_party_and_shop(PartyID, ?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID = hg_ct_helper:create_shop(PartyID, ?cat(8), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
 
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, PaymentAmount, Client),
+    ) = create_payment(PartyID, ShopID, PaymentAmount, Client, PmtSys),
 
     #domain_Invoice{id = ID} = Invoice,
     #domain_InvoicePayment{id = PaymentID} = Payment,
@@ -1258,17 +1327,24 @@ switch_provider_after_limit_overflow(C) ->
 
     InvoiceID = start_invoice(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), PaymentAmount, Client),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(
-        InvoiceID, make_payment_params(visa), Client
+        InvoiceID, make_payment_params(PmtSys), Client
     ),
     Route = start_payment_ev(InvoiceID, Client),
 
-    ?assertMatch(#domain_PaymentRoute{provider = #domain_ProviderRef{id = 7}}, Route),
+    ?assertMatch(#domain_PaymentRoute{provider = #domain_ProviderRef{id = ProviderID}}, Route),
     [?payment_ev(PaymentID2, ?cash_flow_changed(_))] = next_event(InvoiceID, Client),
     PaymentID2 = await_payment_session_started(InvoiceID, PaymentID2, Client, ?processed()),
     PaymentID2 = await_payment_process_finish(InvoiceID, PaymentID2, Client, 0).
 
 -spec refund_limit_success(config()) -> test_return().
 refund_limit_success(C) ->
+    refund_limit_success(C, visa).
+
+-spec refund_limit_success_new(config()) -> test_return().
+refund_limit_success_new(C) ->
+    refund_limit_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+refund_limit_success(C, PmtSys) ->
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     #{party_id := PartyID} = cfg(limits, C),
@@ -1278,16 +1354,16 @@ refund_limit_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_Payment)]
-    ) = create_payment(PartyID, ShopID, 50000, Client),
+    ) = create_payment(PartyID, ShopID, 50000, Client, PmtSys),
 
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()) = Invoice,
         [?payment_state(Payment)]
-    ) = create_payment(PartyID, ShopID, 40000, Client),
+    ) = create_payment(PartyID, ShopID, 40000, Client, PmtSys),
     ?invoice(InvoiceID) = Invoice,
     ?payment(PaymentID) = Payment,
 
-    Failure = create_payment_limit_overflow(PartyID, ShopID, 50000, Client),
+    Failure = create_payment_limit_overflow(PartyID, ShopID, 50000, Client, PmtSys),
     ok = payproc_errors:match(
         'PaymentFailure',
         Failure,
@@ -1305,13 +1381,20 @@ refund_limit_success(C) ->
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
         [?payment_state(_)]
-    ) = create_payment(PartyID, ShopID, 40000, Client).
+    ) = create_payment(PartyID, ShopID, 40000, Client, PmtSys).
 
 -spec payment_partial_capture_limit_success(config()) -> test_return().
 payment_partial_capture_limit_success(C) ->
+    payment_partial_capture_limit_success(C, visa).
+
+-spec payment_partial_capture_limit_success_new(config()) -> test_return().
+payment_partial_capture_limit_success_new(C) ->
+    payment_partial_capture_limit_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_partial_capture_limit_success(C, PmtSys) ->
     InitialCost = 1000 * 10,
     PartialCost = 700 * 10,
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
 
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
@@ -1347,20 +1430,20 @@ payment_partial_capture_limit_success(C) ->
 
 %%----------------- operation_limits helpers
 
-create_payment(PartyID, ShopID, Amount, Client) ->
+create_payment(PartyID, ShopID, Amount, Client, PmtSys) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(Amount)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
 
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     _PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     hg_client_invoicing:get(InvoiceID, Client).
 
-create_payment_limit_overflow(PartyID, ShopID, Amount, Client) ->
+create_payment_limit_overflow(PartyID, ShopID, Amount, Client, PmtSys) ->
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(Amount)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     PaymentID = await_payment_started(InvoiceID, PaymentID, Client),
     await_payment_rollback(InvoiceID, PaymentID, Client).
@@ -7820,6 +7903,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(mobile_deprecated, mts)
                                 ])},
                         cash_limit =
@@ -7961,6 +8045,7 @@ construct_domain_fixture() ->
                         {value,
                             ?ordset([
                                 ?pmt(bank_card_deprecated, visa),
+                                ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                 ?pmt(mobile_deprecated, mts)
                             ])},
                     refunds = #domain_PaymentRefundsProvisionTerms{
