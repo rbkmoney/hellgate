@@ -60,6 +60,7 @@
 -export([switch_provider_after_limit_overflow_new/1]).
 
 -export([processing_deadline_reached_test/1]).
+-export([processing_deadline_reached_test_new/1]).
 -export([payment_success_empty_cvv/1]).
 -export([payment_success_empty_cvv_new/1]).
 -export([payment_success_additional_info/1]).
@@ -93,6 +94,7 @@
 -export([party_revision_check_new/1]).
 -export([payment_customer_risk_score_check/1]).
 -export([payment_risk_score_check/1]).
+-export([payment_risk_score_check_new/1]).
 -export([payment_risk_score_check_fail/1]).
 -export([payment_risk_score_check_timeout/1]).
 -export([invalid_payment_adjustment/1]).
@@ -153,6 +155,7 @@
 -export([create_chargeback_inconsistent/1]).
 -export([create_chargeback_inconsistent_new/1]).
 -export([create_chargeback_exceeded/1]).
+-export([create_chargeback_exceeded_new/1]).
 -export([create_chargeback_idempotency/1]).
 -export([cancel_payment_chargeback/1]).
 -export([cancel_partial_payment_chargeback/1]).
@@ -187,6 +190,7 @@
 -export([payment_refund_idempotency/1]).
 -export([payment_refund_success/1]).
 -export([payment_success_ruleset/1]).
+-export([payment_success_ruleset_new/1]).
 -export([payment_refund_failure/1]).
 -export([payment_refund_failure_new/1]).
 -export([deadline_doesnt_affect_payment_refund/1]).
@@ -213,12 +217,15 @@
 -export([payment_with_tokenized_bank_card_new/1]).
 -export([terms_retrieval/1]).
 -export([payment_has_optional_fields/1]).
+-export([payment_has_optional_fields_new/1]).
 -export([payment_last_trx_correct/1]).
+-export([payment_last_trx_correct_new/1]).
 -export([payment_capture_failed/1]).
 -export([payment_capture_failed_new/1]).
 -export([payment_capture_retries_exceeded/1]).
 -export([payment_capture_retries_exceeded_new/1]).
 -export([payment_partial_capture_success/1]).
+-export([payment_partial_capture_success_new/1]).
 -export([payment_error_in_cancel_session_does_not_cause_payment_failure/1]).
 -export([payment_error_in_cancel_session_does_not_cause_payment_failure_new/1]).
 -export([payment_error_in_capture_session_does_not_cause_payment_failure/1]).
@@ -311,6 +318,7 @@ groups() ->
             payment_w_customer_success,
             payment_customer_risk_score_check,
             payment_risk_score_check,
+            payment_risk_score_check_new,
             payment_risk_score_check_fail,
             payment_risk_score_check_timeout,
             party_revision_check,
@@ -356,7 +364,9 @@ groups() ->
             payment_success,
             payment_success_new,
             payment_success_ruleset,
+            payment_success_ruleset_new,
             processing_deadline_reached_test,
+            processing_deadline_reached_test_new,
             payment_success_empty_cvv,
             payment_success_empty_cvv_new,
             payment_success_additional_info,
@@ -385,7 +395,9 @@ groups() ->
             payment_temporary_unavailability_too_many_retries,
             payment_temporary_unavailability_too_many_retries_new,
             payment_has_optional_fields,
+            payment_has_optional_fields_new,
             payment_last_trx_correct,
+            payment_last_trx_correct_new,
             invoice_success_on_third_payment,
             invoice_success_on_third_payment_new,
             payment_capture_failed,
@@ -393,6 +405,7 @@ groups() ->
             payment_capture_retries_exceeded,
             payment_capture_retries_exceeded_new,
             payment_partial_capture_success,
+            payment_partial_capture_success_new,
             payment_error_in_cancel_session_does_not_cause_payment_failure,
             payment_error_in_cancel_session_does_not_cause_payment_failure_new,
             payment_error_in_capture_session_does_not_cause_payment_failure_new,
@@ -423,6 +436,7 @@ groups() ->
             create_chargeback_inconsistent,
             create_chargeback_inconsistent_new,
             create_chargeback_exceeded,
+            create_chargeback_exceeded_new,
             create_chargeback_idempotency,
             cancel_payment_chargeback,
             cancel_partial_payment_chargeback,
@@ -593,6 +607,8 @@ init_per_suite(C) ->
     PartyClient2 = {party_client:create_client(), party_client:create_context(user_info())},
     CustomerClient2 = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, Party2ID)),
 
+    Party3ID = <<"bIg merch">>,
+    _ = hg_ct_helper:create_party(Party3ID, PartyClient),
     _ = hg_ct_helper:create_party(?PARTYID_EXTERNAL, PartyClient),
 
     _ = timer:sleep(5000),
@@ -606,6 +622,7 @@ init_per_suite(C) ->
     NewC = [
         {party_id, PartyID},
         {party_client, PartyClient},
+        {party_id_big_merch, Party3ID},
         {shop_id, ShopID},
         {customer_client, CustomerClient},
         {another_party_id, Party2ID},
@@ -1481,15 +1498,22 @@ get_payment_limit(PartyID, ShopID, InvoiceID, PaymentID, Amount) ->
 
 -spec payment_success_ruleset(config()) -> test_return().
 payment_success_ruleset(C) ->
-    PartyID = <<"bIg merch">>,
+    payment_success_ruleset(C, visa).
+
+-spec payment_success_ruleset_new(config()) -> test_return().
+payment_success_ruleset_new(C) ->
+    payment_success_ruleset(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_success_ruleset(C, PmtSys) ->
+    PartyID = cfg(party_id_big_merch, C),
     RootUrl = cfg(root_url, C),
     PartyClient = cfg(party_client, C),
     Client = hg_client_invoicing:start_link(hg_ct_helper:create_client(RootUrl, PartyID)),
-    ShopID = hg_ct_helper:create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID = hg_ct_helper:create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     InvoiceParams = make_invoice_params(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), make_cash(42000)),
     InvoiceID = create_invoice(InvoiceParams, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
-    PaymentID = process_payment(InvoiceID, make_payment_params(visa), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(PmtSys), Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, Client),
     ?invoice_state(
         ?invoice_w_status(?invoice_paid()),
@@ -1499,9 +1523,16 @@ payment_success_ruleset(C) ->
 
 -spec processing_deadline_reached_test(config()) -> test_return().
 processing_deadline_reached_test(C) ->
+    processing_deadline_reached_test(C, visa).
+
+-spec processing_deadline_reached_test_new(config()) -> test_return().
+processing_deadline_reached_test_new(C) ->
+    processing_deadline_reached_test(C, ?pmt_sys(<<"visa-ref">>)).
+
+processing_deadline_reached_test(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams0 = make_payment_params(visa),
+    PaymentParams0 = make_payment_params(PmtSys),
     Deadline = hg_datetime:format_now(),
     PaymentParams = PaymentParams0#payproc_InvoicePaymentParams{processing_deadline = Deadline},
     PaymentID = start_payment(InvoiceID, PaymentParams, Client),
@@ -1567,9 +1598,16 @@ payment_success_additional_info(C, PmtSys) ->
 
 -spec payment_has_optional_fields(config()) -> test_return().
 payment_has_optional_fields(C) ->
+    payment_has_optional_fields(C, visa).
+
+-spec payment_has_optional_fields_new(config()) -> test_return().
+payment_has_optional_fields_new(C) ->
+    payment_has_optional_fields(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_has_optional_fields(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     InvoicePayment = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     ?payment_state(Payment) = InvoicePayment,
@@ -1585,9 +1623,16 @@ payment_has_optional_fields(C) ->
 
 -spec payment_last_trx_correct(config()) -> _ | no_return().
 payment_last_trx_correct(C) ->
+    payment_last_trx_correct(C, visa).
+
+-spec payment_last_trx_correct_new(config()) -> _ | no_return().
+payment_last_trx_correct_new(C) ->
+    payment_last_trx_correct(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_last_trx_correct(C, PmtSys) ->
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentID = start_payment(InvoiceID, make_payment_params(visa), Client),
+    PaymentID = start_payment(InvoiceID, make_payment_params(PmtSys), Client),
     PaymentID = await_payment_session_started(InvoiceID, PaymentID, Client, ?processed()),
     [
         ?payment_ev(PaymentID, ?session_ev(?processed(), ?trx_bound(TrxInfo0))),
@@ -1658,6 +1703,13 @@ payment_capture_retries_exceeded(C, PmtSys) ->
 
 -spec payment_partial_capture_success(config()) -> test_return().
 payment_partial_capture_success(C) ->
+    payment_partial_capture_success(C, visa).
+
+-spec payment_partial_capture_success_new(config()) -> test_return().
+payment_partial_capture_success_new(C) ->
+    payment_partial_capture_success(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_partial_capture_success(C, PmtSys) ->
     InitialCost = 1000 * 100,
     PartialCost = 700 * 100,
     Client = cfg(client, C),
@@ -1666,7 +1718,7 @@ payment_partial_capture_success(C) ->
     {ok, Shop} = party_client_thrift:get_shop(PartyID, cfg(shop_id, C), PartyClient, Context),
     ok = hg_ct_helper:adjust_contract(PartyID, Shop#domain_Shop.contract_id, ?tmpl(1), PartyPair),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(100), InitialCost, C),
-    PaymentParams = make_payment_params(visa, {hold, cancel}),
+    PaymentParams = make_payment_params(PmtSys, {hold, cancel}),
     % start payment
     ?payment_state(?payment(PaymentID)) =
         hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
@@ -2163,10 +2215,17 @@ invoice_success_on_third_payment(C, PmtSys) ->
 %% @TODO modify this test by failures of inspector in case of wrong terminal choice
 -spec payment_risk_score_check(config()) -> test_return().
 payment_risk_score_check(C) ->
+    payment_risk_score_check2(C, visa).
+
+-spec payment_risk_score_check_new(config()) -> test_return().
+payment_risk_score_check_new(C) ->
+    payment_risk_score_check2(C, ?pmt_sys(<<"visa-ref">>)).
+
+payment_risk_score_check2(C, PmtSys) ->
     Client = cfg(client, C),
     % Invoice w/ cost < 500000
     InvoiceID1 = start_invoice(<<"rubberduck">>, make_due_date(10), 42000, C),
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     [
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
@@ -2898,11 +2957,18 @@ create_chargeback_inconsistent(C, PmtSys) ->
 
 -spec create_chargeback_exceeded(config()) -> _ | no_return().
 create_chargeback_exceeded(C) ->
+    create_chargeback_exceeded(C, visa).
+
+-spec create_chargeback_exceeded_new(config()) -> _ | no_return().
+create_chargeback_exceeded_new(C) ->
+    create_chargeback_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
+
+create_chargeback_exceeded(C, PmtSys) ->
     Cost = 42000,
     ExceededBody = make_chargeback_params(?cash(100, <<"RUB">>), ?cash(100000, <<"RUB">>)),
     ?assertMatch(
         {_, _, _, ?invoice_payment_amount_exceeded(_)},
-        start_chargeback(C, Cost, ExceededBody, make_payment_params(visa))
+        start_chargeback(C, Cost, ExceededBody, make_payment_params(PmtSys))
     ).
 
 -spec create_chargeback_idempotency(config()) -> _ | no_return().
