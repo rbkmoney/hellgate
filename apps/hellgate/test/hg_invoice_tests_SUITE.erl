@@ -96,7 +96,9 @@
 -export([payment_risk_score_check/1]).
 -export([payment_risk_score_check_new/1]).
 -export([payment_risk_score_check_fail/1]).
+-export([payment_risk_score_check_fail_new/1]).
 -export([payment_risk_score_check_timeout/1]).
+-export([payment_risk_score_check_timeout_new/1]).
 -export([invalid_payment_adjustment/1]).
 -export([invalid_payment_adjustment_new/1]).
 -export([payment_adjustment_success/1]).
@@ -157,7 +159,9 @@
 -export([create_chargeback_exceeded/1]).
 -export([create_chargeback_exceeded_new/1]).
 -export([create_chargeback_idempotency/1]).
+-export([create_chargeback_idempotency_new/1]).
 -export([cancel_payment_chargeback/1]).
+-export([cancel_payment_chargeback_new/1]).
 -export([cancel_partial_payment_chargeback/1]).
 -export([cancel_partial_payment_chargeback_new/1]).
 -export([cancel_partial_payment_chargeback_exceeded/1]).
@@ -320,7 +324,9 @@ groups() ->
             payment_risk_score_check,
             payment_risk_score_check_new,
             payment_risk_score_check_fail,
+            payment_risk_score_check_fail_new,
             payment_risk_score_check_timeout,
+            payment_risk_score_check_timeout_new,
             party_revision_check,
             party_revision_check_new,
 
@@ -438,7 +444,9 @@ groups() ->
             create_chargeback_exceeded,
             create_chargeback_exceeded_new,
             create_chargeback_idempotency,
+            create_chargeback_idempotency_new,
             cancel_payment_chargeback,
+            cancel_payment_chargeback_new,
             cancel_partial_payment_chargeback,
             cancel_partial_payment_chargeback_new,
             cancel_partial_payment_chargeback_exceeded,
@@ -1970,7 +1978,7 @@ payment_w_customer_success(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
-    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C), visa),
     PaymentParams = make_customer_payment_params(CustomerID),
     PaymentID = execute_payment(InvoiceID, PaymentParams, Client),
     ?invoice_state(
@@ -1993,7 +2001,7 @@ payment_w_another_shop_customer(C) ->
         PartyClient
     ),
     InvoiceID = start_invoice(AnotherShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
-    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C), visa),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
 
@@ -2003,7 +2011,7 @@ payment_w_another_party_customer(C) ->
     AnotherPartyID = cfg(another_party_id, C),
     ShopID = cfg(shop_id, C),
     AnotherShopID = cfg(another_shop_id, C),
-    CustomerID = make_customer_w_rec_tool(AnotherPartyID, AnotherShopID, cfg(another_customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(AnotherPartyID, AnotherShopID, cfg(another_customer_client, C), visa),
     InvoiceID = start_invoice(ShopID, <<"rubberduck">>, make_due_date(60), 42000, C),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
@@ -2015,7 +2023,7 @@ payment_w_deleted_customer(C) ->
     PartyID = cfg(party_id, C),
     ShopID = cfg(shop_id, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(60), 42000, C),
-    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, CustomerClient),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, CustomerClient, visa),
     ok = hg_client_customer:delete(CustomerID, CustomerClient),
     PaymentParams = make_customer_payment_params(CustomerID),
     {exception, #'InvalidRequest'{}} = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client).
@@ -2271,11 +2279,19 @@ payment_risk_score_check2(C, PmtSys) ->
 
 -spec payment_risk_score_check_fail(config()) -> test_return().
 payment_risk_score_check_fail(C) ->
-    payment_risk_score_check(4, C).
+    payment_risk_score_check(4, C, visa).
+
+-spec payment_risk_score_check_fail_new(config()) -> test_return().
+payment_risk_score_check_fail_new(C) ->
+    payment_risk_score_check(4, C, ?pmt_sys(<<"visa-ref">>)).
 
 -spec payment_risk_score_check_timeout(config()) -> test_return().
 payment_risk_score_check_timeout(C) ->
-    payment_risk_score_check(5, C).
+    payment_risk_score_check(5, C, visa).
+
+-spec payment_risk_score_check_timeout_new(config()) -> test_return().
+payment_risk_score_check_timeout_new(C) ->
+    payment_risk_score_check(5, C, ?pmt_sys(<<"visa-ref">>)).
 
 -spec party_revision_check(config()) -> test_return().
 party_revision_check(C) ->
@@ -2973,6 +2989,13 @@ create_chargeback_exceeded(C, PmtSys) ->
 
 -spec create_chargeback_idempotency(config()) -> _ | no_return().
 create_chargeback_idempotency(C) ->
+    create_chargeback_idempotency(C, visa).
+
+-spec create_chargeback_idempotency_new(config()) -> _ | no_return().
+create_chargeback_idempotency_new(C) ->
+    create_chargeback_idempotency(C, ?pmt_sys(<<"visa-ref">>)).
+
+create_chargeback_idempotency(C, PmtSys) ->
     Client = cfg(client, C),
     Cost = 42000,
     Fee = 1890,
@@ -2980,7 +3003,7 @@ create_chargeback_idempotency(C) ->
     LevyAmount = 4000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_payment_params(visa)),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_payment_params(PmtSys)),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
@@ -3011,6 +3034,13 @@ create_chargeback_idempotency(C) ->
 
 -spec cancel_payment_chargeback(config()) -> _ | no_return().
 cancel_payment_chargeback(C) ->
+    cancel_payment_chargeback(C, visa).
+
+-spec cancel_payment_chargeback_new(config()) -> _ | no_return().
+cancel_payment_chargeback_new(C) ->
+    cancel_payment_chargeback(C, ?pmt_sys(<<"visa-ref">>)).
+
+cancel_payment_chargeback(C, PmtSys) ->
     Client = cfg(client, C),
     Cost = 42000,
     Fee = 1890,
@@ -3018,7 +3048,7 @@ cancel_payment_chargeback(C) ->
     LevyAmount = 4000,
     Levy = ?cash(LevyAmount, <<"RUB">>),
     CBParams = make_chargeback_params(Levy),
-    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_payment_params(visa)),
+    {IID, PID, SID, CB} = start_chargeback(C, Cost, CBParams, make_payment_params(PmtSys)),
     CBID = CB#domain_InvoicePaymentChargeback.id,
     [
         ?payment_ev(PID, ?chargeback_ev(CBID, ?chargeback_created(CB)))
@@ -4363,7 +4393,7 @@ payment_refund_failure(C, PmtSys) ->
     ] = next_event(InvoiceID, Client),
     % top up merchant account
     InvoiceID2 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
-    _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(visa), Client),
+    _PaymentID2 = execute_payment(InvoiceID2, make_payment_params(PmtSys), Client),
     % create a refund finally
     ?refund_id(RefundID) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams, Client),
@@ -6327,14 +6357,14 @@ get_post_request({payment_terminal_reciept, #'PaymentTerminalReceipt'{short_paym
     URL = hg_dummy_provider:get_callback_url(),
     {URL, #{<<"tag">> => SPID}}.
 
-make_customer_w_rec_tool(PartyID, ShopID, Client) ->
+make_customer_w_rec_tool(PartyID, ShopID, Client, PmtSys) ->
     CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, <<"InvoicingTests">>),
     #payproc_Customer{id = CustomerID} =
         hg_client_customer:create(CustomerParams, Client),
     #payproc_CustomerBinding{id = BindingID} =
         hg_client_customer:start_binding(
             CustomerID,
-            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, visa)),
+            hg_ct_helper:make_customer_binding_params(hg_dummy_provider:make_payment_tool(no_preauth, PmtSys)),
             Client
         ),
     ok = wait_for_binding_success(CustomerID, BindingID, Client),
@@ -6456,7 +6486,7 @@ make_payment_refund_and_get_revision(InvoiceID, PaymentID, Client) ->
     ),
     RefundRev.
 
-payment_risk_score_check(Cat, C) ->
+payment_risk_score_check(Cat, C, PmtSys) ->
     Client = cfg(client, C),
     PartyClient = cfg(party_client, C),
     ShopID = hg_ct_helper:create_battle_ready_shop(
@@ -6469,7 +6499,7 @@ payment_risk_score_check(Cat, C) ->
     ),
     InvoiceID1 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 42000, C),
     % Invoice
-    PaymentParams = make_payment_params(visa),
+    PaymentParams = make_payment_params(PmtSys),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     [
         ?payment_ev(PaymentID1, ?payment_started(?payment_w_status(?pending())))
@@ -6496,7 +6526,7 @@ payment_customer_risk_score_check(C) ->
         PartyClient
     ),
     InvoiceID1 = start_invoice(ShopID, <<"rubberduck">>, make_due_date(10), 100000001, C),
-    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C)),
+    CustomerID = make_customer_w_rec_tool(PartyID, ShopID, cfg(customer_client, C), visa),
     PaymentParams = make_customer_payment_params(CustomerID),
     ?payment_state(?payment(PaymentID1)) = hg_client_invoicing:start_payment(InvoiceID1, PaymentParams, Client),
     [
