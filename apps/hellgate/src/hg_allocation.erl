@@ -28,14 +28,14 @@
 
 -type sub_errors() ::
     currency_mismatch
-    | allocations_and_cost_do_not_match
+    | cost_mismatch
     | {no_transaction_to_sub, transaction()}
     | {invalid_transaction, transaction(), negative_amount}.
 
 -type calculate_errors() ::
     currency_mismatch
-    | allocations_and_cost_do_not_match
-    | {invalid_transaction, transaction(), negative_amount | same_target_trx}.
+    | cost_mismatch
+    | {invalid_transaction, transaction(), negative_amount | zero_amount | target_conflict}.
 
 -spec calculate(allocation_prototype(), owner_id(), shop_id(), cash()) ->
     {ok, allocation()} | {error, calculate_errors()}.
@@ -107,25 +107,17 @@ sub_trxs(Transactions0, [ST | SubTransactions], CostLeft, Acc0) ->
     sub_trxs(Transactions1, SubTransactions, sub_amount(CostLeft, ResAmount), Acc1).
 
 validate_cost(?cash(CostLeft, _SymCode)) when CostLeft /= 0 ->
-    throw(allocations_and_cost_do_not_match);
+    throw(cost_mismatch);
 validate_cost(CostLeft) ->
     CostLeft.
 
 take_trx(Transaction0, Transactions) ->
     ?allocation_trx(_ID, Target, _Amount) = Transaction0,
-    Fun = fun(T) ->
-        case T of
-            #domain_AllocationTransaction{target = Target} ->
-                true;
-            _ ->
-                false
-        end
-    end,
-    case lists:partition(Fun, Transactions) of
-        {[], Transactions} ->
-            throw({no_transaction_to_sub, Transaction0});
-        {[Transaction1], RemainingTransactions} ->
-            {Transaction1, RemainingTransactions}
+    case lists:keytake(Target, #domain_AllocationTransaction.target, Transactions) of
+        {value, Transaction1, RemainingTransactions} ->
+            {Transaction1, RemainingTransactions};
+        false ->
+            throw({no_transaction_to_sub, Transaction0})
     end.
 
 sub_trx(Transaction, SubTransaction) ->
@@ -136,7 +128,10 @@ sub_trx(Transaction, SubTransaction) ->
         ID,
         Target,
         ResAmount,
+        %% We do not subtract details because we don't need subtracted details for anything
         Details,
+        %% We do not subtract body, because there's no good way to do that with different body types
+        %% and we don't prohibit subtracting transactions with different body types
         Body
     ),
     {ResAmount, ResTransaction}.
@@ -155,15 +150,13 @@ calculate_trxs(Transactions, FeeTarget, Cost) ->
 
 calculate_trxs([], FeeTarget, CostLeft, FeeAcc, ID, Acc) ->
     AggregatorCost = validate_fee_cost(CostLeft, FeeAcc),
-    ValidatedAggregatorTrx = construct_trx(erlang:integer_to_binary(ID), FeeTarget, AggregatorCost),
-    _ = validate_trx_clash(ValidatedAggregatorTrx, Acc),
-    genlib_list:compact([ValidatedAggregatorTrx]) ++ Acc;
+    AggregatorTrx = construct_trx(erlang:integer_to_binary(ID), FeeTarget, AggregatorCost),
+    push_trx_compact(AggregatorTrx, Acc);
 calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
     ?allocation_trx_prototype(Target, Body, Details) = Head,
     {TransactionBody, TransactionAmount, FeeAmount} = calculate_trxs_body(Body, FeeTarget),
-    Transaction = construct_trx(erlang:integer_to_binary(ID0), Target, TransactionAmount, Details, TransactionBody),
-    _ = validate_trx_clash(Transaction, Acc0),
-    Acc1 = genlib_list:compact([Transaction]) ++ Acc0,
+    Transaction = construct_positive_trx(erlang:integer_to_binary(ID0), Target, TransactionAmount, Details, TransactionBody),
+    Acc1 = push_trx(Transaction, Acc0),
     ID1 = ID0 + 1,
     calculate_trxs(
         Transactions,
@@ -173,6 +166,14 @@ calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
         ID1,
         Acc1
     ).
+
+construct_positive_trx(ID, Target, Amount, Details, Body) ->
+    case construct_trx(ID, Target, Amount, Details, Body) of
+        undefined ->
+            throw({invalid_transaction, ?allocation_trx(ID, Target, Amount, Details, Body), zero_amount});
+        Trx ->
+            Trx
+    end.
 
 construct_trx(ID, Target, Amount) ->
     construct_trx(ID, Target, Amount, undefined, undefined).
@@ -184,24 +185,21 @@ construct_trx(_ID, _Target, ?cash(Amount, _SymCode), _Details, _Body) when Amoun
 construct_trx(ID, Target, Amount, Details, Body) ->
     ?allocation_trx(ID, Target, Amount, Details, Body).
 
-validate_trx_clash(?allocation_trx(_ID0, Target, _Amount0) = Trx, Acc) ->
-    Fun = fun (T) ->
-        case T of
-            ?allocation_trx(_ID1, Target, _Amount1) ->
-                true;
-            _ ->
-                false
-        end
-          end,
-    case lists:any(Fun, Acc) of
+push_trx_compact(undefined, Transactions) ->
+    Transactions;
+push_trx_compact(Transaction, Transactions) ->
+    push_trx(Transaction, Transactions).
+
+push_trx(?allocation_trx(_ID0, Target, _Amount0) = Transaction, Transactions) ->
+    case lists:keymember(Target, #domain_AllocationTransaction.target, Transactions) of
         true ->
-            throw({invalid_transaction, Trx, same_target_trx});
+            throw({invalid_transaction, Transaction, target_conflict});
         false ->
-            ok
+            [Transaction | Transactions]
     end.
 
 validate_fee_cost(?cash(CostLeft, SymCode), ?cash(FeeCost, SymCode)) when FeeCost > CostLeft orelse CostLeft < 0 ->
-    throw(allocations_and_cost_do_not_match);
+    throw(cost_mismatch);
 validate_fee_cost(CostLeft, _FeeCost) ->
     CostLeft.
 
@@ -379,7 +377,7 @@ allocation_3_test() ->
             ?allocation_trx_details(Cart)
         )
     ]),
-    {error, allocations_and_cost_do_not_match} =
+    {error, cost_mismatch} =
         calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
 -spec allocation_refund_one_transaction_1_test() -> _.
