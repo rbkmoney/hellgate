@@ -156,6 +156,7 @@ calculate_trxs(Transactions, FeeTarget, Cost) ->
 calculate_trxs([], FeeTarget, CostLeft, FeeAcc, ID, Acc) ->
     AggregatorCost = validate_fee_cost(CostLeft, FeeAcc),
     ValidatedAggregatorTrx = construct_trx(erlang:integer_to_binary(ID), FeeTarget, AggregatorCost),
+    _ = validate_trx_clash(ValidatedAggregatorTrx, Acc),
     genlib_list:compact([ValidatedAggregatorTrx]) ++ Acc;
 calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
     ?allocation_trx_prototype(Target, Body, Details) = Head,
