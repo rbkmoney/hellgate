@@ -2075,6 +2075,7 @@ payment_w_customer_success(C) ->
 
 -spec payment_w_customer_success_new(config()) -> test_return().
 payment_w_customer_success_new(_C) ->
+    %% here {exception,{payproc_OperationNotPermitted}}
     %%payment_w_customer_success(C, ?pmt_sys(<<"visa-ref">>)).
     {skip, unresolved}.
 
@@ -3087,10 +3088,12 @@ create_chargeback_not_allowed(C, PmtSys) ->
 
 -spec create_chargeback_inconsistent(config()) -> _ | no_return().
 create_chargeback_inconsistent(C) ->
+    _ = timer:sleep(500),
     create_chargeback_inconsistent(C, visa).
 
 -spec create_chargeback_inconsistent_new(config()) -> _ | no_return().
 create_chargeback_inconsistent_new(C) ->
+    _ = timer:sleep(500),
     create_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
 
 create_chargeback_inconsistent(C, PmtSys) ->
@@ -3274,9 +3277,8 @@ cancel_payment_chargeback_refund(C) ->
     cancel_payment_chargeback_refund(C, visa).
 
 -spec cancel_payment_chargeback_refund_new(config()) -> _ | no_return().
-cancel_payment_chargeback_refund_new(_C) ->
-    %%cancel_payment_chargeback_refund(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+cancel_payment_chargeback_refund_new(C) ->
+    cancel_payment_chargeback_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 cancel_payment_chargeback_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3314,9 +3316,8 @@ reject_payment_chargeback_inconsistent(C) ->
     reject_payment_chargeback_inconsistent(C, visa).
 
 -spec reject_payment_chargeback_inconsistent_new(config()) -> _ | no_return().
-reject_payment_chargeback_inconsistent_new(_C) ->
-    %reject_payment_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reject_payment_chargeback_inconsistent_new(C) ->
+    reject_payment_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
 
 reject_payment_chargeback_inconsistent(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3352,9 +3353,8 @@ reject_payment_chargeback(C) ->
     reject_payment_chargeback(C, visa).
 
 -spec reject_payment_chargeback_new(config()) -> _ | no_return().
-reject_payment_chargeback_new(_C) ->
-    %%reject_payment_chargeback(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reject_payment_chargeback_new(C) ->
+    reject_payment_chargeback(C, ?pmt_sys(<<"visa-ref">>)).
 
 reject_payment_chargeback(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3437,9 +3437,8 @@ reject_payment_chargeback_new_levy(C) ->
     reject_payment_chargeback_new_levy(C, visa).
 
 -spec reject_payment_chargeback_new_levy_new(config()) -> _ | no_return().
-reject_payment_chargeback_new_levy_new(_C) ->
-    %%reject_payment_chargeback_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reject_payment_chargeback_new_levy_new(C) ->
+    reject_payment_chargeback_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
 
 reject_payment_chargeback_new_levy(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3484,9 +3483,8 @@ accept_payment_chargeback_inconsistent(C) ->
     accept_payment_chargeback_inconsistent(C, visa).
 
 -spec accept_payment_chargeback_inconsistent_new(config()) -> _ | no_return().
-accept_payment_chargeback_inconsistent_new(_C) ->
-    %%accept_payment_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+accept_payment_chargeback_inconsistent_new(C) ->
+    accept_payment_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_inconsistent(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3522,12 +3520,13 @@ accept_payment_chargeback_inconsistent(C, PmtSys) ->
 
 -spec accept_payment_chargeback_exceeded(config()) -> _ | no_return().
 accept_payment_chargeback_exceeded(C) ->
+    _ = timer:sleep(500),
     accept_payment_chargeback_exceeded(C, visa).
 
 -spec accept_payment_chargeback_exceeded_new(config()) -> _ | no_return().
-accept_payment_chargeback_exceeded_new(_C) ->
-    %%accept_payment_chargeback_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+accept_payment_chargeback_exceeded_new(C) ->
+    _ = timer:sleep(600),
+    accept_payment_chargeback_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_exceeded(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3561,12 +3560,13 @@ accept_payment_chargeback_exceeded(C, PmtSys) ->
 
 -spec accept_payment_chargeback_empty_params(config()) -> _ | no_return().
 accept_payment_chargeback_empty_params(C) ->
+    _ = timer:sleep(600),
     accept_payment_chargeback_empty_params(C, visa).
 
 -spec accept_payment_chargeback_empty_params_new(config()) -> _ | no_return().
-accept_payment_chargeback_empty_params_new(_C) ->
-    %%accept_payment_chargeback_empty_params(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+accept_payment_chargeback_empty_params_new(C) ->
+    _ = timer:sleep(500),
+    accept_payment_chargeback_empty_params(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_empty_params(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3602,12 +3602,13 @@ accept_payment_chargeback_empty_params(C, PmtSys) ->
 
 -spec accept_payment_chargeback_twice(config()) -> _ | no_return().
 accept_payment_chargeback_twice(C) ->
+    _ = timer:sleep(600),
     accept_payment_chargeback_twice(C, visa).
 
 -spec accept_payment_chargeback_twice_new(config()) -> _ | no_return().
-accept_payment_chargeback_twice_new(_C) ->
-    %%accept_payment_chargeback_twice(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+accept_payment_chargeback_twice_new(C) ->
+    _ = timer:sleep(600),
+    accept_payment_chargeback_twice(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_twice(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3668,12 +3669,13 @@ accept_payment_chargeback_twice(C, PmtSys) ->
 
 -spec accept_payment_chargeback_new_body(config()) -> _ | no_return().
 accept_payment_chargeback_new_body(C) ->
+    _ = timer:sleep(500),
     accept_payment_chargeback_new_body(C, visa).
 
 -spec accept_payment_chargeback_new_body_new(config()) -> _ | no_return().
-accept_payment_chargeback_new_body_new(_C) ->
-    %%accept_payment_chargeback_new_body(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+accept_payment_chargeback_new_body_new(C) ->
+    _ = timer:sleep(600),
+    accept_payment_chargeback_new_body(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_new_body(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3713,12 +3715,13 @@ accept_payment_chargeback_new_body(C, PmtSys) ->
 
 -spec accept_payment_chargeback_new_levy(config()) -> _ | no_return().
 accept_payment_chargeback_new_levy(C) ->
+    _ = timer:sleep(600),
     accept_payment_chargeback_new_levy(C, visa).
 
 -spec accept_payment_chargeback_new_levy_new(config()) -> _ | no_return().
-accept_payment_chargeback_new_levy_new(_C) ->
-    %%accept_payment_chargeback_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+accept_payment_chargeback_new_levy_new(C) ->
+    _ = timer:sleep(600),
+    accept_payment_chargeback_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_new_levy(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3759,12 +3762,13 @@ accept_payment_chargeback_new_levy(C, PmtSys) ->
 
 -spec reopen_accepted_payment_chargeback_fails(config()) -> _ | no_return().
 reopen_accepted_payment_chargeback_fails(C) ->
+    _ = timer:sleep(600),
     reopen_accepted_payment_chargeback_fails(C, visa).
 
 -spec reopen_accepted_payment_chargeback_fails_new(config()) -> _ | no_return().
-reopen_accepted_payment_chargeback_fails_new(_C) ->
-    %%reopen_accepted_payment_chargeback_fails(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_accepted_payment_chargeback_fails_new(C) ->
+    _ = timer:sleep(600),
+    reopen_accepted_payment_chargeback_fails(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_accepted_payment_chargeback_fails(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3795,12 +3799,12 @@ reopen_accepted_payment_chargeback_fails(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_inconsistent(config()) -> _ | no_return().
 reopen_payment_chargeback_inconsistent(C) ->
+    _ = timer:sleep(500),
     reopen_payment_chargeback_inconsistent(C, visa).
 
 -spec reopen_payment_chargeback_inconsistent_new(config()) -> _ | no_return().
-reopen_payment_chargeback_inconsistent_new(_C) ->
-    %%reopen_payment_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_inconsistent_new(C) ->
+    reopen_payment_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_inconsistent(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3839,9 +3843,8 @@ reopen_payment_chargeback_exceeded(C) ->
     reopen_payment_chargeback_exceeded(C, visa).
 
 -spec reopen_payment_chargeback_exceeded_new(config()) -> _ | no_return().
-reopen_payment_chargeback_exceeded_new(_C) ->
-    %%reopen_payment_chargeback_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_exceeded_new(C) ->
+    reopen_payment_chargeback_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_exceeded(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3874,12 +3877,12 @@ reopen_payment_chargeback_exceeded(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_cancel(config()) -> _ | no_return().
 reopen_payment_chargeback_cancel(C) ->
+    _ = timer:sleep(600),
     reopen_payment_chargeback_cancel(C, visa).
 
 -spec reopen_payment_chargeback_cancel_new(config()) -> _ | no_return().
-reopen_payment_chargeback_cancel_new(_C) ->
-    %%reopen_payment_chargeback_cancel(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_cancel_new(C) ->
+    reopen_payment_chargeback_cancel(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_cancel(C, PmtSys) ->
     Client = cfg(client, C),
@@ -3952,9 +3955,9 @@ reopen_payment_chargeback_reject(C) ->
     reopen_payment_chargeback_reject(C, visa).
 
 -spec reopen_payment_chargeback_reject_new(config()) -> _ | no_return().
-reopen_payment_chargeback_reject_new(_C) ->
-    %%reopen_payment_chargeback_reject(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_reject_new(C) ->
+    _ = timer:sleep(500),
+    reopen_payment_chargeback_reject(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_reject(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4027,9 +4030,9 @@ reopen_payment_chargeback_accept(C) ->
     reopen_payment_chargeback_accept(C, visa).
 
 -spec reopen_payment_chargeback_accept_new(config()) -> _ | no_return().
-reopen_payment_chargeback_accept_new(_C) ->
-    %%reopen_payment_chargeback_accept(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_accept_new(C) ->
+    _ = timer:sleep(500),
+    reopen_payment_chargeback_accept(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_accept(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4100,9 +4103,9 @@ reopen_payment_chargeback_skip_stage_accept(C) ->
     reopen_payment_chargeback_skip_stage_accept(C, visa).
 
 -spec reopen_payment_chargeback_skip_stage_accept_new(config()) -> _ | no_return().
-reopen_payment_chargeback_skip_stage_accept_new(_C) ->
-    %%reopen_payment_chargeback_skip_stage_accept(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_skip_stage_accept_new(C) ->
+    _ = timer:sleep(500),
+    reopen_payment_chargeback_skip_stage_accept(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_skip_stage_accept(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4171,12 +4174,12 @@ reopen_payment_chargeback_skip_stage_accept(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_accept_new_levy(config()) -> _ | no_return().
 reopen_payment_chargeback_accept_new_levy(C) ->
+    _ = timer:sleep(600),
     reopen_payment_chargeback_accept_new_levy(C, visa).
 
 -spec reopen_payment_chargeback_accept_new_levy_new(config()) -> _ | no_return().
-reopen_payment_chargeback_accept_new_levy_new(_C) ->
-    %%reopen_payment_chargeback_accept_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_accept_new_levy_new(C) ->
+    reopen_payment_chargeback_accept_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_accept_new_levy(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4251,12 +4254,13 @@ reopen_payment_chargeback_accept_new_levy(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_arbitration(config()) -> _ | no_return().
 reopen_payment_chargeback_arbitration(C) ->
+    _ = timer:sleep(500),
     reopen_payment_chargeback_arbitration(C, visa).
 
 -spec reopen_payment_chargeback_arbitration_new(config()) -> _ | no_return().
-reopen_payment_chargeback_arbitration_new(_C) ->
-    %%reopen_payment_chargeback_arbitration(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_arbitration_new(C) ->
+    _ = timer:sleep(500),
+    reopen_payment_chargeback_arbitration(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_arbitration(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4356,12 +4360,12 @@ reopen_payment_chargeback_arbitration(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_arbitration_reopen_fails(config()) -> _ | no_return().
 reopen_payment_chargeback_arbitration_reopen_fails(C) ->
+    _ = timer:sleep(600),
     reopen_payment_chargeback_arbitration_reopen_fails(C, visa).
 
 -spec reopen_payment_chargeback_arbitration_reopen_fails_new(config()) -> _ | no_return().
-reopen_payment_chargeback_arbitration_reopen_fails_new(_C) ->
-    %%reopen_payment_chargeback_arbitration_reopen_fails(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+reopen_payment_chargeback_arbitration_reopen_fails_new(C) ->
+    reopen_payment_chargeback_arbitration_reopen_fails(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_arbitration_reopen_fails(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4518,14 +4522,16 @@ start_chargeback_partial_capture(C, Cost, Partial, CBParams, PmtSys) ->
 
 %% CHARGEBACKS
 
+%%=============================================================================
+%% refunds group
+
 -spec invalid_refund_party_status(config()) -> _ | no_return().
 invalid_refund_party_status(C) ->
     invalid_refund_party_status(C, visa).
 
 -spec invalid_refund_party_status_new(config()) -> _ | no_return().
-invalid_refund_party_status_new(_C) ->
-    %%invalid_refund_party_status(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+invalid_refund_party_status_new(C) ->
+    invalid_refund_party_status(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_refund_party_status(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4549,9 +4555,8 @@ invalid_refund_shop_status(C) ->
     invalid_refund_shop_status(C, visa).
 
 -spec invalid_refund_shop_status_new(config()) -> _ | no_return().
-invalid_refund_shop_status_new(_C) ->
-    %%invalid_refund_shop_status(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+invalid_refund_shop_status_new(C) ->
+    invalid_refund_shop_status(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_refund_shop_status(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4576,9 +4581,8 @@ payment_refund_idempotency(C) ->
     payment_refund_idempotency(C, visa).
 
 -spec payment_refund_idempotency_new(config()) -> _ | no_return().
-payment_refund_idempotency_new(_C) ->
-    %%payment_refund_idempotency(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_refund_idempotency_new(C) ->
+    payment_refund_idempotency(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_idempotency(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4625,9 +4629,9 @@ payment_refund_success(C) ->
     payment_refund_success(C, visa).
 
 -spec payment_refund_success_new(config()) -> _ | no_return().
-payment_refund_success_new(_C) ->
-    %%payment_refund_success(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_refund_success_new(C) ->
+    _ = timer:sleep(500),
+    payment_refund_success(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_success(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4680,6 +4684,7 @@ payment_refund_failure(C) ->
 
 -spec payment_refund_failure_new(config()) -> _ | no_return().
 payment_refund_failure_new(C) ->
+    _ = timer:sleep(500),
     payment_refund_failure(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_failure(C, PmtSys) ->
@@ -4740,9 +4745,8 @@ deadline_doesnt_affect_payment_refund(C) ->
     deadline_doesnt_affect_payment_refund(C, visa).
 
 -spec deadline_doesnt_affect_payment_refund_new(config()) -> _ | no_return().
-deadline_doesnt_affect_payment_refund_new(_C) ->
-    %%deadline_doesnt_affect_payment_refund(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+deadline_doesnt_affect_payment_refund_new(C) ->
+    deadline_doesnt_affect_payment_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 deadline_doesnt_affect_payment_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4795,9 +4799,9 @@ payment_manual_refund(C) ->
     payment_manual_refund(C, visa).
 
 -spec payment_manual_refund_new(config()) -> _ | no_return().
-payment_manual_refund_new(_C) ->
-    %%payment_manual_refund(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_manual_refund_new(C) ->
+    _ = timer:sleep(500),
+    payment_manual_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_manual_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4867,9 +4871,9 @@ payment_partial_refunds_success(C) ->
     payment_partial_refunds_success(C, visa).
 
 -spec payment_partial_refunds_success_new(config()) -> _ | no_return().
-payment_partial_refunds_success_new(_C) ->
-    %%payment_partial_refunds_success(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_partial_refunds_success_new(C) ->
+    _ = timer:sleep(500),
+    payment_partial_refunds_success(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_partial_refunds_success(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4959,9 +4963,8 @@ invalid_currency_payment_partial_refund(C) ->
     invalid_currency_payment_partial_refund(C, visa).
 
 -spec invalid_currency_payment_partial_refund_new(config()) -> _ | no_return().
-invalid_currency_payment_partial_refund_new(_C) ->
-    %%invalid_currency_payment_partial_refund(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+invalid_currency_payment_partial_refund_new(C) ->
+    invalid_currency_payment_partial_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_currency_payment_partial_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -4985,9 +4988,9 @@ invalid_amount_payment_partial_refund(C) ->
     invalid_amount_payment_partial_refund(C, visa).
 
 -spec invalid_amount_payment_partial_refund_new(config()) -> _ | no_return().
-invalid_amount_payment_partial_refund_new(_C) ->
-    %%invalid_amount_payment_partial_refund(C, <<"visa-ref">>)).
-    {skip, unresolved}.
+invalid_amount_payment_partial_refund_new(C) ->
+    _ = timer:sleep(500),
+    invalid_amount_payment_partial_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_amount_payment_partial_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5037,9 +5040,8 @@ invalid_amount_partial_capture_and_refund(C) ->
     invalid_amount_partial_capture_and_refund(C, visa).
 
 -spec invalid_amount_partial_capture_and_refund_new(config()) -> _ | no_return().
-invalid_amount_partial_capture_and_refund_new(_C) ->
-    %%invalid_amount_partial_capture_and_refund(C, <<"visa-ref">>)).
-    {skip, unresolved}.
+invalid_amount_partial_capture_and_refund_new(C) ->
+    invalid_amount_partial_capture_and_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_amount_partial_capture_and_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5061,9 +5063,8 @@ cant_start_simultaneous_partial_refunds(C) ->
     cant_start_simultaneous_partial_refunds(C, visa).
 
 -spec cant_start_simultaneous_partial_refunds_new(config()) -> _ | no_return().
-cant_start_simultaneous_partial_refunds_new(_C) ->
-    %%cant_start_simultaneous_partial_refunds(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+cant_start_simultaneous_partial_refunds_new(C) ->
+    cant_start_simultaneous_partial_refunds(C, ?pmt_sys(<<"visa-ref">>)).
 
 cant_start_simultaneous_partial_refunds(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5109,9 +5110,8 @@ ineligible_payment_partial_refund(C) ->
     ineligible_payment_partial_refund(C, visa).
 
 -spec ineligible_payment_partial_refund_new(config()) -> _ | no_return().
-ineligible_payment_partial_refund_new(_C) ->
-    %%ineligible_payment_partial_refund(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+ineligible_payment_partial_refund_new(C) ->
+    ineligible_payment_partial_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 ineligible_payment_partial_refund(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5180,9 +5180,9 @@ payment_refund_id_types(C) ->
     payment_refund_id_types(C, visa).
 
 -spec payment_refund_id_types_new(config()) -> _ | no_return().
-payment_refund_id_types_new(_C) ->
-    %%payment_refund_id_types(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_refund_id_types_new(C) ->
+    _ = timer:sleep(500),
+    payment_refund_id_types(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_id_types(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5233,7 +5233,7 @@ payment_refund_id_types(C, PmtSys) ->
     ?assertEqual(<<"m2">>, RefundID2),
     ?assertEqual(<<"3">>, RefundID3).
 
-%%
+%%----------------- refunds group end
 
 -spec payment_hold_cancellation(config()) -> _ | no_return().
 payment_hold_cancellation(C) ->
@@ -5695,9 +5695,8 @@ adhoc_repair_force_removal(C) ->
     adhoc_repair_force_removal(C, visa).
 
 -spec adhoc_repair_force_removal_new(config()) -> _ | no_return().
-adhoc_repair_force_removal_new(_C) ->
-    %%adhoc_repair_force_removal(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+adhoc_repair_force_removal_new(C) ->
+    adhoc_repair_force_removal(C, ?pmt_sys(<<"visa-ref">>)).
 
 adhoc_repair_force_removal(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5770,9 +5769,8 @@ adhoc_repair_force_invalid_transition(C) ->
     adhoc_repair_force_invalid_transition(C, visa).
 
 -spec adhoc_repair_force_invalid_transition_new(config()) -> _ | no_return().
-adhoc_repair_force_invalid_transition_new(_C) ->
-    %%adhoc_repair_force_invalid_transition(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+adhoc_repair_force_invalid_transition_new(C) ->
+    adhoc_repair_force_invalid_transition(C, ?pmt_sys(<<"visa-ref">>)).
 
 adhoc_repair_force_invalid_transition(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5880,9 +5878,8 @@ repair_fail_pre_processing_succeeded(C) ->
     repair_fail_pre_processing_succeeded(C, visa).
 
 -spec repair_fail_pre_processing_succeeded_new(config()) -> test_return().
-repair_fail_pre_processing_succeeded_new(_C) ->
-    %%repair_fail_pre_processing_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+repair_fail_pre_processing_succeeded_new(C) ->
+    repair_fail_pre_processing_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
 
 repair_fail_pre_processing_succeeded(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5914,9 +5911,8 @@ repair_skip_inspector_succeeded(C) ->
     repair_skip_inspector_succeeded(C, visa).
 
 -spec repair_skip_inspector_succeeded_new(config()) -> test_return().
-repair_skip_inspector_succeeded_new(_C) ->
-    %%repair_skip_inspector_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+repair_skip_inspector_succeeded_new(C) ->
+    repair_skip_inspector_succeeded(C, ?pmt_sys(<<"visa-ref">>)).
 
 repair_skip_inspector_succeeded(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5983,9 +5979,8 @@ repair_fail_session_on_pre_processing(C) ->
     repair_fail_session_on_pre_processing(C, visa).
 
 -spec repair_fail_session_on_pre_processing_new(config()) -> test_return().
-repair_fail_session_on_pre_processing_new(_C) ->
-    %%repair_fail_session_on_pre_processing(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+repair_fail_session_on_pre_processing_new(C) ->
+    repair_fail_session_on_pre_processing(C, ?pmt_sys(<<"visa-ref">>)).
 
 repair_fail_session_on_pre_processing(C, PmtSys) ->
     Client = cfg(client, C),
@@ -6021,9 +6016,8 @@ repair_complex_succeeded_first(C) ->
     repair_complex_succeeded_first(C, visa).
 
 -spec repair_complex_succeeded_first_new(config()) -> test_return().
-repair_complex_succeeded_first_new(_C) ->
-    %%repair_complex_succeeded_first(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+repair_complex_succeeded_first_new(C) ->
+    repair_complex_succeeded_first(C, ?pmt_sys(<<"visa-ref">>)).
 
 repair_complex_succeeded_first(C, PmtSys) ->
     Client = cfg(client, C),
@@ -6119,9 +6113,8 @@ repair_fulfill_session_on_pre_processing_failed(C) ->
     repair_fulfill_session_on_pre_processing_failed(C, visa).
 
 -spec repair_fulfill_session_on_pre_processing_failed_new(config()) -> test_return().
-repair_fulfill_session_on_pre_processing_failed_new(_C) ->
-    %%repair_fulfill_session_on_pre_processing_failed(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+repair_fulfill_session_on_pre_processing_failed_new(C) ->
+    repair_fulfill_session_on_pre_processing_failed(C, ?pmt_sys(<<"visa-ref">>)).
 
 repair_fulfill_session_on_pre_processing_failed(C, PmtSys) ->
     Client = cfg(client, C),
@@ -6988,6 +6981,7 @@ payment_customer_risk_score_check(C) ->
 
 -spec payment_customer_risk_score_check_new(config()) -> test_return().
 payment_customer_risk_score_check_new(_C) ->
+    %% here {exception,{payproc_OperationNotPermitted}}
     %%payment_customer_risk_score_check(C, ?pmt_sys(<<"visa-ref">>)).
     {skip, unresolved}.
 
