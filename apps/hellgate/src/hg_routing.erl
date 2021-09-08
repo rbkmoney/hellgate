@@ -11,8 +11,7 @@
 -export([choose_route/1]).
 -export([choose_rated_route/1]).
 
--export([get_payments_terms/2]).
-
+-export([get_payment_terms/3]).
 -export([acceptable_terminal/5]).
 
 -export([marshal/1]).
@@ -42,10 +41,7 @@
 }).
 
 -type route() :: #route{}.
--type terms() ::
-    dmsl_domain_thrift:'PaymentsProvisionTerms'()
-    | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
-    | undefined.
+-type payment_terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type payment_route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool | recurrent_payment.
@@ -177,12 +173,7 @@ set_weight(Weight, Route) ->
     varset(),
     hg_domain:revision()
 ) -> {[route()], reject_context()}.
-gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined} = PayInst, VS, _) ->
-    logger:log(
-        warning,
-        "Payment routing rules is undefined, PaymentInstitution: ~p",
-        [PayInst]
-    ),
+gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
     {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
 gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
     RejectedContext = #{
@@ -542,12 +533,20 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
--spec get_payments_terms(payment_route(), hg_domain:revision()) -> terms().
-get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
-    #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
-    #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    Terms = merge_terms(Terms0, Terms1),
-    Terms#domain_ProvisionTermSet.payments.
+-spec get_payment_terms(route(), hg_varset:varset(), hg_domain:revision()) ->
+    payment_terms() | undefined.
+get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
+    PreparedVS = hg_varset:prepare_varset(VS),
+    {Client, Context} = get_party_client(),
+    {ok, TermsSet} = party_client_thrift:compute_provider_terminal_terms(
+        ProviderRef,
+        TerminalRef,
+        Revision,
+        PreparedVS,
+        Client,
+        Context
+    ),
+    TermsSet#domain_ProvisionTermSet.payments.
 
 -spec acceptable_terminal(
     route_predestination(),
@@ -691,63 +690,6 @@ acceptable_partial_refunds_terms(
         throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
 acceptable_partial_refunds_terms(undefined, _RVS) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
-
-merge_terms(
-    #domain_ProvisionTermSet{
-        payments = PPayments,
-        recurrent_paytools = PRecurrents
-    },
-    #domain_ProvisionTermSet{
-        payments = TPayments,
-        % TODO: Allow to define recurrent terms in terminal
-        recurrent_paytools = _TRecurrents
-    }
-) ->
-    #domain_ProvisionTermSet{
-        payments = merge_payment_terms(PPayments, TPayments),
-        recurrent_paytools = PRecurrents
-    };
-merge_terms(ProviderTerms, TerminalTerms) ->
-    hg_utils:select_defined(TerminalTerms, ProviderTerms).
-
--spec merge_payment_terms(terms(), terms()) -> terms().
-merge_payment_terms(
-    #domain_PaymentsProvisionTerms{
-        currencies = PCurrencies,
-        categories = PCategories,
-        payment_methods = PPaymentMethods,
-        cash_limit = PCashLimit,
-        cash_flow = PCashflow,
-        holds = PHolds,
-        refunds = PRefunds,
-        chargebacks = PChargebacks,
-        risk_coverage = PRiskCoverage
-    },
-    #domain_PaymentsProvisionTerms{
-        currencies = TCurrencies,
-        categories = TCategories,
-        payment_methods = TPaymentMethods,
-        cash_limit = TCashLimit,
-        cash_flow = TCashflow,
-        holds = THolds,
-        refunds = TRefunds,
-        chargebacks = TChargebacks,
-        risk_coverage = TRiskCoverage
-    }
-) ->
-    #domain_PaymentsProvisionTerms{
-        currencies = hg_utils:select_defined(TCurrencies, PCurrencies),
-        categories = hg_utils:select_defined(TCategories, PCategories),
-        payment_methods = hg_utils:select_defined(TPaymentMethods, PPaymentMethods),
-        cash_limit = hg_utils:select_defined(TCashLimit, PCashLimit),
-        cash_flow = hg_utils:select_defined(TCashflow, PCashflow),
-        holds = hg_utils:select_defined(THolds, PHolds),
-        refunds = hg_utils:select_defined(TRefunds, PRefunds),
-        chargebacks = hg_utils:select_defined(TChargebacks, PChargebacks),
-        risk_coverage = hg_utils:select_defined(TRiskCoverage, PRiskCoverage)
-    };
-merge_payment_terms(ProviderTerms, TerminalTerms) ->
-    hg_utils:select_defined(TerminalTerms, ProviderTerms).
 
 %%
 

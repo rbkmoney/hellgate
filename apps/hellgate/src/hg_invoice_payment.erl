@@ -465,21 +465,6 @@ get_merchant_terms(Party, Shop, DomainRevision, Timestamp, VS) ->
     ),
     Terms.
 
--spec get_provider_terminal_terms(route(), hg_varset:varset(), hg_domain:revision()) ->
-    dmsl_domain_thrift:'PaymentsProvisionTerms'() | undefined.
-get_provider_terminal_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
-    PreparedVS = hg_varset:prepare_varset(VS),
-    {Client, Context} = get_party_client(),
-    {ok, TermsSet} = party_client_thrift:compute_provider_terminal_terms(
-        ProviderRef,
-        TerminalRef,
-        Revision,
-        PreparedVS,
-        Client,
-        Context
-    ),
-    TermsSet#domain_ProvisionTermSet.payments.
-
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
 assert_contract_active(#domain_Contract{status = Status}) ->
@@ -1027,7 +1012,7 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ok = validate_merchant_hold_terms(MerchantTerms),
     Route = get_route(St),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     ok = validate_provider_holds_terms(ProviderTerms),
     FinalCashflow = calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
@@ -1209,7 +1194,7 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt, VS)),
     ok = validate_refund(MerchantTerms, Refund, Payment),
-    ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderPaymentsTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
@@ -1557,7 +1542,7 @@ get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
 ) -> cash_flow().
 calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts).
 
 -spec calculate_cashflow(
@@ -1913,7 +1898,7 @@ process_cash_flow_building(Action, St) ->
     VS = get_varset(St, #{}),
     CreatedAt = get_payment_created_at(Payment),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     _ = rollback_unused_payment_limits(St),
     _Clock = hg_accounting:hold(
@@ -2531,7 +2516,7 @@ get_provider_terms(St, Revision) ->
     Payment = get_payment(St),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    get_provider_terminal_terms(Route, VS1, Revision).
+    hg_routing:get_payment_terms(Route, VS1, Revision).
 
 filter_limit_overflow_routes(Routes, VS, St) ->
     ok = hold_limit_routes(Routes, VS, St),
@@ -2548,7 +2533,7 @@ get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
     lists:foldl(
         fun(Route, {RoutesNoOverflowIn, RejectedIn}) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
-            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
+            ProviderTerms = hg_routing:get_payment_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
                 {ok, _} ->
@@ -2569,7 +2554,7 @@ hold_limit_routes(Routes, VS, St) ->
     lists:foreach(
         fun(Route) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
-            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
+            ProviderTerms = hg_routing:get_payment_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             ok = hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment)
         end,
@@ -2581,7 +2566,7 @@ rollback_payment_limits(Routes, St) ->
     VS = get_varset(St, #{}),
     lists:foreach(
         fun(Route) ->
-            ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+            ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             ok = hg_limiter:rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment)
         end,
