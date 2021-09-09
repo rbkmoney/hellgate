@@ -160,8 +160,7 @@
     cash_flow :: undefined | final_cash_flow(),
     sessions = [] :: [session()],
     transaction_info :: undefined | trx_info(),
-    failure :: undefined | failure(),
-    allocation :: undefined | hg_allocation:allocation()
+    failure :: undefined | failure()
 }).
 
 -type chargeback_state() :: hg_invoice_payment_chargeback:state().
@@ -2949,11 +2948,10 @@ merge_change(Change = ?route_changed(Route), St, Opts) ->
     };
 merge_change(Change = ?payment_capture_started(Data), #st{} = St, Opts) ->
     _ = validate_transition([{payment, S} || S <- [flow_waiting]], Change, St, Opts),
-    ?payment_capture_started(_, _, _, Allocation) = Change,
     St#st{
         capture_data = Data,
         activity = {payment, processing_capture},
-        allocation = Allocation
+        allocation = Data#payproc_InvoicePaymentCaptureData.allocation
     };
 merge_change(Change = ?cash_flow_changed(CashFlow), #st{activity = Activity} = St0, Opts) ->
     _ = validate_transition(
@@ -3218,8 +3216,7 @@ merge_chargeback_change(Change, ChargebackState) ->
     hg_invoice_payment_chargeback:merge_change(Change, ChargebackState).
 
 merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
-    #domain_InvoicePaymentRefund{allocation = Allocation} = Refund,
-    #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo, allocation = Allocation};
+    #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo};
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
     set_refund(set_refund_status(Status, get_refund(RefundSt)), RefundSt);
 merge_refund_change(?refund_rollback_started(Failure), RefundSt) ->
@@ -3334,9 +3331,8 @@ try_get_chargeback_state(ID, #st{chargebacks = CBs}) ->
 
 set_refund_state(ID, RefundSt, St) ->
     #st{refunds = Rs} = St,
-    RefundAllocation = get_refund_allocation(RefundSt),
     Allocation = get_allocation(St),
-    #domain_InvoicePaymentRefund{cash = RefundCash} = get_refund(RefundSt),
+    #domain_InvoicePaymentRefund{cash = RefundCash, allocation = RefundAllocation} = get_refund(RefundSt),
     RemainingCash = get_remaining_payment_amount(RefundCash, St),
     {ok, FinalAllocation} = hg_allocation:sub(Allocation, RefundAllocation, RemainingCash),
     St#st{refunds = Rs#{ID => RefundSt}, allocation = FinalAllocation}.
@@ -3380,9 +3376,6 @@ set_refund_status(Status, Refund = #domain_InvoicePaymentRefund{}) ->
 
 get_refund_cashflow(#refund_st{cash_flow = CashFlow}) ->
     CashFlow.
-
-get_refund_allocation(#refund_st{allocation = Allocation}) ->
-    Allocation.
 
 define_refund_cash(undefined, St) ->
     get_remaining_payment_balance(St);

@@ -103,7 +103,7 @@ sub_trxs(Transactions0, [], CostLeft0, Acc0) ->
 sub_trxs(Transactions0, [ST | SubTransactions], CostLeft, Acc0) ->
     {Transaction, Transactions1} = take_trx(ST, Transactions0),
     {ResAmount, ResTransaction} = sub_trx(Transaction, ST),
-    Acc1 = [ResTransaction | Acc0],
+    Acc1 = maybe_push_trx(ResTransaction, Acc0),
     sub_trxs(Transactions1, SubTransactions, sub_amount(CostLeft, ResAmount), Acc1).
 
 validate_cost(?cash(CostLeft, _SymCode)) when CostLeft /= 0 ->
@@ -151,7 +151,7 @@ calculate_trxs(Transactions, FeeTarget, Cost) ->
 calculate_trxs([], FeeTarget, CostLeft, FeeAcc, ID, Acc) ->
     AggregatorCost = validate_fee_cost(CostLeft, FeeAcc),
     AggregatorTrx = construct_trx(erlang:integer_to_binary(ID), FeeTarget, AggregatorCost),
-    push_trx_compact(AggregatorTrx, Acc);
+    maybe_push_trx(AggregatorTrx, Acc);
 calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
     ?allocation_trx_prototype(Target, Body, Details) = Head,
     {TransactionBody, TransactionAmount, FeeAmount} = calculate_trxs_body(Body, FeeTarget),
@@ -185,9 +185,9 @@ construct_trx(_ID, _Target, ?cash(Amount, _SymCode), _Details, _Body) when Amoun
 construct_trx(ID, Target, Amount, Details, Body) ->
     ?allocation_trx(ID, Target, Amount, Details, Body).
 
-push_trx_compact(undefined, Transactions) ->
+maybe_push_trx(undefined, Transactions) ->
     Transactions;
-push_trx_compact(Transaction, Transactions) ->
+maybe_push_trx(Transaction, Transactions) ->
     push_trx(Transaction, Transactions).
 
 push_trx(?allocation_trx(_ID0, Target, _Amount0) = Transaction, Transactions) ->
@@ -264,8 +264,8 @@ generic_prototype() ->
         )
     ]).
 
--spec allocation_1_test() -> _.
-allocation_1_test() ->
+-spec calculate_test() -> _.
+calculate_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = generic_prototype(),
     {ok,
@@ -306,8 +306,8 @@ allocation_1_test() ->
             )
         ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
 
--spec allocation_2_test() -> _.
-allocation_2_test() ->
+-spec calculate_without_generating_agg_trx_test() -> _.
+calculate_without_generating_agg_trx_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -348,8 +348,8 @@ allocation_2_test() ->
             )
         ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
--spec allocation_3_test() -> _.
-allocation_3_test() ->
+-spec calculate_cost_mismatch_error_test() -> _.
+calculate_cost_mismatch_error_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -380,8 +380,8 @@ allocation_3_test() ->
     {error, cost_mismatch} =
         calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
--spec allocation_refund_one_transaction_1_test() -> _.
-allocation_refund_one_transaction_1_test() ->
+-spec subtract_one_transaction_1_test() -> _.
+subtract_one_transaction_1_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = generic_prototype(),
     RefundAllocationPrototype = ?allocation_prototype([
@@ -428,8 +428,8 @@ allocation_refund_one_transaction_1_test() ->
         ?cash(60, <<"RUB">>)
     ).
 
--spec allocation_refund_one_transaction_2_test() -> _.
-allocation_refund_one_transaction_2_test() ->
+-spec subtract_one_transaction_2_test() -> _.
+subtract_one_transaction_2_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = generic_prototype(),
     RefundAllocationPrototype = ?allocation_prototype([
@@ -475,8 +475,8 @@ allocation_refund_one_transaction_2_test() ->
         ?cash(70, <<"RUB">>)
     ).
 
--spec allocation_refund_one_transaction_3_test() -> _.
-allocation_refund_one_transaction_3_test() ->
+-spec subtract_one_transaction_3_test() -> _.
+subtract_one_transaction_3_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = generic_prototype(),
     RefundAllocationPrototype = ?allocation_prototype([
@@ -521,8 +521,8 @@ allocation_refund_one_transaction_3_test() ->
         ?cash(70, <<"RUB">>)
     ).
 
--spec allocation_partial_transaction_refund_1_test() -> _.
-allocation_partial_transaction_refund_1_test() ->
+-spec subtract_partial_transaction_test() -> _.
+subtract_partial_transaction_test() ->
     Cart0 = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     Cart1 = ?invoice_cart([
         ?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>)),
@@ -602,8 +602,8 @@ allocation_partial_transaction_refund_1_test() ->
         ?cash(76, <<"RUB">>)
     ).
 
--spec allocation_partial_transaction_refund_1_continue_test() -> _.
-allocation_partial_transaction_refund_1_continue_test() ->
+-spec consecutive_subtract_of_partial_transaction_test() -> _.
+consecutive_subtract_of_partial_transaction_test() ->
     Cart0 = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     Cart1 = ?invoice_cart([
         ?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>)),
