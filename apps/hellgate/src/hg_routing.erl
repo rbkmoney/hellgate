@@ -7,12 +7,9 @@
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
 -export([gather_routes/4]).
--export([gather_fail_rates/1]).
 -export([choose_route/1]).
 -export([choose_rated_route/1]).
-
 -export([get_payment_terms/3]).
--export([acceptable_terminal/5]).
 
 -export([marshal/1]).
 -export([unmarshal/1]).
@@ -24,6 +21,12 @@
 -export([to_payment_route/1]).
 -export([provider_ref/1]).
 -export([terminal_ref/1]).
+
+-export([varset/1]).
+-export([rejected_routes/1]).
+
+%% Using in ct
+-export([gather_fail_rates/1]).
 %%
 
 -include("domain.hrl").
@@ -50,11 +53,10 @@
 
 -type reject_context() :: #{
     varset := varset(),
-    rejected_providers := list(rejected_provider()),
     rejected_routes := list(rejected_route())
 }.
 
--type rejected_provider() :: {provider_ref(), Reason :: term()}.
+% -type rejected_provider() :: {provider_ref(), Reason :: term()}.
 -type rejected_route() :: {provider_ref(), terminal_ref(), Reason :: term()}.
 
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
@@ -92,20 +94,8 @@
     reject_reason => atom()
 }.
 
--type varset() :: #{
-    category => dmsl_domain_thrift:'CategoryRef'(),
-    currency => dmsl_domain_thrift:'CurrencyRef'(),
-    cost => dmsl_domain_thrift:'Cash'(),
-    payment_tool => dmsl_domain_thrift:'PaymentTool'(),
-    party_id => dmsl_domain_thrift:'PartyID'(),
-    shop_id => dmsl_domain_thrift:'ShopID'(),
-    risk_score => dmsl_domain_thrift:'RiskScore'(),
-    flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
-    payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
-    wallet_id => dmsl_domain_thrift:'WalletID'(),
-    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
-    p2p_tool => dmsl_domain_thrift:'P2PTool'()
-}.
+-type varset() :: hg_varset:varset().
+-type revision() :: revision().
 
 -record(route_scores, {
     availability_condition :: condition_score(),
@@ -165,20 +155,29 @@ to_payment_route(#route{} = Route) ->
 set_weight(Weight, Route) ->
     Route#route{weight = Weight}.
 
+%% RejectContext accessors
+
+-spec varset(reject_context()) -> varset().
+varset(#{varset := VS}) ->
+    VS.
+
+-spec rejected_routes(reject_context()) -> [rejected_route()].
+rejected_routes(#{rejected_routes := Routes}) ->
+    Routes.
+
 %%
 
 -spec gather_routes(
     route_predestination(),
     payment_institution(),
     varset(),
-    hg_domain:revision()
+    revision()
 ) -> {[route()], reject_context()}.
 gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
-    {[], #{varset => VS, rejected_providers => [], rejected_routes => []}};
+    {[], #{varset => VS, rejected_routes => []}};
 gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
     RejectedContext = #{
         varset => VS,
-        rejected_providers => [],
         rejected_routes => []
     },
     #domain_RoutingRules{
@@ -193,9 +192,11 @@ gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules =
         ),
         {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}
     catch
-        error:{misconfiguration, Reason} ->
+        throw:{misconfiguration, Reason} ->
+            %  TODO[refact]: Where is used it(error field),
             {[], RejectedContext#{error => Reason}}
     end.
+
 get_table_prohibitions(Prohibitions, VS, Revision) ->
     RuleSetDeny = compute_rule_set(Prohibitions, VS, Revision),
     lists:foldr(
@@ -214,7 +215,7 @@ get_candidates(RoutingRule, VS, Revision) ->
 get_decisions_candidates(#domain_RoutingRuleset{decisions = Decisions}) ->
     case Decisions of
         {delegates, _Delegates} ->
-            error({misconfiguration, {'PaymentRoutingDecisions couldn\'t be reduced to candidates', Decisions}});
+            throw({misconfiguration, {'PaymentRoutingDecisions couldn\'t be reduced to candidates', Decisions}});
         {candidates, Candidates} ->
             ok = validate_decisions_candidates(Candidates),
             Candidates
@@ -225,7 +226,7 @@ validate_decisions_candidates([]) ->
 validate_decisions_candidates([#domain_RoutingCandidate{allowed = {constant, true}} | Rest]) ->
     validate_decisions_candidates(Rest);
 validate_decisions_candidates([Candidate | _]) ->
-    error({misconfiguration, {'PaymentRoutingCandidate couldn\'t be reduced', Candidate}}).
+    throw({misconfiguration, {'PaymentRoutingCandidate couldn\'t be reduced', Candidate}}).
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
     lists:foldr(
@@ -241,7 +242,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
                 provider_ref = ProviderRef
             } = hg_domain:get(Revision, {terminal, TerminalRef}),
             try
-                {_, _Terminal} = acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
+                ok = check_acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
                 Route = new(ProviderRef, TerminalRef, Weight, Priority),
                 {[Route | Accepted], Rejected}
             catch
@@ -346,7 +347,7 @@ get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
         reject_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
--spec get_logger_metadata(route_choice_meta(), hg_domain:revision()) -> LoggerFormattedMetadata :: map().
+-spec get_logger_metadata(route_choice_meta(), revision()) -> LoggerFormattedMetadata :: map().
 get_logger_metadata(RouteChoiceMeta, Revision) ->
     #{route_choice_metadata => format_logger_metadata(RouteChoiceMeta, Revision)}.
 
@@ -533,7 +534,7 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
--spec get_payment_terms(route(), hg_varset:varset(), hg_domain:revision()) ->
+-spec get_payment_terms(route(), varset(), revision()) ->
     payment_terms() | undefined.
 get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
     PreparedVS = hg_varset:prepare_varset(VS),
@@ -548,14 +549,14 @@ get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
     ),
     TermsSet#domain_ProvisionTermSet.payments.
 
--spec acceptable_terminal(
+-spec check_acceptable_terminal(
     route_predestination(),
     provider_ref(),
     terminal_ref(),
     varset(),
-    hg_domain:revision()
-) -> unweighted_terminal() | no_return().
-acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
+    revision()
+) -> ok | no_return().
+check_acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
     Result = party_client_thrift:compute_provider_terminal_terms(
         ProviderRef,
@@ -573,7 +574,7 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
                 undefined
         end,
     _ = check_terms_acceptability(Predestination, ProvisionTermSet, VS),
-    {TerminalRef, hg_domain:get(Revision, {terminal, TerminalRef})}.
+    ok.
 
 %%
 

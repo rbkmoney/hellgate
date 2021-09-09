@@ -795,15 +795,10 @@ log_route_choice_meta(ChoiceMeta, Revision) ->
     _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)).
 
 log_misconfigurations(RejectContext) ->
-    RejectedProviders = maps:get(rejected_providers, RejectContext),
-    RejectedRoutes = maps:get(rejected_routes, RejectContext),
-    Rejects = RejectedProviders ++ RejectedRoutes,
-    _ = lists:foreach(fun maybe_log_misconfiguration/1, Rejects),
+    RejectedRoutes = hg_routing:rejected_routes(RejectContext),
+    _ = lists:foreach(fun maybe_log_misconfiguration/1, RejectedRoutes),
     ok.
 
-maybe_log_misconfiguration({PRef, {'Misconfiguration', Reason}}) ->
-    Text = "The provider with ref ~p has been misconfigured: ~p",
-    _ = logger:warning(Text, [PRef, Reason]);
 maybe_log_misconfiguration({PRef, TRef, {'Misconfiguration', Reason}}) ->
     Text = "The route with provider ref ~p and terminal ref ~p has been misconfigured: ~p",
     _ = logger:warning(Text, [PRef, TRef, Reason]);
@@ -822,14 +817,8 @@ log_reject_context(Level, RejectReason, RejectContext) ->
     ),
     _ = logger:log(
         Level,
-        "No route found, reason = ~p, rejected providers: ~p",
-        [RejectReason, maps:get(rejected_providers, RejectContext)],
-        logger:get_process_metadata()
-    ),
-    _ = logger:log(
-        Level,
         "No route found, reason = ~p, rejected routes: ~p",
-        [RejectReason, maps:get(rejected_routes, RejectContext)],
+        [RejectReason, hg_routing:rejected_routes(RejectContext)],
         logger:get_process_metadata()
     ),
     ok.
