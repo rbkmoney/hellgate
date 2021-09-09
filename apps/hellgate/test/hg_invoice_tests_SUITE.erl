@@ -2080,10 +2080,8 @@ payment_w_customer_success(C) ->
     payment_w_customer_success(C, visa).
 
 -spec payment_w_customer_success_new(config()) -> test_return().
-payment_w_customer_success_new(_C) ->
-    %% here {exception,{payproc_OperationNotPermitted}}
-    %%payment_w_customer_success(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_w_customer_success_new(C) ->
+    payment_w_customer_success(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_w_customer_success(C, PmtSys) ->
     Client = cfg(client, C),
@@ -2103,10 +2101,8 @@ payment_w_another_shop_customer(C) ->
     payment_w_another_shop_customer(C, visa).
 
 -spec payment_w_another_shop_customer_new(config()) -> test_return().
-payment_w_another_shop_customer_new(_C) ->
-    %% here {exception,{payproc_OperationNotPermitted}}
-    %%payment_w_another_shop_customer(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_w_another_shop_customer_new(C) ->
+    payment_w_another_shop_customer(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_w_another_shop_customer(C, PmtSys) ->
     Client = cfg(client, C),
@@ -2131,10 +2127,8 @@ payment_w_another_party_customer(C) ->
     payment_w_another_party_customer(C, visa).
 
 -spec payment_w_another_party_customer_new(config()) -> test_return().
-payment_w_another_party_customer_new(_C) ->
-    %% here {exception,{payproc_OperationNotPermitted}}
-    %%payment_w_another_party_customer(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_w_another_party_customer_new(C) ->
+    payment_w_another_party_customer(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_w_another_party_customer(C, PmtSys) ->
     Client = cfg(client, C),
@@ -2151,10 +2145,8 @@ payment_w_deleted_customer(C) ->
     payment_w_deleted_customer(C, visa).
 
 -spec payment_w_deleted_customer_new(config()) -> test_return().
-payment_w_deleted_customer_new(_C) ->
-    %% here {exception,{payproc_OperationNotPermitted}}
-    %%payment_w_deleted_customer(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_w_deleted_customer_new(C) ->
+    payment_w_deleted_customer(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_w_deleted_customer(C, PmtSys) ->
     Client = cfg(client, C),
@@ -6987,10 +6979,8 @@ payment_customer_risk_score_check(C) ->
     payment_customer_risk_score_check(C, visa).
 
 -spec payment_customer_risk_score_check_new(config()) -> test_return().
-payment_customer_risk_score_check_new(_C) ->
-    %% here {exception,{payproc_OperationNotPermitted}}
-    %%payment_customer_risk_score_check(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_customer_risk_score_check_new(C) ->
+    payment_customer_risk_score_check(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_customer_risk_score_check(C, PmtSys) ->
     Client = cfg(client, C),
@@ -7204,6 +7194,7 @@ construct_domain_fixture() ->
                 {value,
                     ordsets:from_list([
                         ?pmt(bank_card_deprecated, visa),
+                        ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                         ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                         ?pmt(bank_card_deprecated, mastercard)
                     ])}
@@ -8057,6 +8048,7 @@ construct_domain_fixture() ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard)
                                 ])},
@@ -9466,6 +9458,7 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                             {value,
                                 ?ordset([
                                     ?pmt(bank_card_deprecated, visa),
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card, ?bank_card(<<"mastercard-ref">>)),
                                     ?pmt(bank_card_deprecated, mastercard)
                                 ])},
