@@ -886,18 +886,22 @@ init_per_testcase(Name, C) when
     [{original_domain_revision, Revision} | init_per_testcase(C)];
 init_per_testcase(Name, C) when
     Name == rounding_cashflow_volume;
+    Name == rounding_cashflow_volume_new;
     Name == payments_w_bank_card_issuer_conditions;
     Name == payments_w_bank_card_issuer_conditions_new;
     Name == payments_w_bank_conditions;
     Name == payments_w_bank_conditions_new;
     Name == ineligible_payment_partial_refund;
     Name == invalid_permit_partial_capture_in_service;
-    Name == invalid_permit_partial_capture_in_provider
+    Name == invalid_permit_partial_capture_in_provider;
+    Name == invalid_permit_partial_capture_in_provider_new
 ->
     Revision = hg_domain:head(),
     Fixture =
         case Name of
             rounding_cashflow_volume ->
+                get_cashflow_rounding_fixture(Revision);
+            rounding_cashflow_volume_new ->
                 get_cashflow_rounding_fixture(Revision);
             payments_w_bank_card_issuer_conditions ->
                 payments_w_bank_card_issuer_conditions_fixture(Revision);
@@ -912,6 +916,8 @@ init_per_testcase(Name, C) when
             invalid_permit_partial_capture_in_service ->
                 construct_term_set_for_partial_capture_service_permit();
             invalid_permit_partial_capture_in_provider ->
+                construct_term_set_for_partial_capture_provider_permit(Revision);
+            invalid_permit_partial_capture_in_provider_new ->
                 construct_term_set_for_partial_capture_provider_permit(Revision)
         end,
     _ = hg_domain:upsert(Fixture),
@@ -2098,6 +2104,7 @@ payment_w_another_shop_customer(C) ->
 
 -spec payment_w_another_shop_customer_new(config()) -> test_return().
 payment_w_another_shop_customer_new(_C) ->
+    %% here {exception,{payproc_OperationNotPermitted}}
     %%payment_w_another_shop_customer(C, ?pmt_sys(<<"visa-ref">>)).
     {skip, unresolved}.
 
@@ -2125,6 +2132,7 @@ payment_w_another_party_customer(C) ->
 
 -spec payment_w_another_party_customer_new(config()) -> test_return().
 payment_w_another_party_customer_new(_C) ->
+    %% here {exception,{payproc_OperationNotPermitted}}
     %%payment_w_another_party_customer(C, ?pmt_sys(<<"visa-ref">>)).
     {skip, unresolved}.
 
@@ -2144,6 +2152,7 @@ payment_w_deleted_customer(C) ->
 
 -spec payment_w_deleted_customer_new(config()) -> test_return().
 payment_w_deleted_customer_new(_C) ->
+    %% here {exception,{payproc_OperationNotPermitted}}
     %%payment_w_deleted_customer(C, ?pmt_sys(<<"visa-ref">>)).
     {skip, unresolved}.
 
@@ -5520,9 +5529,8 @@ invalid_permit_partial_capture_in_provider(C) ->
     invalid_permit_partial_capture_in_provider(C, visa).
 
 -spec invalid_permit_partial_capture_in_provider_new(config()) -> _ | no_return().
-invalid_permit_partial_capture_in_provider_new(_C) ->
-    %%invalid_permit_partial_capture_in_provider(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+invalid_permit_partial_capture_in_provider_new(C) ->
+    invalid_permit_partial_capture_in_provider(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_permit_partial_capture_in_provider(C, PmtSys) ->
     Client = cfg(client, C),
@@ -5557,9 +5565,8 @@ rounding_cashflow_volume(C) ->
     rounding_cashflow_volume(C, visa).
 
 -spec rounding_cashflow_volume_new(config()) -> _ | no_return().
-rounding_cashflow_volume_new(_C) ->
-    %%rounding_cashflow_volume(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+rounding_cashflow_volume_new(C) ->
+    rounding_cashflow_volume(C, ?pmt_sys(<<"visa-ref">>)).
 
 rounding_cashflow_volume(C, PmtSys) ->
     Client = cfg(client, C),
@@ -8967,6 +8974,7 @@ get_cashflow_rounding_fixture(Revision) ->
                         payment_methods =
                             {value,
                                 ?ordset([
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card_deprecated, visa)
                                 ])},
                         cash_flow =
@@ -9349,6 +9357,7 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                         payment_methods =
                             {value,
                                 ?ordset([
+                                    ?pmt(bank_card, ?bank_card(<<"visa-ref">>)),
                                     ?pmt(bank_card_deprecated, visa)
                                 ])},
                         cash_limit =
@@ -9359,6 +9368,30 @@ construct_term_set_for_partial_capture_provider_permit(Revision) ->
                                 )},
                         cash_flow =
                             {decisions, [
+                                #domain_CashFlowDecision{
+                                    if_ =
+                                        {condition,
+                                            {payment_tool,
+                                                {bank_card, #domain_BankCardCondition{
+                                                    definition =
+                                                        {payment_system, #domain_PaymentSystemCondition{
+                                                            payment_system_is = ?pmt_sys(<<"visa-ref">>)
+                                                        }}
+                                                }}}},
+                                    then_ =
+                                        {value, [
+                                            ?cfpost(
+                                                {provider, settlement},
+                                                {merchant, settlement},
+                                                ?share(1, 1, operation_amount)
+                                            ),
+                                            ?cfpost(
+                                                {system, settlement},
+                                                {provider, settlement},
+                                                ?share(18, 1000, operation_amount)
+                                            )
+                                        ]}
+                                },
                                 #domain_CashFlowDecision{
                                     if_ =
                                         {condition,
