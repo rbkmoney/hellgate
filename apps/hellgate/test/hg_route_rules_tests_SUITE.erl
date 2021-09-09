@@ -294,8 +294,7 @@ empty_candidate_ok(_C) ->
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
     {[], #{
         varset := VS,
-        rejected_routes := [],
-        rejected_providers := []
+        rejected_routes := []
     }} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec ruleset_misconfig(config()) -> test_return().
@@ -310,8 +309,7 @@ ruleset_misconfig(_C) ->
 
     {[], #{
         varset := VS,
-        rejected_routes := [],
-        rejected_providers := []
+        rejected_routes := []
     }} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec routes_selected_for_low_risk_score(config()) -> test_return().

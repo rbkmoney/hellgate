@@ -8,7 +8,6 @@
 
 -export([gather_routes/4]).
 -export([choose_route/1]).
--export([choose_rated_route/1]).
 -export([get_payment_terms/3]).
 
 -export([marshal/1]).
@@ -27,6 +26,7 @@
 
 %% Using in ct
 -export([gather_fail_rates/1]).
+-export([choose_rated_route/1]).
 %%
 
 -include("domain.hrl").
@@ -60,11 +60,9 @@
 -type rejected_route() :: {provider_ref(), terminal_ref(), Reason :: term()}.
 
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
--type terminal() :: dmsl_domain_thrift:'Terminal'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
 -type fd_service_stats() :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
--type unweighted_terminal() :: {terminal_ref(), terminal()}.
 
 -type terminal_priority_rating() :: integer().
 
@@ -87,7 +85,7 @@
 
 -type scored_route() :: {route_scores(), route()}.
 
--type route_choice_meta() :: #{
+-type route_choice_context() :: #{
     chosen_route => route(),
     preferable_route => route(),
     % Contains one of the field names defined in #route_scores{}
@@ -288,19 +286,19 @@ compute_rule_set(RuleSetRef, VS, Revision) ->
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([route()]) -> {route(), route_choice_meta()}.
+-spec choose_route([route()]) -> {route(), route_choice_context()}.
 choose_route(Routes) ->
     FailRatedRoutes = gather_fail_rates(Routes),
     choose_rated_route(FailRatedRoutes).
 
--spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
+-spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_context()}.
 choose_rated_route(FailRatedRoutes) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenScoredRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RouteChoiceMeta = get_route_choice_meta(ChosenScoredRoute, IdealRoute),
+    RouteChoiceContext = get_route_choice_context(ChosenScoredRoute, IdealRoute),
     {_, Route} = ChosenScoredRoute,
-    {Route, RouteChoiceMeta}.
+    {Route, RouteChoiceContext}.
 
 -spec find_best_routes([scored_route()]) -> {Chosen :: scored_route(), Ideal :: scored_route()}.
 find_best_routes([Route]) ->
@@ -336,28 +334,28 @@ set_ideal_score({RouteScores, PT}) ->
         },
         PT}.
 
-get_route_choice_meta({_, SameRoute}, {_, SameRoute}) ->
+get_route_choice_context({_, SameRoute}, {_, SameRoute}) ->
     #{
         chosen_route => SameRoute
     };
-get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
+get_route_choice_context({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
     #{
         chosen_route => ChosenRoute,
         preferable_route => IdealRoute,
         reject_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
--spec get_logger_metadata(route_choice_meta(), revision()) -> LoggerFormattedMetadata :: map().
-get_logger_metadata(RouteChoiceMeta, Revision) ->
-    #{route_choice_metadata => format_logger_metadata(RouteChoiceMeta, Revision)}.
+-spec get_logger_metadata(route_choice_context(), revision()) -> LoggerFormattedMetadata :: map().
+get_logger_metadata(RouteChoiceContext, Revision) ->
+    #{route_choice_metadata => format_logger_metadata(RouteChoiceContext, Revision)}.
 
-format_logger_metadata(RouteChoiceMeta, Revision) ->
+format_logger_metadata(RouteChoiceContext, Revision) ->
     maps:fold(
         fun(K, V, Acc) ->
             Acc ++ format_logger_metadata(K, V, Revision)
         end,
         [],
-        RouteChoiceMeta
+        RouteChoiceContext
     ).
 
 format_logger_metadata(reject_reason, Reason, _) ->

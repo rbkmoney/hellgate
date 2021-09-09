@@ -1855,8 +1855,8 @@ process_routing(Action, St) ->
     end.
 
 handle_gathered_route_result({ok, RoutesNoOverflow}, Routes, Revision) ->
-    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
-    _ = log_route_choice_meta(ChoiceMeta, Revision),
+    {ChoosenRoute, ChoiceContext} = hg_routing:choose_route(RoutesNoOverflow),
+    _ = log_route_choice_meta(ChoiceContext, Revision),
     [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
 handle_gathered_route_result({error, not_found}, Routes, _) ->
     Failure =
