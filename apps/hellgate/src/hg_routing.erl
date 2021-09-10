@@ -542,8 +542,7 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
--spec get_payment_terms(payment_route(), varset(), revision()) ->
-    payment_terms() | undefined.
+-spec get_payment_terms(payment_route(), varset(), revision()) -> payment_terms() | undefined.
 get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
     PreparedVS = hg_varset:prepare_varset(VS),
     {Client, Context} = get_party_client(),
