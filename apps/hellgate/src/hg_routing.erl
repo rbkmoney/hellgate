@@ -16,6 +16,7 @@
 -export([get_logger_metadata/2]).
 
 -export([from_payment_route/1]).
+-export([new/2]).
 -export([new/4]).
 -export([to_payment_route/1]).
 -export([provider_ref/1]).
@@ -31,16 +32,11 @@
 
 -include("domain.hrl").
 
--define(DEFAULT_ROUTE_WEIGHT, 0).
-% Set value like in protocol
-% https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
--define(DEFAULT_ROUTE_PRIORITY, 1000).
-
 -record(route, {
     provider_ref :: dmsl_domain_thrift:'ProviderRef'(),
     terminal_ref :: dmsl_domain_thrift:'TerminalRef'(),
-    weight = ?DEFAULT_ROUTE_WEIGHT :: integer(),
-    priority = ?DEFAULT_ROUTE_PRIORITY :: integer()
+    weight :: integer(),
+    priority :: integer()
 }).
 
 -type route() :: #route{}.
@@ -93,7 +89,7 @@
 }.
 
 -type varset() :: hg_varset:varset().
--type revision() :: revision().
+-type revision() :: hg_domain:revision().
 
 -record(route_scores, {
     availability_condition :: condition_score(),
@@ -113,9 +109,18 @@
 
 %% Route accessors
 
+-spec new(provider_ref(), terminal_ref()) -> route().
+new(ProviderRef, TerminalRef) ->
+    #route{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef,
+        weight = ?DOMAIN_CANDIDATE_WEIGHT,
+        priority = ?DOMAIN_CANDIDATE_PRIORITY
+    }.
+
 -spec new(provider_ref(), terminal_ref(), integer() | undefined, integer()) -> route().
 new(ProviderRef, TerminalRef, undefined, Priority) ->
-    new(ProviderRef, TerminalRef, ?DEFAULT_ROUTE_WEIGHT, Priority);
+    new(ProviderRef, TerminalRef, ?DOMAIN_CANDIDATE_WEIGHT, Priority);
 new(ProviderRef, TerminalRef, Weight, Priority) ->
     #route{
         provider_ref = ProviderRef,
@@ -143,7 +148,12 @@ weight(#route{weight = Weight}) ->
 -spec from_payment_route(payment_route()) -> route().
 from_payment_route(Route) ->
     ?route(ProviderRef, TerminalRef) = Route,
-    #route{provider_ref = ProviderRef, terminal_ref = TerminalRef}.
+    #route{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef,
+        weight = ?DOMAIN_CANDIDATE_WEIGHT,
+        priority = ?DOMAIN_CANDIDATE_PRIORITY
+    }.
 
 -spec to_payment_route(route()) -> payment_route().
 to_payment_route(#route{} = Route) ->
@@ -240,7 +250,7 @@ collect_routes(Predestination, Candidates, VS, Revision) ->
                 provider_ref = ProviderRef
             } = hg_domain:get(Revision, {terminal, TerminalRef}),
             try
-                ok = check_acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
+                true = acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
                 Route = new(ProviderRef, TerminalRef, Weight, Priority),
                 {[Route | Accepted], Rejected}
             catch
@@ -532,7 +542,7 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
--spec get_payment_terms(route(), varset(), revision()) ->
+-spec get_payment_terms(payment_route(), varset(), revision()) ->
     payment_terms() | undefined.
 get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
     PreparedVS = hg_varset:prepare_varset(VS),
@@ -547,14 +557,14 @@ get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
     ),
     TermsSet#domain_ProvisionTermSet.payments.
 
--spec check_acceptable_terminal(
+-spec acceptable_terminal(
     route_predestination(),
     provider_ref(),
     terminal_ref(),
     varset(),
     revision()
-) -> ok | no_return().
-check_acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
+) -> true | no_return().
+acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
     Result = party_client_thrift:compute_provider_terminal_terms(
         ProviderRef,
@@ -564,15 +574,12 @@ check_acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision
         Client,
         Context
     ),
-    ProvisionTermSet =
-        case Result of
-            {ok, Terms} ->
-                Terms;
-            {error, #payproc_ProvisionTermSetUndefined{}} ->
-                undefined
-        end,
-    _ = check_terms_acceptability(Predestination, ProvisionTermSet, VS),
-    ok.
+    case Result of
+        {ok, ProvisionTermSet} ->
+            check_terms_acceptability(Predestination, ProvisionTermSet, VS);
+        {error, #payproc_ProvisionTermSetUndefined{}} ->
+            throw(?rejected({'ProvisionTermSet', undefined}))
+    end.
 
 %%
 
@@ -583,35 +590,13 @@ get_party_client() ->
     {Client, Context}.
 
 check_terms_acceptability(payment, Terms, VS) ->
-    _ = acceptable_provision_payment_terms(Terms, VS);
+    acceptable_payment_terms(Terms#domain_ProvisionTermSet.payments, VS);
 check_terms_acceptability(recurrent_paytool, Terms, VS) ->
-    _ = acceptable_provision_recurrent_terms(Terms, VS);
+    acceptable_recurrent_paytool_terms(Terms#domain_ProvisionTermSet.recurrent_paytools, VS);
 check_terms_acceptability(recurrent_payment, Terms, VS) ->
     % Use provider check combined from recurrent_paytool and payment check
-    _ = acceptable_provision_payment_terms(Terms, VS),
-    _ = acceptable_provision_recurrent_terms(Terms, VS).
-
-acceptable_provision_payment_terms(
-    #domain_ProvisionTermSet{
-        payments = PaymentTerms
-    },
-    VS
-) ->
-    _ = acceptable_payment_terms(PaymentTerms, VS),
-    true;
-acceptable_provision_payment_terms(undefined, _VS) ->
-    throw(?rejected({'ProvisionTermSet', undefined})).
-
-acceptable_provision_recurrent_terms(
-    #domain_ProvisionTermSet{
-        recurrent_paytools = RecurrentTerms
-    },
-    VS
-) ->
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS),
-    true;
-acceptable_provision_recurrent_terms(undefined, _VS) ->
-    throw(?rejected({'ProvisionTermSet', undefined})).
+    _ = acceptable_payment_terms(Terms#domain_ProvisionTermSet.payments, VS),
+    acceptable_recurrent_paytool_terms(Terms#domain_ProvisionTermSet.recurrent_paytools, VS).
 
 acceptable_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -834,33 +819,33 @@ record_comparsion_test() ->
 balance_routes_test() ->
     Status = {{alive, 0.0}, {normal, 0.0}},
     WithWeight = [
-        {new(?prv(1), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 2, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 2, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
 
     Result1 = [
-        {new(?prv(1), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     Result2 = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     Result3 = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     [
         ?assertEqual(Result1, lists:reverse(calc_random_condition(0.0, 0.2, WithWeight, []))),
@@ -872,12 +857,12 @@ balance_routes_test() ->
 balance_routes_with_default_weight_test() ->
     Status = {{alive, 0.0}, {normal, 0.0}},
     Routes = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     Result = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     [
         ?assertEqual(Result, set_routes_random_condition(Routes))
