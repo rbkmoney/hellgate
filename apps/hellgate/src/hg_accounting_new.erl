@@ -152,7 +152,7 @@ plan(PlanID, Batches, Timestamp, Clock) ->
 hold(PlanID, Batch, Timestamp) ->
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock()) -> clock().
+-spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) -> clock().
 hold(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('Hold', construct_plan_change(PlanID, Batches, Timestamp), AccounterClock).
@@ -161,7 +161,7 @@ hold(PlanID, Batches, Timestamp, Clock) ->
 commit(PlanID, Batches, Timestamp) ->
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp)).
 
--spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+-spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) -> clock().
 commit(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
@@ -170,7 +170,7 @@ commit(PlanID, Batches, Timestamp, Clock) ->
 rollback(PlanID, Batches, Timestamp) ->
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp)).
 
--spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+-spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) -> clock().
 rollback(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
