@@ -494,7 +494,7 @@ groups() ->
             status_adjustment_of_partial_refunded_payment
         ]},
 
-        {chargebacks, [parallel], [
+        {chargebacks, [], [
             create_chargeback_not_allowed,
             create_chargeback_not_allowed_new,
             create_chargeback_inconsistent,
