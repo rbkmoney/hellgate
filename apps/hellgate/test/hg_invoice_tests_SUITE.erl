@@ -3099,12 +3099,10 @@ create_chargeback_not_allowed(C, PmtSys) ->
 
 -spec create_chargeback_inconsistent(config()) -> _ | no_return().
 create_chargeback_inconsistent(C) ->
-    _ = timer:sleep(500),
     create_chargeback_inconsistent(C, visa).
 
 -spec create_chargeback_inconsistent_new(config()) -> _ | no_return().
 create_chargeback_inconsistent_new(C) ->
-    _ = timer:sleep(500),
     create_chargeback_inconsistent(C, ?pmt_sys(<<"visa-ref">>)).
 
 create_chargeback_inconsistent(C, PmtSys) ->
@@ -3531,12 +3529,10 @@ accept_payment_chargeback_inconsistent(C, PmtSys) ->
 
 -spec accept_payment_chargeback_exceeded(config()) -> _ | no_return().
 accept_payment_chargeback_exceeded(C) ->
-    _ = timer:sleep(500),
     accept_payment_chargeback_exceeded(C, visa).
 
 -spec accept_payment_chargeback_exceeded_new(config()) -> _ | no_return().
 accept_payment_chargeback_exceeded_new(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_exceeded(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_exceeded(C, PmtSys) ->
@@ -3571,12 +3567,10 @@ accept_payment_chargeback_exceeded(C, PmtSys) ->
 
 -spec accept_payment_chargeback_empty_params(config()) -> _ | no_return().
 accept_payment_chargeback_empty_params(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_empty_params(C, visa).
 
 -spec accept_payment_chargeback_empty_params_new(config()) -> _ | no_return().
 accept_payment_chargeback_empty_params_new(C) ->
-    _ = timer:sleep(500),
     accept_payment_chargeback_empty_params(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_empty_params(C, PmtSys) ->
@@ -3613,12 +3607,10 @@ accept_payment_chargeback_empty_params(C, PmtSys) ->
 
 -spec accept_payment_chargeback_twice(config()) -> _ | no_return().
 accept_payment_chargeback_twice(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_twice(C, visa).
 
 -spec accept_payment_chargeback_twice_new(config()) -> _ | no_return().
 accept_payment_chargeback_twice_new(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_twice(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_twice(C, PmtSys) ->
@@ -3680,12 +3672,10 @@ accept_payment_chargeback_twice(C, PmtSys) ->
 
 -spec accept_payment_chargeback_new_body(config()) -> _ | no_return().
 accept_payment_chargeback_new_body(C) ->
-    _ = timer:sleep(500),
     accept_payment_chargeback_new_body(C, visa).
 
 -spec accept_payment_chargeback_new_body_new(config()) -> _ | no_return().
 accept_payment_chargeback_new_body_new(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_new_body(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_new_body(C, PmtSys) ->
@@ -3726,12 +3716,10 @@ accept_payment_chargeback_new_body(C, PmtSys) ->
 
 -spec accept_payment_chargeback_new_levy(config()) -> _ | no_return().
 accept_payment_chargeback_new_levy(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_new_levy(C, visa).
 
 -spec accept_payment_chargeback_new_levy_new(config()) -> _ | no_return().
 accept_payment_chargeback_new_levy_new(C) ->
-    _ = timer:sleep(600),
     accept_payment_chargeback_new_levy(C, ?pmt_sys(<<"visa-ref">>)).
 
 accept_payment_chargeback_new_levy(C, PmtSys) ->
@@ -3773,12 +3761,10 @@ accept_payment_chargeback_new_levy(C, PmtSys) ->
 
 -spec reopen_accepted_payment_chargeback_fails(config()) -> _ | no_return().
 reopen_accepted_payment_chargeback_fails(C) ->
-    _ = timer:sleep(600),
     reopen_accepted_payment_chargeback_fails(C, visa).
 
 -spec reopen_accepted_payment_chargeback_fails_new(config()) -> _ | no_return().
 reopen_accepted_payment_chargeback_fails_new(C) ->
-    _ = timer:sleep(600),
     reopen_accepted_payment_chargeback_fails(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_accepted_payment_chargeback_fails(C, PmtSys) ->
@@ -3810,7 +3796,6 @@ reopen_accepted_payment_chargeback_fails(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_inconsistent(config()) -> _ | no_return().
 reopen_payment_chargeback_inconsistent(C) ->
-    _ = timer:sleep(500),
     reopen_payment_chargeback_inconsistent(C, visa).
 
 -spec reopen_payment_chargeback_inconsistent_new(config()) -> _ | no_return().
@@ -3888,7 +3873,6 @@ reopen_payment_chargeback_exceeded(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_cancel(config()) -> _ | no_return().
 reopen_payment_chargeback_cancel(C) ->
-    _ = timer:sleep(600),
     reopen_payment_chargeback_cancel(C, visa).
 
 -spec reopen_payment_chargeback_cancel_new(config()) -> _ | no_return().
@@ -3967,7 +3951,6 @@ reopen_payment_chargeback_reject(C) ->
 
 -spec reopen_payment_chargeback_reject_new(config()) -> _ | no_return().
 reopen_payment_chargeback_reject_new(C) ->
-    _ = timer:sleep(500),
     reopen_payment_chargeback_reject(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_reject(C, PmtSys) ->
@@ -4042,7 +4025,6 @@ reopen_payment_chargeback_accept(C) ->
 
 -spec reopen_payment_chargeback_accept_new(config()) -> _ | no_return().
 reopen_payment_chargeback_accept_new(C) ->
-    _ = timer:sleep(500),
     reopen_payment_chargeback_accept(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_accept(C, PmtSys) ->
@@ -4115,7 +4097,6 @@ reopen_payment_chargeback_skip_stage_accept(C) ->
 
 -spec reopen_payment_chargeback_skip_stage_accept_new(config()) -> _ | no_return().
 reopen_payment_chargeback_skip_stage_accept_new(C) ->
-    _ = timer:sleep(500),
     reopen_payment_chargeback_skip_stage_accept(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_skip_stage_accept(C, PmtSys) ->
@@ -4185,7 +4166,6 @@ reopen_payment_chargeback_skip_stage_accept(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_accept_new_levy(config()) -> _ | no_return().
 reopen_payment_chargeback_accept_new_levy(C) ->
-    _ = timer:sleep(600),
     reopen_payment_chargeback_accept_new_levy(C, visa).
 
 -spec reopen_payment_chargeback_accept_new_levy_new(config()) -> _ | no_return().
@@ -4265,12 +4245,10 @@ reopen_payment_chargeback_accept_new_levy(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_arbitration(config()) -> _ | no_return().
 reopen_payment_chargeback_arbitration(C) ->
-    _ = timer:sleep(500),
     reopen_payment_chargeback_arbitration(C, visa).
 
 -spec reopen_payment_chargeback_arbitration_new(config()) -> _ | no_return().
 reopen_payment_chargeback_arbitration_new(C) ->
-    _ = timer:sleep(500),
     reopen_payment_chargeback_arbitration(C, ?pmt_sys(<<"visa-ref">>)).
 
 reopen_payment_chargeback_arbitration(C, PmtSys) ->
@@ -4371,7 +4349,6 @@ reopen_payment_chargeback_arbitration(C, PmtSys) ->
 
 -spec reopen_payment_chargeback_arbitration_reopen_fails(config()) -> _ | no_return().
 reopen_payment_chargeback_arbitration_reopen_fails(C) ->
-    _ = timer:sleep(600),
     reopen_payment_chargeback_arbitration_reopen_fails(C, visa).
 
 -spec reopen_payment_chargeback_arbitration_reopen_fails_new(config()) -> _ | no_return().
