@@ -155,7 +155,13 @@ calculate_trxs([], FeeTarget, CostLeft, FeeAcc, ID, Acc) ->
 calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
     ?allocation_trx_prototype(Target, Body, Details) = Head,
     {TransactionBody, TransactionAmount, FeeAmount} = calculate_trxs_body(Body, FeeTarget),
-    Transaction = construct_positive_trx(erlang:integer_to_binary(ID0), Target, TransactionAmount, Details, TransactionBody),
+    Transaction = construct_positive_trx(
+        erlang:integer_to_binary(ID0),
+        Target,
+        TransactionAmount,
+        Details,
+        TransactionBody
+    ),
     Acc1 = push_trx(Transaction, Acc0),
     ID1 = ID0 + 1,
     calculate_trxs(

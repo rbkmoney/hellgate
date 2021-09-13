@@ -15,6 +15,7 @@
 -type account_map() :: #{account() => account_id()}.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
+-type cash_flow_w_context() :: [{cash_flow_posting(), posting_context()}].
 -type cash_flow_posting() :: dmsl_domain_thrift:'CashFlowPosting'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
@@ -27,7 +28,9 @@
 -type posting_context() :: #{
     shop := shop(),
     party := party(),
-    route := route()
+    route := route(),
+    operation_amount => cash(),
+    account_map => account_map()
 }.
 
 %%
@@ -35,6 +38,7 @@
 -export([finalize/3]).
 -export([revert/1]).
 -export([add_cashflow_posting_context/4]).
+-export([add_cashflow_posting_context/6]).
 
 -export([compute_volume/2]).
 
@@ -59,27 +63,28 @@
     details = Details
 }).
 
--spec finalize(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+-spec finalize(cash_flow_w_context(), context(), account_map()) -> final_cash_flow() | no_return().
 finalize(CF, Context, AccountMap) ->
     compute_postings(CF, Context, AccountMap).
 
--spec compute_postings(cash_flow(), context(), account_map()) -> final_cash_flow() | no_return().
+-spec compute_postings(cash_flow_w_context(), context(), account_map()) -> final_cash_flow() | no_return().
 compute_postings(CF, Context, AccountMap) ->
     [
         ?final_posting(
             construct_final_account(Source, AccountMap, PostingContext),
             construct_final_account(Destination, AccountMap, PostingContext),
-            compute_volume(Volume, Context),
+            compute_volume(Volume, maps:merge(Context, PostingContext)),
             Details
         )
         || {?posting(Source, Destination, Volume, Details), PostingContext} <- CF
     ].
 
 -spec construct_final_account(account(), account_map(), posting_context()) -> final_cash_flow_account() | no_return().
-construct_final_account(AccountType, AccountMap, PostingContext) ->
+construct_final_account(AccountType, AccountMap0, PostingContext) ->
+    AccountMap1 = maps:get(account_map, PostingContext, AccountMap0),
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
-        account_id = resolve_account(AccountType, AccountMap),
+        account_id = resolve_account(AccountType, AccountMap1),
         transaction_account = construct_transaction_account(AccountType, PostingContext)
     }.
 
@@ -146,6 +151,18 @@ add_cashflow_posting_context(CashFlow, Party, Shop, Route) ->
         party => Party,
         shop => Shop,
         route => Route
+    },
+    lists:map(fun(A) -> {A, Context} end, CashFlow).
+
+-spec add_cashflow_posting_context(cash_flow(), party(), shop(), route(), cash(), account_map()) ->
+    [{cash_flow_posting(), posting_context()}].
+add_cashflow_posting_context(CashFlow, Party, Shop, Route, Amount, AccountMap) ->
+    Context = #{
+        party => Party,
+        shop => Shop,
+        route => Route,
+        operation_amount => Amount,
+        account_map => AccountMap
     },
     lists:map(fun(A) -> {A, Context} end, CashFlow).
 
