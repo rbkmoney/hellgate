@@ -871,6 +871,7 @@ end_per_group(_Group, _C) ->
 -spec init_per_testcase(test_case_name(), config()) -> config().
 init_per_testcase(Name, C) when
     Name == payment_adjustment_success;
+    Name == payment_adjustment_success_new;
     Name == payment_adjustment_refunded_success;
     Name == payment_adjustment_refunded_success_new;
     Name == payment_adjustment_chargeback_success;
@@ -2503,11 +2504,20 @@ payment_adjustment_success(C) ->
     payment_adjustment_success(C, visa).
 
 -spec payment_adjustment_success_new(config()) -> test_return().
-payment_adjustment_success_new(_C) ->
-    %%payment_adjustment_success(C, ?pmt_sys(<<"visa-ref">>)).
-    {skip, unresolved}.
+payment_adjustment_success_new(C) ->
+    payment_adjustment_success(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_adjustment_success(C, PmtSys) ->
+    %% old cf :
+    %% merch - 4500   -> syst
+    %% prov  - 100000 -> merch
+    %% syst  - 2100   -> prov
+    %%
+    %% new cf :
+    %% merch - 4500   -> syst
+    %% prov  - 100000 -> merch
+    %% syst  - 1600   -> prov
+    %% syst  - 20     -> ext
     Client = cfg(client, C),
     InvoiceID = start_invoice(<<"rubberduck">>, make_due_date(10), 100000, C),
     %% start a healthy man's payment
@@ -2530,7 +2540,8 @@ payment_adjustment_success(C, PmtSys) ->
     %% update merchant fees
     {PartyClient, Context} = PartyPair = cfg(party_client, C),
     PartyID = cfg(party_id, C),
-    {ok, Shop} = party_client_thrift:get_shop(PartyID, cfg(shop_id, C), PartyClient, Context),
+    ShopID = hg_ct_helper:create_battle_ready_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyPair),
+    {ok, Shop} = party_client_thrift:get_shop(PartyID, ShopID, PartyClient, Context),
     ok = hg_ct_helper:adjust_contract(PartyID, Shop#domain_Shop.contract_id, ?tmpl(3), PartyPair),
 
     %% make an adjustment
@@ -2564,9 +2575,9 @@ payment_adjustment_success(C, PmtSys) ->
     PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
     SysAccount2 = get_cashflow_account({system, settlement}, CF2),
     MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
-    500 = MrcDiff = maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1),
+    0 = MrcDiff = maps:get(own_amount, MrcAccount2) - maps:get(own_amount, MrcAccount1),
     -500 = PrvDiff = maps:get(own_amount, PrvAccount2) - maps:get(own_amount, PrvAccount1),
-    SysDiff = MrcDiff + PrvDiff - 20,
+    SysDiff = MrcDiff - PrvDiff - 20,
     SysDiff = maps:get(own_amount, SysAccount2) - maps:get(own_amount, SysAccount1).
 
 -spec payment_adjustment_refunded_success(config()) -> test_return().
