@@ -2098,7 +2098,17 @@ process_cash_flow_building(Action, St) ->
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment),
     Allocation = get_allocation(St),
-    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts, Timestamp, Allocation),
+    FinalCashflow = calculate_cashflow(
+        Route,
+        Payment,
+        MerchantTerms,
+        ProviderTerms,
+        VS1,
+        Revision,
+        Opts,
+        Timestamp,
+        Allocation
+    ),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow}
