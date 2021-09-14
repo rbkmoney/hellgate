@@ -28,9 +28,7 @@
 -type posting_context() :: #{
     shop := shop(),
     party := party(),
-    route := route(),
-    operation_amount => cash(),
-    account_map => account_map()
+    route := route()
 }.
 
 %%
@@ -38,7 +36,6 @@
 -export([finalize/3]).
 -export([revert/1]).
 -export([add_cashflow_posting_context/4]).
--export([add_cashflow_posting_context/6]).
 
 -export([compute_volume/2]).
 
@@ -73,18 +70,17 @@ compute_postings(CF, Context, AccountMap) ->
         ?final_posting(
             construct_final_account(Source, AccountMap, PostingContext),
             construct_final_account(Destination, AccountMap, PostingContext),
-            compute_volume(Volume, maps:merge(Context, PostingContext)),
+            compute_volume(Volume, Context),
             Details
         )
         || {?posting(Source, Destination, Volume, Details), PostingContext} <- CF
     ].
 
 -spec construct_final_account(account(), account_map(), posting_context()) -> final_cash_flow_account() | no_return().
-construct_final_account(AccountType, AccountMap0, PostingContext) ->
-    AccountMap1 = maps:get(account_map, PostingContext, AccountMap0),
+construct_final_account(AccountType, AccountMap, PostingContext) ->
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
-        account_id = resolve_account(AccountType, AccountMap1),
+        account_id = resolve_account(AccountType, AccountMap),
         transaction_account = construct_transaction_account(AccountType, PostingContext)
     }.
 
@@ -151,18 +147,6 @@ add_cashflow_posting_context(CashFlow, Party, Shop, Route) ->
         party => Party,
         shop => Shop,
         route => Route
-    },
-    lists:map(fun(A) -> {A, Context} end, CashFlow).
-
--spec add_cashflow_posting_context(cash_flow(), party(), shop(), route(), cash(), account_map()) ->
-    [{cash_flow_posting(), posting_context()}].
-add_cashflow_posting_context(CashFlow, Party, Shop, Route, Amount, AccountMap) ->
-    Context = #{
-        party => Party,
-        shop => Shop,
-        route => Route,
-        operation_amount => Amount,
-        account_map => AccountMap
     },
     lists:map(fun(A) -> {A, Context} end, CashFlow).
 
