@@ -106,47 +106,23 @@ create_account(_CurrencyCode) ->
 
 -spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
-    Map0 = collect_merchant_account_map(Shop, #{}),
-    Map1 = collect_provider_account_map(Payment, Provider, Map0),
-    Map2 = collect_system_account_map(Payment, PaymentInstitution, Revision, Map1),
-    collect_external_account_map(Payment, VS, Revision, Map2).
+    hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision).
 
 -spec collect_merchant_account_map(shop(), map()) -> map().
-collect_merchant_account_map(#domain_Shop{account = MerchantAccount}, Acc) ->
-    Acc#{
-        {merchant, settlement} => MerchantAccount#domain_ShopAccount.settlement,
-        {merchant, guarantee} => MerchantAccount#domain_ShopAccount.guarantee
-    }.
+collect_merchant_account_map(Shop, Acc) ->
+    hg_accounting:collect_merchant_account_map(Shop, Acc).
 
 -spec collect_provider_account_map(payment(), provider(), map()) -> map().
-collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccounts}, Acc) ->
-    Currency = get_currency(get_payment_cost(Payment)),
-    ProviderAccount = hg_payment_institution:choose_provider_account(Currency, ProviderAccounts),
-    Acc#{
-        {provider, settlement} => ProviderAccount#domain_ProviderAccount.settlement
-    }.
+collect_provider_account_map(Payment, Provider, Acc) ->
+    hg_accounting:collect_provider_account_map(Payment, Provider, Acc).
 
 -spec collect_system_account_map(payment(), payment_institution(), revision(), map()) -> map().
 collect_system_account_map(Payment, PaymentInstitution, Revision, Acc) ->
-    Currency = get_currency(get_payment_cost(Payment)),
-    SystemAccount = hg_payment_institution:get_system_account(Currency, Revision, PaymentInstitution),
-    Acc#{
-        {system, settlement} => SystemAccount#domain_SystemAccount.settlement,
-        {system, subagent} => SystemAccount#domain_SystemAccount.subagent
-    }.
+    hg_accounting:collect_system_account_map(Payment, PaymentInstitution, Revision, Acc).
 
 -spec collect_external_account_map(payment(), varset(), revision(), map()) -> map().
 collect_external_account_map(Payment, VS, Revision, Acc) ->
-    Currency = get_currency(get_payment_cost(Payment)),
-    case hg_payment_institution:choose_external_account(Currency, VS, Revision) of
-        #domain_ExternalAccount{income = Income, outcome = Outcome} ->
-            Acc#{
-                {external, income} => Income,
-                {external, outcome} => Outcome
-            };
-        undefined ->
-            Acc
-    end.
+    hg_accounting:collect_external_account_map(Payment, VS, Revision, Acc).
 
 %%
 -spec plan(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
@@ -156,7 +132,7 @@ plan(_PlanID, Batches, _Timestamp) when not is_list(Batches) ->
     error(badarg);
 plan(PlanID, Batches, Timestamp) ->
     lists:foldl(
-        fun(Batch, _) -> hold(PlanID, Batch, Timestamp) end,
+        fun(Batch, ClockAcc) -> hold(PlanID, Batch, Timestamp, ClockAcc) end,
         undefined,
         Batches
     ).
@@ -168,8 +144,8 @@ plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
     error(badarg);
 plan(PlanID, Batches, Timestamp, Clock) ->
     lists:foldl(
-        fun(Batch, _) -> hold(PlanID, Batch, Timestamp, Clock) end,
-        undefined,
+        fun(Batch, ClockAcc) -> hold(PlanID, Batch, Timestamp, ClockAcc) end,
+        Clock,
         Batches
     ).
 
@@ -177,7 +153,7 @@ plan(PlanID, Batches, Timestamp, Clock) ->
 hold(PlanID, Batch, Timestamp) ->
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock()) -> clock().
+-spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) -> clock().
 hold(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('Hold', construct_plan_change(PlanID, Batches, Timestamp), AccounterClock).
@@ -186,7 +162,7 @@ hold(PlanID, Batches, Timestamp, Clock) ->
 commit(PlanID, Batches, Timestamp) ->
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp)).
 
--spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+-spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) -> clock().
 commit(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
@@ -195,7 +171,7 @@ commit(PlanID, Batches, Timestamp, Clock) ->
 rollback(PlanID, Batches, Timestamp) ->
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp)).
 
--spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+-spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) -> clock().
 rollback(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
@@ -208,8 +184,7 @@ do(Op, Plan, PreviousClock) ->
         {ok, Clock} ->
             to_domain_clock(Clock);
         {exception, Exception} ->
-            % FIXME
-            error({accounting, Exception})
+            erlang:throw(Exception)
     end.
 
 construct_plan_change(PlanID, {BatchID, Cashflow}, Timestamp) ->
@@ -292,15 +267,24 @@ construct_balance(
 
 %%
 
+call_accounter(Function, Args) when
+    Function =:= 'CommitPlan';
+    Function =:= 'RollbackPlan';
+    Function =:= 'GetBalanceByID';
+    Function =:= 'GetAccountByID'
+->
+    call_service_with_retry(Function, Args);
 call_accounter(Function, Args) ->
-    %% Really not sure what to best do when we run out of retries
+    call_service(Function, Args).
+
+call_service_with_retry(Function, Args) ->
     hg_retry:call_with_retry(
         fun() ->
-            case hg_woody_wrapper:call(accounter_new, Function, Args) of
+            case call_service(Function, Args) of
                 {ok, _} = Ok ->
                     {return, Ok};
-                {exception, #shumaich_NotReady{}} ->
-                    retry;
+                {exception, #shumaich_NotReady{}} = Exception ->
+                    {retry, Exception};
                 {exception, _} = Exception ->
                     {return, Exception}
             end
@@ -308,11 +292,8 @@ call_accounter(Function, Args) ->
         get_retry_strategy(Function)
     ).
 
-get_payment_cost(#domain_InvoicePayment{cost = Cost}) ->
-    Cost.
-
-get_currency(#domain_Cash{currency = Currency}) ->
-    Currency.
+call_service(Function, Args) ->
+    hg_woody_wrapper:call(accounter_new, Function, Args).
 
 to_domain_clock({latest, #shumaich_LatestClock{}}) ->
     undefined;
