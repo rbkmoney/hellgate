@@ -183,8 +183,7 @@ do(Op, Plan, PreviousClock) ->
         {ok, Clock} ->
             to_domain_clock(Clock);
         {exception, Exception} ->
-            % FIXME
-            error({accounting, Exception})
+            erlang:throw(Exception)
     end.
 
 construct_plan_change(PlanID, {BatchID, Cashflow}, Timestamp) ->
@@ -267,29 +266,33 @@ construct_balance(
 
 %%
 
+call_accounter(Function, Args) when
+    Function =:= 'CommitPlan';
+    Function =:= 'RollbackPlan';
+    Function =:= 'GetBalanceByID';
+    Function =:= 'GetAccountByID'
+->
+    call_service_with_retry(Function, Args);
 call_accounter(Function, Args) ->
-    %% Really not sure what to best do when we run out of retries
-    try
-        call_with_retry(Function, Args)
-    catch
-        throw:{error, no_more_retries} ->
-            error({accounter, not_ready})
-    end.
+    call_service(Function, Args).
 
-call_with_retry(Function, Args) ->
+call_service_with_retry(Function, Args) ->
     hg_retry:call_with_retry(
         fun() ->
-            case hg_woody_wrapper:call(accounter_new, Function, Args) of
+            case call_service(Function, Args) of
                 {ok, _} = Ok ->
                     {return, Ok};
-                {exception, #shumaich_NotReady{}} ->
-                    retry;
+                {exception, #shumaich_NotReady{}} = Exception ->
+                    {retry, Exception};
                 {exception, _} = Exception ->
                     {return, Exception}
             end
         end,
         get_retry_strategy(Function)
     ).
+
+call_service(Function, Args) ->
+    hg_woody_wrapper:call(accounter_new, Function, Args).
 
 to_domain_clock({latest, #shumaich_LatestClock{}}) ->
     undefined;
