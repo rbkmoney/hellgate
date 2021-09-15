@@ -364,7 +364,7 @@ all() ->
 -spec groups() -> [{group_name(), list(), [test_case_name()]}].
 groups() ->
     [
-        {all_non_destructive_tests, [parallel], [
+        {all_non_destructive_tests, [], [
             {group, base_payments},
             % {group, operation_limits_legacy},
             {group, operation_limits},
@@ -401,7 +401,7 @@ groups() ->
             {group, repair_scenarios}
         ]},
 
-        {base_payments, [parallel], [
+        {base_payments, [], [
             invoice_creation_idempotency,
             invalid_invoice_shop,
             invalid_invoice_amount,
@@ -573,7 +573,7 @@ groups() ->
             invalid_refund_party_status_new,
             invalid_refund_shop_status,
             invalid_refund_shop_status_new,
-            {parallel, [parallel], [
+            %%{parallel, [], [
                 retry_temporary_unavailability_refund,
                 retry_temporary_unavailability_refund_new,
                 payment_refund_idempotency,
@@ -591,8 +591,8 @@ groups() ->
                 invalid_currency_payment_partial_refund,
                 invalid_currency_payment_partial_refund_new,
                 cant_start_simultaneous_partial_refunds,
-                cant_start_simultaneous_partial_refunds_new
-            ]},
+                cant_start_simultaneous_partial_refunds_new,
+           %% ]},
             deadline_doesnt_affect_payment_refund,
             deadline_doesnt_affect_payment_refund_new,
             ineligible_payment_partial_refund,
@@ -603,7 +603,7 @@ groups() ->
             payment_refund_id_types_new
         ]},
 
-        {holds_management, [parallel], [
+        {holds_management, [], [
             payment_hold_cancellation,
             payment_hold_cancellation_new,
             payment_hold_double_cancellation,
@@ -641,13 +641,13 @@ groups() ->
             invalid_permit_partial_capture_in_provider_new
         ]},
 
-        {offsite_preauth_payment, [parallel], [
+        {offsite_preauth_payment, [], [
             payment_with_offsite_preauth_success,
             payment_with_offsite_preauth_success_new,
             payment_with_offsite_preauth_failed,
             payment_with_offsite_preauth_failed_new
         ]},
-        {adhoc_repairs, [parallel], [
+        {adhoc_repairs, [], [
             adhoc_repair_working_failed,
             adhoc_repair_working_failed_new,
             adhoc_repair_failed_succeeded,
@@ -659,7 +659,7 @@ groups() ->
             adhoc_repair_force_invalid_transition,
             adhoc_repair_force_invalid_transition_new
         ]},
-        {repair_scenarios, [parallel], [
+        {repair_scenarios, [], [
             repair_fail_pre_processing_succeeded,
             repair_fail_pre_processing_succeeded_new,
             repair_skip_inspector_succeeded,
