@@ -15,8 +15,20 @@
 -type method() :: dmsl_domain_thrift:'PaymentMethodRef'().
 
 -spec has_any_payment_method(t(), ordsets:ordset(method())) -> boolean().
-has_any_payment_method(PaymentTool, SupportedMethods) ->
-    not ordsets:is_disjoint(get_possible_methods(PaymentTool), SupportedMethods).
+has_any_payment_method(PaymentTool, SupportedMethods0) ->
+    SupportedMethods1 = add_default_tokenization_methods(SupportedMethods0),
+    not ordsets:is_disjoint(get_possible_methods(PaymentTool), SupportedMethods1).
+
+-spec add_default_tokenization_methods(ordsets:ordset(method())) -> ordsets:ordset(method()).
+add_default_tokenization_methods(SupportedMethods) ->
+    [add_default_tokenization_method(M) || M <- SupportedMethods].
+
+add_default_tokenization_method(
+    {bank_card, #domain_BankCard{token_provider_deprecated = TP, tokenization_method = undefined} = BC}
+) when TP /= undefined ->
+    {bank_card, BC#domain_BankCard{tokenization_method = dpan}};
+add_default_tokenization_method(SupportedMethod) ->
+    SupportedMethod.
 
 -spec get_possible_methods(t()) -> ordsets:ordset(method()).
 get_possible_methods(
@@ -33,7 +45,8 @@ get_possible_methods(
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PS}},
         create_payment_method_ref(BankCard)
     ]);
-get_possible_methods({bank_card,
+get_possible_methods(
+    {bank_card,
         #domain_BankCard{
             payment_system_deprecated = PaymentSystem,
             token_provider_deprecated = TokenProvider,

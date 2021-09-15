@@ -194,7 +194,7 @@ construct_plan(PlanID, Batches) ->
                 id = BatchID,
                 postings = collect_postings(Cashflow)
             }
-         || {BatchID, Cashflow} <- Batches
+            || {BatchID, Cashflow} <- Batches
         ]
     }.
 
@@ -207,15 +207,15 @@ collect_postings(Cashflow) ->
             currency_sym_code = CurrencyCode,
             description = construct_posting_description(Details)
         }
-     || #domain_FinalCashFlowPosting{
-            source = #domain_FinalCashFlowAccount{account_id = Source},
-            destination = #domain_FinalCashFlowAccount{account_id = Destination},
-            details = Details,
-            volume = #domain_Cash{
-                amount = Amount,
-                currency = #domain_CurrencyRef{symbolic_code = CurrencyCode}
-            }
-        } <- Cashflow
+        || #domain_FinalCashFlowPosting{
+               source = #domain_FinalCashFlowAccount{account_id = Source},
+               destination = #domain_FinalCashFlowAccount{account_id = Destination},
+               details = Details,
+               volume = #domain_Cash{
+                   amount = Amount,
+                   currency = #domain_CurrencyRef{symbolic_code = CurrencyCode}
+               }
+           } <- Cashflow
     ].
 
 construct_posting_description(Details) when is_binary(Details) ->

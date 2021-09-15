@@ -162,7 +162,7 @@ gen_limit_payment_changes(LimitIDs, Route, Invoice, Payment) ->
             id = ID,
             change_id = construct_limit_change_id(ID, Route, Invoice, Payment)
         }
-     || ID <- LimitIDs
+        || ID <- LimitIDs
     ].
 
 gen_limit_refund_changes(LimitIDs, Invoice, Payment, Refund) ->
@@ -171,7 +171,7 @@ gen_limit_refund_changes(LimitIDs, Invoice, Payment, Refund) ->
             id = ID,
             change_id = construct_limit_refund_change_id(ID, Invoice, Payment, Refund)
         }
-     || ID <- LimitIDs
+        || ID <- LimitIDs
     ].
 
 construct_limit_change_id(LimitID, Route, Invoice, Payment) ->
