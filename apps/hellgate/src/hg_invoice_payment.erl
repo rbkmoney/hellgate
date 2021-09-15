@@ -1361,6 +1361,7 @@ make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS, Tim
         Route,
         Allocation,
         Payment,
+        Refund,
         Provider,
         Revision,
         Timestamp,
@@ -1528,6 +1529,7 @@ collect_refund_cashflow(
     Route,
     undefined,
     Payment,
+    Refund,
     Provider,
     Revision,
     Timestamp,
@@ -1535,8 +1537,8 @@ collect_refund_cashflow(
 ) ->
     Party = get_party(Opts),
     Shop = get_shop(Opts),
-    Context = collect_cash_flow_context(Payment),
-    collect_cashflow(
+    Context = collect_cash_flow_context(Refund),
+    collect_refund_cashflow(
         PaymentRefundsProvisionTerms,
         Opts,
         Route,
@@ -1551,6 +1553,7 @@ collect_refund_cashflow(
             )
         ]),
         Payment,
+        Refund,
         Provider,
         Revision,
         Timestamp,
@@ -1562,6 +1565,7 @@ collect_refund_cashflow(
     Route,
     ?allocation(Transactions),
     Payment,
+    Refund,
     Provider,
     Revision,
     Timestamp,
@@ -1604,14 +1608,21 @@ collect_refund_cashflow(
         [],
         Transactions
     ),
-    ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
-    CF0 ++
+    Shop = get_shop(Opts),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
+    PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS0, Revision),
+    ProviderCashflow0 = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
+    ProviderCashflow1 = {
         hg_cashflow:add_cashflow_posting_context(
-            ProviderCashflow,
+            ProviderCashflow0,
             get_party(Opts),
-            get_shop(Opts),
+            Shop,
             Route
-        ).
+        ),
+        collect_cash_flow_context(Refund),
+        hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS0, Revision)
+    },
+    CF0 ++ ProviderCashflow1.
 
 prepare_refund_cashflow(RefundSt, St) ->
     hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
