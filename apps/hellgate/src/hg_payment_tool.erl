@@ -33,6 +33,18 @@ get_possible_methods(
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PS}},
         create_payment_method_ref(BankCard)
     ]);
+get_possible_methods({bank_card,
+        #domain_BankCard{
+            payment_system_deprecated = PaymentSystem,
+            token_provider_deprecated = TokenProvider,
+            tokenization_method = none
+        } = BankCard}
+) when PaymentSystem /= undefined andalso TokenProvider /= undefined ->
+    BankCard1 = BankCard#domain_BankCard{
+        token_provider_deprecated = undefined,
+        tokenization_method = undefined
+    },
+    ordsets:from_list([create_payment_method_ref(BankCard1)]);
 get_possible_methods(
     {bank_card,
         #domain_BankCard{
@@ -50,7 +62,9 @@ get_possible_methods(
                     tokenization_method = TokenizationMethod
                 }}
         },
-        create_payment_method_ref(BankCard)
+        create_payment_method_ref(BankCard#domain_BankCard{
+            tokenization_method = genlib:define(TokenizationMethod, dpan)
+        })
     ]);
 get_possible_methods({bank_card, #domain_BankCard{payment_system = PS} = BankCard}) when PS /= undefined ->
     ordsets:from_list([
