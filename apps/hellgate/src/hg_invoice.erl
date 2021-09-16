@@ -1288,18 +1288,18 @@ make_invoice_params(Params) ->
 
 validate_invoice_params(#payproc_InvoiceParams{cost = Cost, allocation = Allocation}, Shop, MerchantTerms) ->
     ok = validate_invoice_cost(Cost, Shop, MerchantTerms),
-    validate_invoice_allocatable(Allocation, MerchantTerms).
+    validate_invoice_allocatable(Allocation, MerchantTerms, Cost).
 
 validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:validate_cost(Cost, Shop),
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
     ok.
 
-validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}) ->
+validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}, Cost) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
-    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector),
+    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost),
     ok.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->

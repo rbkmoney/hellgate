@@ -7,7 +7,7 @@
 %% API
 -export([calculate/4]).
 -export([sub/3]).
--export([assert_allocatable/2]).
+-export([assert_allocatable/3]).
 
 -export_type([allocation_prototype/0]).
 -export_type([allocation/0]).
@@ -64,16 +64,37 @@ sub(Allocation, SubAllocation, Cost) ->
             {error, Error}
     end.
 
--spec assert_allocatable(allocation_prototype() | undefined, allocation_terms()) -> ok | {error, unallocatable}.
-assert_allocatable(undefined, _AllocationTerms) ->
+-spec assert_allocatable(allocation_prototype() | undefined, allocation_terms(), cash()) -> ok | {error, unallocatable}.
+assert_allocatable(?allocation_prototype(Trxs), #domain_PaymentAllocationServiceTerms{allow = {constant, true}}, Cash) ->
+    try
+        lists:map(
+            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body)) ->
+                Party = hg_party:get_party(PartyID),
+                Shop = hg_party:get_shop(ShopID, Party),
+                Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+                _ = hg_invoice_utils:validate_cost(Cash, Shop),
+                PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+                PaymentInstitutionRef
+            end,
+            Trxs
+        )
+    of
+        PaymentInstitutionRefs0 ->
+            PaymentInstitutionRefs1 = ordsets:from_list(PaymentInstitutionRefs0),
+            case ordsets:to_list(PaymentInstitutionRefs1) of
+                [_PaymentInstitutionRef] ->
+                    ok;
+                _ ->
+                    {error, multiple_payment_institutions}
+            end
+    catch
+        throw:#'InvalidRequest'{errors = [<<"Invalid currency">>]} ->
+            {error, invalid_currency}
+    end;
+assert_allocatable(undefined, _PaymentAllocationServiceTerms, _Cash) ->
     ok;
-assert_allocatable(_Allocation, #domain_PaymentAllocationServiceTerms{allow = Allow}) ->
-    case Allow of
-        {constant, true} ->
-            ok;
-        _ ->
-            {error, unallocatable}
-    end.
+assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Cash) ->
+    {error, unallocatable}.
 
 -spec construct_target(target_map()) -> target().
 construct_target(#{owner_id := OwnerID, shop_id := ShopID}) ->
