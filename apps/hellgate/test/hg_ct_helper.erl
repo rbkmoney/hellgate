@@ -667,7 +667,7 @@ make_invoice_context(Data) ->
         data = Data
     }.
 
--spec make_disposable_payment_resource({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
+-spec make_disposable_payment_resource(hg_dummy_provider:payment_tool()) ->
     dmsl_domain_thrift:'DisposablePaymentResource'().
 make_disposable_payment_resource({PaymentTool, SessionID}) ->
     #domain_DisposablePaymentResource{
@@ -706,7 +706,7 @@ make_customer_params(PartyID, ShopID, EMail) ->
         metadata = ?null()
     }.
 
--spec make_customer_binding_params({dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}) ->
+-spec make_customer_binding_params(hg_dummy_provider:payment_tool()) ->
     dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(PaymentToolSession) ->
     RecPaymentToolID = hg_utils:unique_id(),
@@ -714,7 +714,7 @@ make_customer_binding_params(PaymentToolSession) ->
 
 -spec make_customer_binding_params(
     dmsl_domain_thrift:'RecurrentPaymentToolID'(),
-    {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}
+    hg_dummy_provider:payment_tool()
 ) -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(RecPayToolId, PaymentToolSession) ->
     CustomerBindingID = hg_utils:unique_id(),
@@ -723,7 +723,7 @@ make_customer_binding_params(RecPayToolId, PaymentToolSession) ->
 -spec make_customer_binding_params(
     dmsl_domain_thrift:'CustomerBindingID'(),
     dmsl_domain_thrift:'RecurrentPaymentToolID'(),
-    {dmsl_domain_thrift:'PaymentTool'(), dmsl_domain_thrift:'PaymentSessionID'()}
+    hg_dummy_provider:payment_tool()
 ) -> dmsl_payment_processing_thrift:'CustomerBindingParams'().
 make_customer_binding_params(CustomerBindingId, RecPayToolId, PaymentToolSession) ->
     #payproc_CustomerBindingParams{
