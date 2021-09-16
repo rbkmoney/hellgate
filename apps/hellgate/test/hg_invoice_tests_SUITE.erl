@@ -2059,7 +2059,7 @@ payment_w_mobile_commerce(C, Operator, Expectation) ->
     case Expectation of
         success ->
             [
-                ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded()))),
+                ?payment_ev(PaymentID, ?session_ev(?processed(), ?session_finished(?session_succeeded())))
             ] = next_event(InvoiceID, Client),
             [
                 ?payment_ev(PaymentID, ?payment_status_changed(?processed()))
