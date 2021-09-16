@@ -1095,16 +1095,16 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     _ = assert_payment_flow(hold, Payment),
     Revision = get_payment_revision(St),
     Timestamp = get_payment_created_at(Payment),
-    Cash = get_payment_cost(Payment),
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     Allocation = hg_maybe:apply(fun (A) ->
-        ok = validate_allocatable(A, MerchantTerms, Cash),
+        CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
+        ok = validate_allocatable(A, MerchantTerms, CaptureCost),
         hg_allocation:calculate(
             A,
             Payment#domain_InvoicePayment.owner_id,
             Payment#domain_InvoicePayment.shop_id,
-            Cost
+            CaptureCost
         )
     end, AllocationPrototype),
     case check_equal_capture_cost_amount(Cost, Payment) of
@@ -1177,6 +1177,8 @@ assert_capture_cart(Cost, Cart) ->
             throw_invalid_request(<<"Capture amount does not match with the cart total amount">>)
     end.
 
+check_equal_capture_cost_amount(undefined, _) ->
+    true;
 check_equal_capture_cost_amount(?cash(PassedAmount, _), #domain_InvoicePayment{cost = ?cash(Amount, _)}) when
     PassedAmount =:= Amount
 ->
@@ -3569,10 +3571,15 @@ try_get_chargeback_state(ID, #st{chargebacks = CBs}) ->
 
 set_refund_state(ID, RefundSt, St) ->
     #st{refunds = Rs} = St,
-    Allocation = get_allocation(St),
-    #domain_InvoicePaymentRefund{cash = RefundCash, allocation = RefundAllocation} = get_refund(RefundSt),
-    RemainingCash = get_remaining_payment_amount(RefundCash, St),
-    {ok, FinalAllocation} = hg_allocation:sub(Allocation, RefundAllocation, RemainingCash),
+    FinalAllocation = hg_maybe:apply(
+        fun(A) ->
+            #domain_InvoicePaymentRefund{cash = RefundCash, allocation = RefundAllocation} = get_refund(RefundSt),
+            RemainingCash = get_remaining_payment_amount(RefundCash, St),
+            {ok, FA} = hg_allocation:sub(A, RefundAllocation, RemainingCash),
+            FA
+        end,
+        get_allocation(St)
+    ),
     St#st{refunds = Rs#{ID => RefundSt}, allocation = FinalAllocation}.
 
 get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when Cost /= undefined ->
