@@ -2967,13 +2967,13 @@ update_payment_terms_cashflow(ProviderRef, CashFlow) ->
 get_cashflow_account(Type, CF) ->
     [ID] = [
         V
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_id = V,
-                   account_type = T
-               }
-           } <- CF,
-           T == Type
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_id = V,
+                account_type = T
+            }
+        } <- CF,
+        T == Type
     ],
     hg_accounting:get_balance(ID).
 
@@ -3029,13 +3029,13 @@ external_account_posting(C, PmtSys) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
         AccountID
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_type = {external, outcome},
-                   account_id = AccountID
-               },
-               details = <<"Kek">>
-           } <- CF
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_type = {external, outcome},
+                account_id = AccountID
+            },
+            details = <<"Kek">>
+        } <- CF
     ],
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
@@ -3071,13 +3071,13 @@ terminal_cashflow_overrides_provider(C, PmtSys) ->
     PaymentID = await_payment_capture(InvoiceID, PaymentID, InvoicingClient),
     [AssistAccountID] = [
         AccountID
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_type = {external, outcome},
-                   account_id = AccountID
-               },
-               details = <<"Kek">>
-           } <- CF
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_type = {external, outcome},
+                account_id = AccountID
+            },
+            details = <<"Kek">>
+        } <- CF
     ],
     #domain_ExternalAccountSet{
         accounts = #{?cur(<<"RUB">>) := #domain_ExternalAccount{outcome = AssistAccountID}}
@@ -5583,13 +5583,13 @@ rounding_cashflow_volume(C, PmtSys) ->
 get_cashflow_volume(Source, Destination, CF) ->
     [Volume] = [
         V
-        || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{account_type = S},
-               destination = #domain_FinalCashFlowAccount{account_type = D},
-               volume = V
-           } <- CF,
-           S == Source,
-           D == Destination
+     || #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{account_type = S},
+            destination = #domain_FinalCashFlowAccount{account_type = D},
+            volume = V
+        } <- CF,
+        S == Source,
+        D == Destination
     ],
     Volume.
 
@@ -6195,8 +6195,8 @@ consistent_account_balances(C) ->
     Shops = maps:values(Party#domain_Party.shops),
     _ = [
         Fun(AccountID, Shop)
-        || #domain_Shop{account = #domain_ShopAccount{settlement = ID1, guarantee = ID2}} = Shop <- Shops,
-           AccountID <- [ID1, ID2]
+     || #domain_Shop{account = #domain_ShopAccount{settlement = ID1, guarantee = ID2}} = Shop <- Shops,
+        AccountID <- [ID1, ID2]
     ],
     ok.
 
@@ -7024,11 +7024,11 @@ get_payment_cashflow_mapped(InvoiceID, PaymentID, Client) ->
     } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
     [
         {Source, Dest, Volume}
-        || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{account_type = Source},
-               destination = #domain_FinalCashFlowAccount{account_type = Dest},
-               volume = #domain_Cash{amount = Volume}
-           } <- CashFlow
+     || #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{account_type = Source},
+            destination = #domain_FinalCashFlowAccount{account_type = Dest},
+            volume = #domain_Cash{amount = Volume}
+        } <- CashFlow
     ].
 
 %
