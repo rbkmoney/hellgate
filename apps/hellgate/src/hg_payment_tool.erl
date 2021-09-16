@@ -293,4 +293,6 @@ set_token_provider(BCard, TokenProvider) when is_binary(TokenProvider) ->
             <<"samsungpay">> -> {#domain_BankCard.token_provider_deprecated, samsungpay};
             TSrvRef -> {#domain_BankCard.payment_token, #domain_BankCardTokenServiceRef{id = TSrvRef}}
         end,
-    setelement(Field, BCard, Value).
+    setelement(Field, BCard, Value);
+set_token_provider(BCard, _) ->
+    BCard.
