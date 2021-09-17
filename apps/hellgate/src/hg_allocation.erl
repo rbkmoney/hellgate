@@ -65,7 +65,11 @@ sub(Allocation, SubAllocation, Cost) ->
     end.
 
 -spec assert_allocatable(allocation_prototype() | undefined, allocation_terms(), cash()) -> ok | {error, unallocatable}.
-assert_allocatable(?allocation_prototype(Trxs), #domain_PaymentAllocationServiceTerms{allow = {constant, true}}, Cash) ->
+assert_allocatable(
+    ?allocation_prototype(Trxs),
+    #domain_PaymentAllocationServiceTerms{allow = {constant, true}},
+    Cash
+) ->
     try
         lists:map(
             fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body)) ->
