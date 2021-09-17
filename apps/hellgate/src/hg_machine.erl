@@ -296,13 +296,6 @@ dispatch_signal(Ns, #mg_stateproc_TimeoutSignal{}, Machine) ->
     _ = log_dispatch(timeout, Machine),
     Module = get_handler_module(Ns),
     Result = Module:process_signal(timeout, Machine),
-    marshal_signal_result(Result, Machine);
-%% TODO delete after mg switch on 'ProcessRepair'
-dispatch_signal(Ns, #mg_stateproc_RepairSignal{arg = Payload}, Machine) ->
-    Args = unwrap_args(Payload),
-    _ = log_dispatch(repair, Args, Machine),
-    Module = get_handler_module(Ns),
-    Result = Module:process_repair(Args, Machine),
     marshal_signal_result(Result, Machine).
 
 marshal_signal_result(Result = #{}, #{aux_state := AuxStWas}) ->
