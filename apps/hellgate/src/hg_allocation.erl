@@ -7,7 +7,7 @@
 %% API
 -export([calculate/4]).
 -export([sub/3]).
--export([assert_allocatable/3]).
+-export([assert_allocatable/4]).
 
 -export_type([allocation_prototype/0]).
 -export_type([allocation/0]).
@@ -18,6 +18,7 @@
 -type allocation_terms() :: dmsl_domain_thrift:'PaymentAllocationServiceTerms'().
 -type target() :: dmsl_domain_thrift:'AllocationTransactionTarget'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
+-type payment_institution_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
 
 -type owner_id() :: dmsl_payment_processing_thrift:'PartyID'().
 -type shop_id() :: dmsl_payment_processing_thrift:'ShopID'().
@@ -36,6 +37,11 @@
     currency_mismatch
     | cost_mismatch
     | {invalid_transaction, transaction(), negative_amount | zero_amount | target_conflict}.
+
+-type allocatable_errors() ::
+    unallocatable
+    | {multiple_payment_institutions, [{owner_id(), shop_id()}]}
+    | invalid_currency.
 
 -spec calculate(allocation_prototype(), owner_id(), shop_id(), cash()) ->
     {ok, allocation()} | {error, calculate_errors()}.
@@ -64,40 +70,44 @@ sub(Allocation, SubAllocation, Cost) ->
             {error, Error}
     end.
 
--spec assert_allocatable(allocation_prototype() | undefined, allocation_terms(), cash()) -> ok | {error, unallocatable}.
+-spec assert_allocatable(allocation_prototype() | undefined, allocation_terms(), cash(), payment_institution_ref()) ->
+    ok | {error, allocatable_errors()}.
 assert_allocatable(
     ?allocation_prototype(Trxs),
     #domain_PaymentAllocationServiceTerms{allow = {constant, true}},
-    Cash
+    Cash,
+    PaymentInstitutionRef
 ) ->
     try
-        lists:map(
-            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body)) ->
+        lists:foldl(
+            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body), Acc) ->
                 Party = hg_party:get_party(PartyID),
                 Shop = hg_party:get_shop(ShopID, Party),
                 Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
                 _ = hg_invoice_utils:validate_cost(Cash, Shop),
-                PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-                PaymentInstitutionRef
+                PIR = Contract#domain_Contract.payment_institution,
+                Shops = maps:get(PIR, Acc, []),
+                Acc#{PIR => [{PartyID, ShopID} | Shops]}
             end,
+            #{PaymentInstitutionRef => []},
             Trxs
         )
     of
-        PaymentInstitutionRefs0 ->
-            PaymentInstitutionRefs1 = ordsets:from_list(PaymentInstitutionRefs0),
-            case ordsets:to_list(PaymentInstitutionRefs1) of
-                [_PaymentInstitutionRef] ->
+        PIMap0 ->
+            PIMap1 = maps:remove(PaymentInstitutionRef, PIMap0),
+            case maps:values(PIMap1) of
+                [] ->
                     ok;
-                _ ->
-                    {error, multiple_payment_institutions}
+                Shops ->
+                    {error, {multiple_payment_institutions, lists:flatten(Shops)}}
             end
     catch
         throw:#'InvalidRequest'{errors = [<<"Invalid currency">>]} ->
             {error, invalid_currency}
     end;
-assert_allocatable(undefined, _PaymentAllocationServiceTerms, _Cash) ->
+assert_allocatable(undefined, _PaymentAllocationServiceTerms, _Cash, _PaymentInstitutionRef) ->
     ok;
-assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Cash) ->
+assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Cash, _PaymentInstitutionRef) ->
     {error, unallocatable}.
 
 -spec construct_target(target_map()) -> target().

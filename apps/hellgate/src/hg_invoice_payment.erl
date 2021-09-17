@@ -1100,7 +1100,7 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Allocation = hg_maybe:apply(
         fun(A) ->
             CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
-            ok = validate_allocatable(A, MerchantTerms, CaptureCost),
+            ok = validate_allocatable(A, MerchantTerms, CaptureCost, Opts),
             hg_allocation:calculate(
                 A,
                 Payment#domain_InvoicePayment.owner_id,
@@ -1270,7 +1270,7 @@ refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     VS = collect_validation_varset(St, Opts),
     #payproc_InvoicePaymentRefundParams{allocation = Allocation, cash = Cash} = Params,
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
-    _ = validate_allocatable(Allocation, MerchantTerms, Cash),
+    _ = validate_allocatable(Allocation, MerchantTerms, Cash, Opts),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS, CreatedAt),
     Changes = [?refund_created(Refund, FinalCashflow)],
@@ -1286,7 +1286,7 @@ manual_refund(Params, St0, Opts = #{timestamp := CreatedAt}) ->
     VS = collect_validation_varset(St, Opts),
     #payproc_InvoicePaymentRefundParams{allocation = Allocation, cash = Cash} = Params,
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
-    _ = validate_allocatable(Allocation, MerchantTerms, Cash),
+    _ = validate_allocatable(Allocation, MerchantTerms, Cash, Opts),
     Refund = make_refund(Params, Payment, Revision, CreatedAt, St, Opts),
     FinalCashflow = make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS, CreatedAt),
     TransactionInfo = Params#payproc_InvoicePaymentRefundParams.transaction_info,
@@ -1313,7 +1313,7 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
                 owner_id = OwnerID,
                 shop_id = ShopID
             } = get_invoice(Opts),
-            ok = validate_allocatable(A, MerchantTerms, Cash),
+            ok = validate_allocatable(A, MerchantTerms, Cash, Opts),
             CA = hg_allocation:calculate(
                 A,
                 OwnerID,
@@ -1338,11 +1338,15 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         allocation = Allocation
     }.
 
-validate_allocatable(Allocation, PaymentTerms, Cash) ->
+validate_allocatable(Allocation, PaymentTerms, Cash, Opts) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
-    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cash),
+    Party = get_party(Opts),
+    Shop = get_shop(Opts),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cash, PaymentInstitutionRef),
     ok.
 
 validate_allocation(St, SubAllocation, Cash) ->

@@ -162,7 +162,7 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
-    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
+    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms, Party),
     ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams}),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
@@ -173,7 +173,7 @@ handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     {Party, Shop, InvoiceParams} = make_invoice_params(Params),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
-    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
+    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms, Party),
     ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams}),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CapturePaymentNew', Args, Opts) ->
@@ -1292,20 +1292,22 @@ make_invoice_params(Params) ->
     },
     {Party, Shop, InvoiceParams}.
 
-validate_invoice_params(#payproc_InvoiceParams{cost = Cost, allocation = Allocation}, Shop, MerchantTerms) ->
+validate_invoice_params(#payproc_InvoiceParams{cost = Cost, allocation = Allocation}, Shop, MerchantTerms, Party) ->
     ok = validate_invoice_cost(Cost, Shop, MerchantTerms),
-    validate_invoice_allocatable(Allocation, MerchantTerms, Cost).
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+    validate_invoice_allocatable(Allocation, MerchantTerms, Cost, PaymentInstitutionRef).
 
 validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:validate_cost(Cost, Shop),
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
     ok.
 
-validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}, Cost) ->
+validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}, Cost, PaymentInstitutionRef) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
-    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost),
+    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost, PaymentInstitutionRef),
     ok.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
