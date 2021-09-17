@@ -1030,8 +1030,13 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
     ShopID = V#payproc_InvoiceParams.shop_id,
     Cost = V#payproc_InvoiceParams.cost,
     Allocation = hg_maybe:apply(
-        fun(A) ->
-            hg_allocation:calculate(A, OwnerID, ShopID, Cost)
+        fun(AP) ->
+            case hg_allocation:calculate(AP, OwnerID, ShopID, Cost) of
+                {ok, A} ->
+                    A;
+                {error, Error} ->
+                    throw(Error) %% TODO Add real exceptions
+            end
         end,
         V#payproc_InvoiceParams.allocation
     ),
