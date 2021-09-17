@@ -282,8 +282,7 @@ handle_function_('ProcessRepair', {Args}, #{ns := Ns} = _Opts) ->
 -spec dispatch_signal(ns(), Signal, machine()) -> Result when
     Signal ::
         mg_proto_state_processing_thrift:'InitSignal'()
-        | mg_proto_state_processing_thrift:'TimeoutSignal'()
-        | mg_proto_state_processing_thrift:'RepairSignal'(),
+        | mg_proto_state_processing_thrift:'TimeoutSignal'(),
     Result ::
         mg_proto_state_processing_thrift:'SignalResult'().
 dispatch_signal(Ns, #mg_stateproc_InitSignal{arg = Payload}, Machine) ->
