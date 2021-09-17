@@ -1029,9 +1029,11 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
     OwnerID = V#payproc_InvoiceParams.party_id,
     ShopID = V#payproc_InvoiceParams.shop_id,
     Cost = V#payproc_InvoiceParams.cost,
-    Allocation = hg_maybe:apply(fun (A) ->
-        hg_allocation:calculate(A, OwnerID, ShopID, Cost)
-        end, V#payproc_InvoiceParams.allocation
+    Allocation = hg_maybe:apply(
+        fun(A) ->
+            hg_allocation:calculate(A, OwnerID, ShopID, Cost)
+        end,
+        V#payproc_InvoiceParams.allocation
     ),
     #domain_Invoice{
         id = ID,

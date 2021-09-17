@@ -1097,16 +1097,19 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Timestamp = get_payment_created_at(Payment),
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    Allocation = hg_maybe:apply(fun (A) ->
-        CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
-        ok = validate_allocatable(A, MerchantTerms, CaptureCost),
-        hg_allocation:calculate(
-            A,
-            Payment#domain_InvoicePayment.owner_id,
-            Payment#domain_InvoicePayment.shop_id,
-            CaptureCost
-        )
-    end, AllocationPrototype),
+    Allocation = hg_maybe:apply(
+        fun(A) ->
+            CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
+            ok = validate_allocatable(A, MerchantTerms, CaptureCost),
+            hg_allocation:calculate(
+                A,
+                Payment#domain_InvoicePayment.owner_id,
+                Payment#domain_InvoicePayment.shop_id,
+                CaptureCost
+            )
+        end,
+        AllocationPrototype
+    ),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart, Allocation);
@@ -1301,24 +1304,27 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     _ = assert_refund_cash(Cash, St),
     Cart = Params#payproc_InvoicePaymentRefundParams.cart,
     _ = assert_refund_cart(Params#payproc_InvoicePaymentRefundParams.cash, Cart, St),
-    Allocation = hg_maybe:apply(fun (A) ->
-        Timestamp = get_payment_created_at(Payment),
-        VS = collect_validation_varset(St, Opts),
-        MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-        #domain_Invoice{
-            owner_id = OwnerID,
-            shop_id = ShopID
-        } = get_invoice(Opts),
-        ok = validate_allocatable(A, MerchantTerms, Cash),
-        CA = hg_allocation:calculate(
-            A,
-            OwnerID,
-            ShopID,
-            Cash
-        ),
-        ok = validate_allocation(St, CA, Cash),
-        CA
-    end, Params#payproc_InvoicePaymentRefundParams.allocation),
+    Allocation = hg_maybe:apply(
+        fun(A) ->
+            Timestamp = get_payment_created_at(Payment),
+            VS = collect_validation_varset(St, Opts),
+            MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
+            #domain_Invoice{
+                owner_id = OwnerID,
+                shop_id = ShopID
+            } = get_invoice(Opts),
+            ok = validate_allocatable(A, MerchantTerms, Cash),
+            CA = hg_allocation:calculate(
+                A,
+                OwnerID,
+                ShopID,
+                Cash
+            ),
+            ok = validate_allocation(St, CA, Cash),
+            CA
+        end,
+        Params#payproc_InvoicePaymentRefundParams.allocation
+    ),
     #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
         created_at = CreatedAt,
