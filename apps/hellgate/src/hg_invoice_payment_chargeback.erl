@@ -424,8 +424,8 @@ build_chargeback_final_cash_flow(State, Opts) ->
     ServiceTerms = get_merchant_chargeback_terms(Party, Shop, VS, Revision, CreatedAt),
     PaymentsTerms = hg_routing:get_payments_terms(Route, Revision),
     ProviderTerms = get_provider_chargeback_terms(PaymentsTerms, Payment),
-    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms, Party, Shop, Route),
-    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms, Party, Shop, Route),
+    ServiceCashFlow = get_chargeback_service_cash_flow(ServiceTerms),
+    ProviderCashFlow = get_chargeback_provider_cash_flow(ProviderTerms),
     ProviderFees = collect_chargeback_provider_fees(ProviderTerms),
     PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
@@ -433,8 +433,13 @@ build_chargeback_final_cash_flow(State, Opts) ->
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
     ServiceContext = build_service_cash_flow_context(State),
     ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
-    ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
-    ProviderFinalCF = hg_cashflow:finalize(ProviderCashFlow, ProviderContext, AccountMap),
+    PostingContext = #{
+        party => Party,
+        shop => Shop,
+        route => Route
+    },
+    ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap, PostingContext),
+    ProviderFinalCF = hg_cashflow:finalize(ProviderCashFlow, ProviderContext, AccountMap, PostingContext),
     ServiceFinalCF ++ ProviderFinalCF.
 
 build_service_cash_flow_context(State) ->
@@ -452,23 +457,17 @@ build_provider_cash_flow_context(State, Fees) ->
     end.
 
 get_chargeback_service_cash_flow(
-    #domain_PaymentChargebackServiceTerms{fees = {value, V}},
-    Party,
-    Shop,
-    Route
+    #domain_PaymentChargebackServiceTerms{fees = {value, V}}
 ) ->
-    hg_cashflow:add_cashflow_posting_context(V, Party, Shop, Route);
-get_chargeback_service_cash_flow(_, _Party, _Shop, _Route) ->
+    V;
+get_chargeback_service_cash_flow(_) ->
     throw(#payproc_OperationNotPermitted{}).
 
 get_chargeback_provider_cash_flow(
-    #domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}},
-    Party,
-    Shop,
-    Route
+    #domain_PaymentChargebackProvisionTerms{cash_flow = {value, V}}
 ) ->
-    hg_cashflow:add_cashflow_posting_context(V, Party, Shop, Route);
-get_chargeback_provider_cash_flow(_, _Party, _Shop, _Route) ->
+    V;
+get_chargeback_provider_cash_flow(_) ->
     throw(#payproc_OperationNotPermitted{}).
 
 collect_chargeback_provider_fees(#domain_PaymentChargebackProvisionTerms{fees = undefined}) ->

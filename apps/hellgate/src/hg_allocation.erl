@@ -15,6 +15,7 @@
 -type allocation_prototype() :: dmsl_domain_thrift:'AllocationPrototype'().
 -type allocation() :: dmsl_domain_thrift:'Allocation'().
 -type transaction() :: dmsl_domain_thrift:'AllocationTransaction'().
+-type transaction_proto() :: dmsl_domain_thrift:'AllocationTransactionPrototype'().
 -type allocation_terms() :: dmsl_domain_thrift:'PaymentAllocationServiceTerms'().
 -type target() :: dmsl_domain_thrift:'AllocationTransactionTarget'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
@@ -28,20 +29,19 @@
 }.
 
 -type sub_errors() ::
-    currency_mismatch
-    | cost_mismatch
-    | {no_transaction_to_sub, transaction()}
-    | {invalid_transaction, transaction(), negative_amount}.
+    cost_mismatch
+    | {invalid_transaction, transaction(), negative_amount | currency_mismatch | no_transaction_to_sub}.
 
 -type calculate_errors() ::
-    currency_mismatch
-    | cost_mismatch
-    | {invalid_transaction, transaction(), negative_amount | zero_amount | target_conflict}.
+    cost_mismatch
+    | {invalid_transaction, transaction() | transaction_proto(),
+        negative_amount | zero_amount | target_conflict | currency_mismatch}.
 
 -type allocatable_errors() ::
     unallocatable
-    | {multiple_payment_institutions, [{owner_id(), shop_id()}]}
-    | invalid_currency.
+    | {invalid_transaction, transaction_proto(),
+        {payment_institutions_mismatch, {owner_id(), shop_id()}}
+        | currency_mismatch}.
 
 -spec calculate(allocation_prototype(), owner_id(), shop_id(), cash()) ->
     {ok, allocation()} | {error, calculate_errors()}.
@@ -80,14 +80,20 @@ assert_allocatable(
 ) ->
     try
         lists:foldl(
-            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body), Acc) ->
+            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto, Acc) ->
                 Party = hg_party:get_party(PartyID),
                 Shop = hg_party:get_shop(ShopID, Party),
                 Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-                _ = hg_invoice_utils:validate_cost(Cash, Shop),
+                _ =
+                    case validate_currency(Cash, Shop) of
+                        ok ->
+                            ok;
+                        {error, currency_mismatch} ->
+                            throw({currency_mismatch, Proto})
+                    end,
                 PIR = Contract#domain_Contract.payment_institution,
                 Shops = maps:get(PIR, Acc, []),
-                Acc#{PIR => [{PartyID, ShopID} | Shops]}
+                Acc#{PIR => [{Proto, PartyID, ShopID} | Shops]}
             end,
             #{PaymentInstitutionRef => []},
             Trxs
@@ -98,17 +104,24 @@ assert_allocatable(
             case maps:values(PIMap1) of
                 [] ->
                     ok;
-                Shops ->
-                    {error, {multiple_payment_institutions, lists:flatten(Shops)}}
+                [{Proto, PartyID, ShopID} | _Shops] ->
+                    {error, {invalid_transaction, Proto, {payment_institutions_mismatch, PartyID, ShopID}}}
             end
     catch
-        throw:#'InvalidRequest'{errors = [<<"Invalid currency">>]} ->
-            {error, invalid_currency}
+        throw:{currency_mismatch, Proto} ->
+            {error, {invalid_transaction, Proto, currency_mismatch}}
     end;
-assert_allocatable(undefined, _PaymentAllocationServiceTerms, _Cash, _PaymentInstitutionRef) ->
-    ok;
 assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Cash, _PaymentInstitutionRef) ->
     {error, unallocatable}.
+
+validate_currency(#domain_Cash{currency = Currency}, Shop) ->
+    ShopCurrency = hg_invoice_utils:get_shop_currency(Shop),
+    validate_currency_(Currency, ShopCurrency).
+
+validate_currency_(Currency, Currency) ->
+    ok;
+validate_currency_(_Currency1, _Currency2) ->
+    {error, currency_mismatch}.
 
 -spec construct_target(target_map()) -> target().
 construct_target(#{owner_id := OwnerID, shop_id := ShopID}) ->
@@ -123,10 +136,10 @@ sub_trxs(Transactions, SubTransactions, Cost) ->
 
 sub_trxs(Transactions0, [], CostLeft0, Acc0) ->
     {CostLeft1, Transactions1} = lists:foldl(
-        fun(T, {AccCost, Acc}) ->
+        fun(T, {AccCost0, Acc}) ->
             case T of
                 #domain_AllocationTransaction{amount = Amount} = T ->
-                    {sub_amount(AccCost, Amount), [T | Acc]}
+                    {sub_amount(AccCost0, Amount, T), [T | Acc]}
             end
         end,
         {CostLeft0, []},
@@ -139,7 +152,7 @@ sub_trxs(Transactions0, [ST | SubTransactions], CostLeft, Acc0) ->
     {Transaction, Transactions1} = take_trx(ST, Transactions0),
     {ResAmount, ResTransaction} = sub_trx(Transaction, ST),
     Acc1 = maybe_push_trx(ResTransaction, Acc0),
-    sub_trxs(Transactions1, SubTransactions, sub_amount(CostLeft, ResAmount), Acc1).
+    sub_trxs(Transactions1, SubTransactions, sub_amount(CostLeft, ResAmount, ST), Acc1).
 
 validate_cost(?cash(CostLeft, _SymCode)) when CostLeft /= 0 ->
     throw(cost_mismatch);
@@ -158,7 +171,7 @@ take_trx(Transaction0, Transactions) ->
 sub_trx(Transaction, SubTransaction) ->
     ?allocation_trx(ID, Target, Amount, Details, Body) = Transaction,
     ?allocation_trx(_ID, Target, SubAmount, _SubDetails, _SubBody) = SubTransaction,
-    ResAmount = sub_amount(Amount, SubAmount),
+    ResAmount = sub_amount(Amount, SubAmount, SubTransaction),
     ResTransaction = construct_trx(
         ID,
         Target,
@@ -171,13 +184,13 @@ sub_trx(Transaction, SubTransaction) ->
     ),
     {ResAmount, ResTransaction}.
 
-sub_amount(Amount, SubAmount) ->
+sub_amount(Amount, SubAmount, T) ->
     try hg_cash:sub(Amount, SubAmount) of
         Res ->
             Res
     catch
         error:badarg ->
-            throw(currency_mismatch)
+            throw({invalid_transaction, T, currency_mismatch})
     end.
 
 calculate_trxs(Transactions, FeeTarget, Cost) ->
@@ -189,7 +202,7 @@ calculate_trxs([], FeeTarget, CostLeft, FeeAcc, ID, Acc) ->
     maybe_push_trx(AggregatorTrx, Acc);
 calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
     ?allocation_trx_prototype(Target, Body, Details) = Head,
-    {TransactionBody, TransactionAmount, FeeAmount} = calculate_trxs_body(Body, FeeTarget),
+    {TransactionBody, TransactionAmount, FeeAmount} = calculate_trxs_body(Body, FeeTarget, Head),
     Transaction = construct_positive_trx(
         erlang:integer_to_binary(ID0),
         Target,
@@ -202,7 +215,7 @@ calculate_trxs([Head | Transactions], FeeTarget, CostLeft, FeeAcc, ID0, Acc0) ->
     calculate_trxs(
         Transactions,
         FeeTarget,
-        sub_amount(CostLeft, TransactionAmount),
+        sub_amount(CostLeft, TransactionAmount, Transaction),
         add_fee(FeeAcc, FeeAmount),
         ID1,
         Acc1
@@ -249,9 +262,9 @@ add_fee(undefined, FeeAmount) ->
 add_fee(FeeCost, FeeAmount) ->
     hg_cash:add(FeeCost, FeeAmount).
 
-calculate_trxs_body(?allocation_trx_prototype_body_amount(?cash(_, SymCode) = Amount), _FeeTarget) ->
+calculate_trxs_body(?allocation_trx_prototype_body_amount(?cash(_, SymCode) = Amount), _FeeTarget, _TP) ->
     {undefined, Amount, ?cash(0, SymCode)};
-calculate_trxs_body(?allocation_trx_prototype_body_total(Total, Fee), FeeTarget) ->
+calculate_trxs_body(?allocation_trx_prototype_body_total(Total, Fee), FeeTarget, TP) ->
     CalculatedFee = calculate_trxs_fee(Fee, Total),
     TransformedBody = #domain_AllocationTransactionBodyTotal{
         fee_target = FeeTarget,
@@ -259,7 +272,7 @@ calculate_trxs_body(?allocation_trx_prototype_body_total(Total, Fee), FeeTarget)
         fee_amount = CalculatedFee,
         fee = get_fee_share(Fee)
     },
-    {TransformedBody, sub_amount(Total, CalculatedFee), CalculatedFee}.
+    {TransformedBody, sub_amount(Total, CalculatedFee, TP), CalculatedFee}.
 
 calculate_trxs_fee(?allocation_trx_prototype_fee_fixed(Amount), _Total) ->
     Amount;

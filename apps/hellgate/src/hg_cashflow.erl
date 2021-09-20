@@ -15,8 +15,6 @@
 -type account_map() :: #{account() => account_id()}.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
--type cash_flow_w_context() :: [{cash_flow_posting(), posting_context()}].
--type cash_flow_posting() :: dmsl_domain_thrift:'CashFlowPosting'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
@@ -28,14 +26,13 @@
 -type posting_context() :: #{
     shop := shop(),
     party := party(),
-    route := route()
+    route => route()
 }.
 
 %%
 
--export([finalize/3]).
+-export([finalize/4]).
 -export([revert/1]).
--export([add_cashflow_posting_context/4]).
 
 -export([compute_volume/2]).
 
@@ -60,12 +57,12 @@
     details = Details
 }).
 
--spec finalize(cash_flow_w_context(), context(), account_map()) -> final_cash_flow() | no_return().
-finalize(CF, Context, AccountMap) ->
-    compute_postings(CF, Context, AccountMap).
+-spec finalize(cash_flow(), context(), account_map(), posting_context()) -> final_cash_flow() | no_return().
+finalize(CF, Context, AccountMap, PostingContext) ->
+    compute_postings(CF, Context, AccountMap, PostingContext).
 
--spec compute_postings(cash_flow_w_context(), context(), account_map()) -> final_cash_flow() | no_return().
-compute_postings(CF, Context, AccountMap) ->
+-spec compute_postings(cash_flow(), context(), account_map(), posting_context()) -> final_cash_flow() | no_return().
+compute_postings(CF, Context, AccountMap, PostingContext) ->
     [
         ?final_posting(
             construct_final_account(Source, AccountMap, PostingContext),
@@ -73,7 +70,7 @@ compute_postings(CF, Context, AccountMap) ->
             compute_volume(Volume, Context),
             Details
         )
-        || {?posting(Source, Destination, Volume, Details), PostingContext} <- CF
+        || ?posting(Source, Destination, Volume, Details) <- CF
     ].
 
 -spec construct_final_account(account(), account_map(), posting_context()) -> final_cash_flow_account() | no_return().
@@ -140,15 +137,6 @@ revert_details(undefined) ->
 revert_details(Details) ->
     % TODO looks gnarly
     <<"Revert '", Details/binary, "'">>.
-
--spec add_cashflow_posting_context(cash_flow(), party(), shop(), route()) -> [{cash_flow_posting(), posting_context()}].
-add_cashflow_posting_context(CashFlow, Party, Shop, Route) ->
-    Context = #{
-        party => Party,
-        shop => Shop,
-        route => Route
-    },
-    lists:map(fun(A) -> {A, Context} end, CashFlow).
 
 %%
 

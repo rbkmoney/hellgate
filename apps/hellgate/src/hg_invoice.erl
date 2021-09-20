@@ -1035,7 +1035,8 @@ create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
                 {ok, A} ->
                     A;
                 {error, Error} ->
-                    throw(Error) %% TODO Add real exceptions
+                    %% TODO Add real exceptions
+                    throw(Error)
             end
         end,
         V#payproc_InvoiceParams.allocation
@@ -1308,12 +1309,19 @@ validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
     ok.
 
-validate_invoice_allocatable(Allocation, #domain_TermSet{payments = PaymentTerms}, Cost, PaymentInstitutionRef) ->
+validate_invoice_allocatable(undefined, _PaymentTerms, _Cost, _PaymentInstitutionRef) ->
+    ok;
+validate_invoice_allocatable(Allocation, PaymentTerms, Cost, PaymentInstitutionRef) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = PaymentTerms,
-    _ = hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost, PaymentInstitutionRef),
-    ok.
+    case hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost, PaymentInstitutionRef) of
+        ok ->
+            ok;
+        {error, Error} ->
+            %% TODO make actual exceptions
+            throw(Error)
+    end.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
     VS = collect_varset(Params#payproc_InvoiceParams.cost, PartyId, Shop),
