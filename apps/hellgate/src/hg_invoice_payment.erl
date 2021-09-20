@@ -2564,15 +2564,22 @@ get_limit_overflow_routes(Routes, VS, St) ->
             case hg_limiter:check_limits(bind_up_limit_clocks(Limits, St), Invoice, Payment) of
                 {ok, _} ->
                     {[Route | Accepted], Rejected};
-                {error, {limit_overflow, IDs}} ->
+                {error, Reason} ->
                     PRef = hg_routing:provider_ref(Route),
                     TRef = hg_routing:terminal_ref(Route),
-                    {Accepted, [{PRef, TRef, {'LimitOverflow', IDs}} | Rejected]}
+                    {Accepted, [{PRef, TRef, check_limits_failure(Reason)} | Rejected]}
             end
         end,
         {[], []},
         Routes
     ).
+
+check_limits_failure({limit_overflow, IDs}) ->
+    {'LimitOverflow', IDs};
+check_limits_failure({not_found, ID}) ->
+    {'LimitNotFound', ID};
+check_limits_failure({invalid_request, IDs}) ->
+    {'InvalidRequest', IDs}.
 
 hold_limit_routes(Routes, VS, St) ->
     Revision = get_payment_revision(St),

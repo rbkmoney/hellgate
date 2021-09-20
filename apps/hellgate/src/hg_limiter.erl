@@ -43,7 +43,9 @@ get_turnover_limits(Ambiguous) ->
 
 -spec check_limits([turnover_w_clock()], invoice(), payment()) ->
     {ok, [hg_limiter_client:limit()]}
-    | {error, {limit_overflow, [binary()]}}.
+    | {error, {limit_overflow, [binary()]}}
+    | {error, {not_found, binary()}}
+    | {error, {invalid_request, [binary()]}}.
 check_limits(TurnoverLimits, Invoice, Payment) ->
     Context = gen_limit_context(Invoice, Payment),
     try
@@ -51,7 +53,13 @@ check_limits(TurnoverLimits, Invoice, Payment) ->
     catch
         throw:limit_overflow ->
             IDs = [T#domain_TurnoverLimit.id || {T, _} <- TurnoverLimits],
-            {error, {limit_overflow, IDs}}
+            {error, {limit_overflow, IDs}};
+        error:{not_found, _LimitID} = Error ->
+            {error, Error};
+        error:{invalid_request, Errors} ->
+            IDs = [T#domain_TurnoverLimit.id || {T, _} <- TurnoverLimits],
+            logger:error("Invalid request: limit ids ~p failed with ~p", [IDs, Errors]),
+            {error, {invalid_request, IDs}}
     end.
 
 check_limits_([], _, Limits) ->
