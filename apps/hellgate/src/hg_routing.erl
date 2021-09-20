@@ -190,8 +190,8 @@ prepare_log_message({misconfiguration, {routing_candidate, Candidate}}) ->
     varset(),
     revision()
 ) ->
-    {ok, {[route()], reject_context()}} |
-    {error, misconfiguration_error()}.
+    {ok, {[route()], reject_context()}}
+    | {error, misconfiguration_error()}.
 gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
     {ok, {[], #{varset => VS, rejected_routes => []}}};
 gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
