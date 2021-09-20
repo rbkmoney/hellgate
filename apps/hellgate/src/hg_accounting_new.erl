@@ -54,6 +54,7 @@
 -type revision() :: hg_domain:revision().
 
 -export_type([batch/0]).
+-export_type([clock/0]).
 
 -type account() :: #{
     account_id => account_id(),
@@ -70,30 +71,30 @@
 
 -define(DEFAULT_RETRY_STRATEGY, {exponential, 10, 1.1, 100}).
 
--spec get_account(account_id()) -> account().
+-spec get_account(account_id()) -> {ok, account()} | {error, not_ready | {account_not_found, _}}.
 get_account(AccountID) ->
     get_account(AccountID, undefined).
 
--spec get_account(account_id(), undefined | clock()) -> account().
+-spec get_account(account_id(), undefined | clock()) -> {ok, account()} | {error, not_ready | {account_not_found, _}}.
 get_account(AccountID, Clock) ->
     case call_accounter('GetAccountByID', {AccountID, to_accounter_clock(Clock)}) of
         {ok, Result} ->
-            construct_account(AccountID, Result);
-        {exception, #shumaich_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
+            {ok, construct_account(AccountID, Result)};
+        {error, _} = Error ->
+            Error
     end.
 
--spec get_balance(account_id()) -> balance().
+-spec get_balance(account_id()) -> {ok, balance()} | {error, not_ready | {account_not_found, _}}.
 get_balance(AccountID) ->
     get_balance(AccountID, undefined).
 
--spec get_balance(account_id(), undefined | clock()) -> balance().
+-spec get_balance(account_id(), undefined | clock()) -> {ok, balance()} | {error, not_ready | {account_not_found, _}}.
 get_balance(AccountID, Clock) ->
     case call_accounter('GetBalanceByID', {AccountID, to_accounter_clock(Clock)}) of
         {ok, Result} ->
-            construct_balance(AccountID, Result);
-        {exception, #shumaich_AccountNotFound{}} ->
-            hg_woody_wrapper:raise(#payproc_AccountNotFound{})
+            {ok, construct_balance(AccountID, Result)};
+        {error, _} = Error ->
+            Error
     end.
 
 -spec create_account(currency_code()) -> account_id().
@@ -124,53 +125,51 @@ collect_external_account_map(Payment, VS, Revision, Acc) ->
     hg_accounting:collect_external_account_map(Payment, VS, Revision, Acc).
 
 %%
--spec plan(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
+-spec plan(plan_id(), [batch()], hg_datetime:timestamp()) -> {ok, clock()} | {error, {invalid_posting_params, _}}.
 plan(_PlanID, [], _Timestamp) ->
     error(badarg);
 plan(_PlanID, Batches, _Timestamp) when not is_list(Batches) ->
     error(badarg);
 plan(PlanID, Batches, Timestamp) ->
-    lists:foldl(
-        fun(Batch, ClockAcc) -> hold(PlanID, Batch, Timestamp, ClockAcc) end,
-        undefined,
-        Batches
-    ).
+    execute_plan(PlanID, Batches, Timestamp, undefined).
 
--spec plan(plan_id(), [batch()], hg_datetime:timestamp(), clock()) -> clock().
+-spec plan(plan_id(), [batch()], hg_datetime:timestamp(), clock()) ->
+    {ok, clock()} | {error, {invalid_posting_params, _}}.
 plan(_PlanID, [], _Timestamp, _Clock) ->
     error(badarg);
 plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
     error(badarg);
 plan(PlanID, Batches, Timestamp, Clock) ->
-    lists:foldl(
-        fun(Batch, ClockAcc) -> hold(PlanID, Batch, Timestamp, ClockAcc) end,
-        Clock,
-        Batches
-    ).
+    execute_plan(PlanID, Batches, Timestamp, Clock).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp()) -> clock().
+-spec hold(plan_id(), batch(), hg_datetime:timestamp()) -> {ok, clock()} | {error, {invalid_posting_params, _}}.
 hold(PlanID, Batch, Timestamp) ->
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) -> clock().
-hold(PlanID, Batches, Timestamp, Clock) ->
+-spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) ->
+    {ok, clock()} | {error, {invalid_posting_params, _}}.
+hold(PlanID, Batch, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
-    do('Hold', construct_plan_change(PlanID, Batches, Timestamp), AccounterClock).
+    do('Hold', construct_plan_change(PlanID, Batch, Timestamp), AccounterClock).
 
--spec commit(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
+-spec commit(plan_id(), [batch()], hg_datetime:timestamp()) ->
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 commit(PlanID, Batches, Timestamp) ->
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp)).
 
--spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) -> clock().
+-spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) ->
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 commit(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
 
--spec rollback(plan_id(), [batch()], hg_datetime:timestamp()) -> clock().
+-spec rollback(plan_id(), [batch()], hg_datetime:timestamp()) ->
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 rollback(PlanID, Batches, Timestamp) ->
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp)).
 
--spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) -> clock().
+-spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) ->
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 rollback(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
@@ -181,9 +180,19 @@ do(Op, Plan) ->
 do(Op, Plan, PreviousClock) ->
     case call_accounter(Op, {Plan, PreviousClock}) of
         {ok, Clock} ->
-            to_domain_clock(Clock);
-        {exception, Exception} ->
-            erlang:throw(Exception)
+            {ok, to_domain_clock(Clock)};
+        {error, _} = Error ->
+            Error
+    end.
+
+execute_plan(_PlanID, [], _Timestamp, Clock) ->
+    {ok, Clock};
+execute_plan(PlanID, [Batch | Rest], Timestamp, Clock) ->
+    case hold(PlanID, Batch, Timestamp, Clock) of
+        {ok, NewClock} ->
+            execute_plan(PlanID, Rest, Timestamp, NewClock);
+        {error, _} = Error ->
+            Error
     end.
 
 construct_plan_change(PlanID, {BatchID, Cashflow}, Timestamp) ->
@@ -282,17 +291,34 @@ call_service_with_retry(Function, Args) ->
             case call_service(Function, Args) of
                 {ok, _} = Ok ->
                     {return, Ok};
-                {exception, #shumaich_NotReady{}} = Exception ->
-                    {retry, Exception};
-                {exception, _} = Exception ->
-                    {return, Exception}
+                {error, ErrorType} = Error ->
+                    {map_error_action(ErrorType), Error}
             end
         end,
         get_retry_strategy(Function)
     ).
 
 call_service(Function, Args) ->
-    hg_woody_wrapper:call(accounter_new, Function, Args).
+    case hg_woody_wrapper:call(accounter_new, Function, Args) of
+        {ok, _} = Ok ->
+            Ok;
+        {exception, Exception} ->
+            {error, map_exception(Exception)}
+    end.
+
+map_error_action(not_ready) ->
+    retry;
+map_error_action(_) ->
+    return.
+
+map_exception(#shumaich_NotReady{}) ->
+    not_ready;
+map_exception(#shumaich_AccountNotFound{account_id = AccountID}) ->
+    {account_not_found, AccountID};
+map_exception(#shumaich_PlanNotFound{plan_id = PlanID}) ->
+    {plan_not_found, PlanID};
+map_exception(#shumaich_InvalidPostingParams{wrong_postings = WrongPostings}) ->
+    {invalid_posting_params, WrongPostings}.
 
 to_domain_clock({latest, #shumaich_LatestClock{}}) ->
     undefined;
