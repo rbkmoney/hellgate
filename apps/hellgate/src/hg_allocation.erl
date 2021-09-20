@@ -252,10 +252,10 @@ push_trx(?allocation_trx(_ID0, Target, _Amount0) = Transaction, Transactions) ->
             [Transaction | Transactions]
     end.
 
-validate_fee_cost(?cash(CostLeft, SymCode), ?cash(FeeCost, SymCode)) when FeeCost > CostLeft orelse CostLeft < 0 ->
+validate_fee_cost(?cash(CostLeft, SymCode), ?cash(FeeCost, SymCode)) when CostLeft /= FeeCost ->
     throw(cost_mismatch);
-validate_fee_cost(CostLeft, _FeeCost) ->
-    CostLeft.
+validate_fee_cost(_CostLeft, FeeCost) ->
+    FeeCost.
 
 add_fee(undefined, FeeAmount) ->
     FeeAmount;
@@ -327,7 +327,7 @@ calculate_test() ->
             ?allocation_trx(
                 <<"4">>,
                 ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                ?cash(25, <<"RUB">>)
+                ?cash(15, <<"RUB">>)
             ),
             ?allocation_trx(
                 <<"3">>,
@@ -358,7 +358,7 @@ calculate_test() ->
                 ?cash(30, <<"RUB">>),
                 ?allocation_trx_details(Cart)
             )
-        ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
+        ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
 -spec calculate_without_generating_agg_trx_test() -> _.
 calculate_without_generating_agg_trx_test() ->
@@ -402,8 +402,8 @@ calculate_without_generating_agg_trx_test() ->
             )
         ])} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
--spec calculate_cost_mismatch_error_test() -> _.
-calculate_cost_mismatch_error_test() ->
+-spec calculate_cost_mismatch_error_1_test() -> _.
+calculate_cost_mismatch_error_1_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -434,6 +434,11 @@ calculate_cost_mismatch_error_test() ->
     {error, cost_mismatch} =
         calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)).
 
+-spec calculate_cost_mismatch_error_2_test() -> _.
+calculate_cost_mismatch_error_2_test() ->
+    AllocationPrototype = generic_prototype(),
+    {error, cost_mismatch} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)).
+
 -spec subtract_one_transaction_1_test() -> _.
 subtract_one_transaction_1_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
@@ -444,8 +449,8 @@ subtract_one_transaction_1_test() ->
             ?allocation_trx_prototype_body_amount(?cash(30, <<"RUB">>))
         )
     ]),
-    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(40, <<"RUB">>)),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
+    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
     {ok,
         ?allocation([
             ?allocation_trx(
@@ -496,7 +501,7 @@ subtract_one_transaction_2_test() ->
             ?allocation_trx_details(Cart)
         )
     ]),
-    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
     {ok,
         ?allocation([
@@ -521,12 +526,12 @@ subtract_one_transaction_2_test() ->
             ?allocation_trx(
                 <<"4">>,
                 ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                ?cash(15, <<"RUB">>)
+                ?cash(5, <<"RUB">>)
             )
         ])} = sub(
         Allocation,
         RefundAllocation,
-        ?cash(70, <<"RUB">>)
+        ?cash(60, <<"RUB">>)
     ).
 
 -spec subtract_one_transaction_3_test() -> _.
@@ -543,7 +548,7 @@ subtract_one_transaction_3_test() ->
             ?allocation_trx_details(Cart)
         )
     ]),
-    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
     {ok,
         ?allocation([
@@ -567,12 +572,12 @@ subtract_one_transaction_3_test() ->
             ?allocation_trx(
                 <<"4">>,
                 ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                ?cash(20, <<"RUB">>)
+                ?cash(10, <<"RUB">>)
             )
         ])} = sub(
         Allocation,
         RefundAllocation,
-        ?cash(70, <<"RUB">>)
+        ?cash(60, <<"RUB">>)
     ).
 
 -spec subtract_partial_transaction_test() -> _.
@@ -612,8 +617,8 @@ subtract_partial_transaction_test() ->
             ?allocation_trx_details(?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(18, <<"RUB">>))]))
         )
     ]),
-    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(24, <<"RUB">>)),
+    {ok, Allocation} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
+    {ok, RefundAllocation} = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(18, <<"RUB">>)),
     {ok,
         ?allocation([
             ?allocation_trx(
@@ -640,20 +645,20 @@ subtract_partial_transaction_test() ->
                 )
             ),
             ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
+            ),
+            ?allocation_trx(
                 <<"1">>,
                 ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
                 ?cash(12, <<"RUB">>),
                 ?allocation_trx_details(Cart1)
-            ),
-            ?allocation_trx(
-                <<"4">>,
-                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                ?cash(19, <<"RUB">>)
             )
         ])} = sub(
         Allocation,
         RefundAllocation,
-        ?cash(76, <<"RUB">>)
+        ?cash(72, <<"RUB">>)
     ).
 
 -spec consecutive_subtract_of_partial_transaction_test() -> _.
@@ -700,16 +705,21 @@ consecutive_subtract_of_partial_transaction_test() ->
             ?allocation_trx_details(?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(12, <<"RUB">>))]))
         )
     ]),
-    {ok, Allocation0} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>)),
-    {ok, RefundAllocation0} = calculate(RefundAllocationPrototype0, <<"PARTY0">>, <<"SHOP0">>, ?cash(24, <<"RUB">>)),
+    {ok, Allocation0} = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
+    {ok, RefundAllocation0} = calculate(RefundAllocationPrototype0, <<"PARTY0">>, <<"SHOP0">>, ?cash(18, <<"RUB">>)),
     {ok, Allocation1} = sub(
         Allocation0,
         RefundAllocation0,
-        ?cash(76, <<"RUB">>)
+        ?cash(72, <<"RUB">>)
     ),
-    {ok, RefundAllocation1} = calculate(RefundAllocationPrototype1, <<"PARTY0">>, <<"SHOP0">>, ?cash(16, <<"RUB">>)),
+    {ok, RefundAllocation1} = calculate(RefundAllocationPrototype1, <<"PARTY0">>, <<"SHOP0">>, ?cash(12, <<"RUB">>)),
     {ok,
         ?allocation([
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
+            ),
             ?allocation_trx(
                 <<"3">>,
                 ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
@@ -732,11 +742,6 @@ consecutive_subtract_of_partial_transaction_test() ->
                     ?cash(30, <<"RUB">>),
                     ?cash(10, <<"RUB">>)
                 )
-            ),
-            ?allocation_trx(
-                <<"4">>,
-                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                ?cash(15, <<"RUB">>)
             )
         ])} = sub(
         Allocation1,
