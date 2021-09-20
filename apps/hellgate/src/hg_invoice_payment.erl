@@ -1105,32 +1105,34 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     Timestamp = get_payment_created_at(Payment),
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    Allocation = hg_maybe:apply(
-        fun(AP) ->
-            CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
-            ok = validate_allocatable(AP, MerchantTerms, CaptureCost, Opts),
-            case
-                hg_allocation:calculate(
-                    AP,
-                    Payment#domain_InvoicePayment.owner_id,
-                    Payment#domain_InvoicePayment.shop_id,
-                    CaptureCost
-                )
-            of
-                {ok, A} ->
-                    A;
-                {error, Error} ->
-                    %% TODO Add real exceptions
-                    throw(Error)
-            end
-        end,
-        AllocationPrototype
-    ),
+    CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
+    PartyID = Payment#domain_InvoicePayment.owner_id,
+    ShopID = Payment#domain_InvoicePayment.shop_id,
+    Allocation = maybe_allocation(AllocationPrototype, CaptureCost, PartyID, ShopID, MerchantTerms, Opts),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart, Allocation);
         false ->
             partial_capture(St, Reason, Cost, Cart, Opts, MerchantTerms, Timestamp, Allocation)
+    end.
+
+maybe_allocation(undefined, _Cost, _PartyID, _ShopID, _MerchantTerms, _Opts) ->
+    undefined;
+maybe_allocation(AllocationPrototype, Cost, PartyID, ShopID, MerchantTerms, Opts) ->
+    ok = validate_allocatable(AllocationPrototype, MerchantTerms, Cost, Opts),
+    case
+        hg_allocation:calculate(
+            AllocationPrototype,
+            PartyID,
+            ShopID,
+            Cost
+        )
+    of
+        {ok, A} ->
+            A;
+        {error, Error} ->
+            %% TODO Add real exceptions
+            throw(Error)
     end.
 
 total_capture(St, Reason, Cart, Allocation) ->
@@ -1319,31 +1321,19 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     Timestamp = get_payment_created_at(Payment),
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    Allocation = hg_maybe:apply(
-        fun(A) ->
-            #domain_Invoice{
-                owner_id = OwnerID,
-                shop_id = ShopID
-            } = get_invoice(Opts),
-            ok = validate_allocatable(A, MerchantTerms, Cash, Opts),
-            case
-                hg_allocation:calculate(
-                    A,
-                    OwnerID,
-                    ShopID,
-                    Cash
-                )
-            of
-                {ok, CA} ->
-                    ok = validate_allocation(CA, Cash, St),
-                    CA;
-                {error, Error} ->
-                    %% TODO Add real exceptions
-                    throw(Error)
-            end
-        end,
-        Params#payproc_InvoicePaymentRefundParams.allocation
+    #domain_Invoice{
+        owner_id = PartyID,
+        shop_id = ShopID
+    } = get_invoice(Opts),
+    Allocation = maybe_allocation(
+        Params#payproc_InvoicePaymentRefundParams.allocation,
+        Cash,
+        PartyID,
+        ShopID,
+        MerchantTerms,
+        Opts
     ),
+    ok = validate_allocation(Allocation, Cash, St),
     MerchantRefundTerms = get_merchant_refunds_terms(MerchantTerms),
     Refund = #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
@@ -1376,6 +1366,8 @@ validate_allocatable(Allocation, PaymentTerms, Cash, Opts) ->
             throw(Error)
     end.
 
+validate_allocation(undefined, _Cash, _St) ->
+    ok;
 validate_allocation(SubAllocation, Cash, St) ->
     Allocation =
         case get_allocation(St) of
