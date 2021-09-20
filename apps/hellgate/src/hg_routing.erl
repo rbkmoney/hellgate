@@ -24,7 +24,7 @@
 
 -export([varset/1]).
 -export([rejected_routes/1]).
-
+-export([prepare_log_message/1]).
 %% Using in ct
 -export([gather_fail_rates/1]).
 -export([choose_rated_route/1]).
@@ -101,6 +101,7 @@
 }).
 
 -type route_scores() :: #route_scores{}.
+-type misconfiguration_error() :: {misconfiguration, {routing_decisions, _} | {routing_candidate, _}}.
 
 -export_type([route/0]).
 -export_type([route_predestination/0]).
@@ -173,6 +174,14 @@ varset(#{varset := VS}) ->
 rejected_routes(#{rejected_routes := Routes}) ->
     Routes.
 
+-spec prepare_log_message(misconfiguration_error()) -> {binary(), term()}.
+prepare_log_message({misconfiguration, {routing_decisions, Details}}) ->
+    Message = <<"PaymentRoutingDecisions couldn\'t be reduced to candidates">>,
+    {Message, Details};
+prepare_log_message({misconfiguration, {routing_candidate, Candidate}}) ->
+    Message = <<"PaymentRoutingCandidate couldn\'t be reduced">>,
+    {Message, Candidate}.
+
 %%
 
 -spec gather_routes(
@@ -180,9 +189,11 @@ rejected_routes(#{rejected_routes := Routes}) ->
     payment_institution(),
     varset(),
     revision()
-) -> {[route()], reject_context()}.
+) ->
+    {ok, {[route()], reject_context()}} |
+    {error, misconfiguration_error()}.
 gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
-    {[], #{varset => VS, rejected_routes => []}};
+    {ok, {[], #{varset => VS, rejected_routes => []}}};
 gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
     RejectedContext = #{
         varset => VS,
@@ -198,11 +209,10 @@ gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules =
             collect_routes(Predestination, Candidates, VS, Revision),
             get_table_prohibitions(Prohibitions, VS, Revision)
         ),
-        {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}
+        {ok, {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}}
     catch
-        throw:{misconfiguration, Reason} ->
-            %  TODO[refact]: Where is used it(error field),
-            {[], RejectedContext#{error => Reason}}
+        throw:{misconfiguration, _Reason} = Error ->
+            {error, Error}
     end.
 
 get_table_prohibitions(Prohibitions, VS, Revision) ->
@@ -223,7 +233,7 @@ get_candidates(RoutingRule, VS, Revision) ->
 get_decisions_candidates(#domain_RoutingRuleset{decisions = Decisions}) ->
     case Decisions of
         {delegates, _Delegates} ->
-            throw({misconfiguration, {'PaymentRoutingDecisions couldn\'t be reduced to candidates', Decisions}});
+            throw({misconfiguration, {routing_decisions, Decisions}});
         {candidates, Candidates} ->
             ok = validate_decisions_candidates(Candidates),
             Candidates
@@ -234,7 +244,7 @@ validate_decisions_candidates([]) ->
 validate_decisions_candidates([#domain_RoutingCandidate{allowed = {constant, true}} | Rest]) ->
     validate_decisions_candidates(Rest);
 validate_decisions_candidates([Candidate | _]) ->
-    throw({misconfiguration, {'PaymentRoutingCandidate couldn\'t be reduced', Candidate}}).
+    throw({misconfiguration, {routing_candidate, Candidate}}).
 
 collect_routes(Predestination, Candidates, VS, Revision) ->
     lists:foldr(

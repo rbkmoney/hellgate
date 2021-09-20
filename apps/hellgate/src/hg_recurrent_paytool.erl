@@ -271,10 +271,12 @@ gather_routes(PaymentInstitution, VS, Revision) ->
             Revision
         )
     of
-        {[], RejectContext} ->
+        {ok, {[], RejectContext}} ->
             throw({no_route_found, {unknown, RejectContext}});
-        {Routes, _RejectContext} ->
-            Routes
+        {ok, {Routes, _RejectContext}} ->
+            Routes;
+        {error, {misconfiguration, _Reason}} ->
+            throw({no_route_found, misconfiguration})
     end.
 
 %% TODO uncomment after inspect will implement

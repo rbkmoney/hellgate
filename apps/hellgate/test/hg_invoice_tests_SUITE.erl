@@ -488,9 +488,15 @@ user_info() ->
 
 %% TODO: remove later
 -include_lib("hellgate/include/party_events.hrl").
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 create_party(PartyID, {Client, Context}) ->
-    ok = party_client_thrift:create(PartyID, make_party_params(), Client, Context),
+    ok = case party_client_thrift:create(PartyID, make_party_params(), Client, Context) of
+        ok ->
+            ok;
+        {error, #payproc_PartyExists{}} ->
+            ok
+    end,
     {ok, #domain_Party{id = PartyID} = Party} = party_client_thrift:get(PartyID, Client, Context),
     Party.
 

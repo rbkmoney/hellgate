@@ -769,12 +769,15 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
             Revision
         )
     of
-        {[], RejectContext} ->
+        {ok, {[], RejectContext}} ->
             _ = log_reject_context(unknown, RejectContext),
             throw({no_route_found, unknown});
-        {Routes, RejectContext} ->
-            _ = log_misconfigurations(RejectContext),
-            Routes
+        {ok, {Routes, RejectContext}} ->
+            _ = log_reject_context(unknown, RejectContext),
+            Routes;
+        {error, {misconfiguration, _Reason} = Error} ->
+            _ = log_misconfigurations(Error),
+            throw({no_route_found, misconfiguration})
     end.
 
 -spec check_risk_score(risk_score()) -> ok | {error, risk_score_is_too_high}.
@@ -794,15 +797,9 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
 log_route_choice_meta(ChoiceMeta, Revision) ->
     _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)).
 
-log_misconfigurations(RejectContext) ->
-    RejectedRoutes = hg_routing:rejected_routes(RejectContext),
-    _ = lists:foreach(fun maybe_log_misconfiguration/1, RejectedRoutes),
-    ok.
-
-maybe_log_misconfiguration({PRef, TRef, {'Misconfiguration', Reason}}) ->
-    Text = "The route with provider ref ~p and terminal ref ~p has been misconfigured: ~p",
-    _ = logger:warning(Text, [PRef, TRef, Reason]);
-maybe_log_misconfiguration(_NotMisconfiguration) ->
+log_misconfigurations({misconfiguration, _} = Error) ->
+    {Text, Details} = hg_routing:prepare_log_message(Error),
+    _ = logger:warning(Text, [Details]),
     ok.
 
 log_reject_context(RejectReason, RejectContext) ->
