@@ -286,6 +286,7 @@ call_accounter(Function, Args) ->
             catch
                 %% @FIXME: Because apparently `Hold` still throws NotReady exception internally
                 error:{woody_error, {external, result_unexpected, <<"internal thrift application error">>}} ->
+                    _ = logger:warning("Accounter has crashed, retrying"),
                     {retry, {error, not_ready}}
             end
         end,
