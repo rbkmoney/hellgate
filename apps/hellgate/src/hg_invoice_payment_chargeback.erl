@@ -357,7 +357,7 @@ update_cash_flow(State, Action, Opts) ->
 -spec hold_cash_flow(state(), payment_state(), action(), opts()) -> result() | no_return().
 hold_cash_flow(State, PaymentSt, Action, Opts) ->
     CashFlowPlan = get_current_plan(State),
-    Clock = prepare_cash_flow(get_clock(PaymentSt), State, CashFlowPlan, Opts),
+    {ok, Clock} = prepare_cash_flow(get_clock(PaymentSt), State, CashFlowPlan, Opts),
     {[?chargeback_clock_update(Clock)], Action}.
 
 -spec finalise(state(), payment_state(), action(), opts()) -> result() | no_return().
@@ -368,8 +368,13 @@ finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts
     Status =:= ?chargeback_status_accepted();
     Status =:= ?chargeback_status_cancelled()
 ->
-    Clock = commit_cash_flow(get_clock(PaymentSt), State, Opts),
-    {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action}.
+    case commit_cash_flow(get_clock(PaymentSt), State, Opts) of
+        {ok, Clock} ->
+            {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {[], hg_machine_action:set_timeout(0, Action)}
+    end.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
 build_chargeback(Opts, Params = ?chargeback_params(Levy, Body, Reason), Revision, CreatedAt) ->
