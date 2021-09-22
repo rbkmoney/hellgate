@@ -2255,7 +2255,8 @@ get_cashflow_account(Type, CF) ->
            } <- CF,
            T == Type
     ],
-    hg_accounting_new:get_balance(ID).
+    {ok, Balance} = hg_accounting_new:get_balance(ID),
+    Balance.
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
