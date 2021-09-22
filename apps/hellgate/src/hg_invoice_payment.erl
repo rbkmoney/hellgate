@@ -1004,9 +1004,7 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
-    PartyID = Payment#domain_InvoicePayment.owner_id,
-    ShopID = Payment#domain_InvoicePayment.shop_id,
-    Allocation = maybe_allocation(AllocationPrototype, CaptureCost, PartyID, ShopID, MerchantTerms, Opts),
+    Allocation = maybe_allocation(AllocationPrototype, CaptureCost, MerchantTerms, Opts),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart, Allocation);
@@ -1014,16 +1012,24 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
             partial_capture(St, Reason, Cost, Cart, Opts, MerchantTerms, Timestamp, Allocation)
     end.
 
-maybe_allocation(undefined, _Cost, _PartyID, _ShopID, _MerchantTerms, _Opts) ->
+maybe_allocation(undefined, _Cost, _MerchantTerms, _Opts) ->
     undefined;
-maybe_allocation(AllocationPrototype, Cost, PartyID, ShopID, MerchantTerms, Opts) ->
-    ok = validate_allocatable(AllocationPrototype, MerchantTerms, Cost, Opts),
+maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Opts) ->
+    #domain_PaymentsServiceTerms{
+        allocations = AllocationSelector
+    } = MerchantTerms,
+    Party = get_party(Opts),
+    Shop = get_shop(Opts),
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     case
         hg_allocation:calculate(
             AllocationPrototype,
-            PartyID,
-            ShopID,
-            Cost
+            Party#domain_Party.id,
+            Shop#domain_Shop.id,
+            Cost,
+            AllocationSelector,
+            PaymentInstitutionRef
         )
     of
         {ok, A} ->
@@ -1219,15 +1225,9 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     Timestamp = get_payment_created_at(Payment),
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    #domain_Invoice{
-        owner_id = PartyID,
-        shop_id = ShopID
-    } = get_invoice(Opts),
     Allocation = maybe_allocation(
         Params#payproc_InvoicePaymentRefundParams.allocation,
         Cash,
-        PartyID,
-        ShopID,
         MerchantTerms,
         Opts
     ),
@@ -1247,22 +1247,6 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     },
     ok = validate_refund(MerchantRefundTerms, Refund, Payment),
     Refund.
-
-validate_allocatable(Allocation, PaymentTerms, Cash, Opts) ->
-    #domain_PaymentsServiceTerms{
-        allocations = AllocationSelector
-    } = PaymentTerms,
-    Party = get_party(Opts),
-    Shop = get_shop(Opts),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    case hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cash, PaymentInstitutionRef) of
-        ok ->
-            ok;
-        {error, Error} ->
-            %% TODO add exceptions
-            throw(Error)
-    end.
 
 validate_allocation(undefined, _Cash, _St) ->
     ok;

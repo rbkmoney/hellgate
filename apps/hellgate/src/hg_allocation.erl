@@ -5,7 +5,7 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 %% API
--export([calculate/4]).
+-export([calculate/6]).
 -export([sub/3]).
 -export([assert_allocatable/4]).
 
@@ -35,7 +35,11 @@
 -type calculate_errors() ::
     cost_mismatch
     | {invalid_transaction, transaction() | transaction_proto(),
-        negative_amount | zero_amount | target_conflict | currency_mismatch}.
+        negative_amount
+        | zero_amount
+        | target_conflict
+        | currency_mismatch
+        | {payment_institutions_mismatch, {owner_id(), shop_id()}}}.
 
 -type allocatable_errors() ::
     unallocatable
@@ -43,18 +47,23 @@
         {payment_institutions_mismatch, {owner_id(), shop_id()}}
         | currency_mismatch}.
 
--spec calculate(allocation_prototype(), owner_id(), shop_id(), cash()) ->
+-spec calculate(allocation_prototype(), owner_id(), shop_id(), cash(), allocation_terms(), payment_institution_ref()) ->
     {ok, allocation()} | {error, calculate_errors()}.
-calculate(AllocationPrototype, OwnerID, ShopID, Cost) ->
+calculate(AllocationPrototype, OwnerID, ShopID, Cost, PaymentAllocationServiceTerms, PaymentInstitutionRef) ->
     FeeTarget = construct_target(#{
         owner_id => OwnerID,
         shop_id => ShopID
     }),
-    try calculate(AllocationPrototype, FeeTarget, Cost) of
-        Result ->
-            {ok, Result}
-    catch
-        throw:Error ->
+    case assert_allocatable(AllocationPrototype, PaymentAllocationServiceTerms, Cost, PaymentInstitutionRef) of
+        ok ->
+            try calculate(AllocationPrototype, FeeTarget, Cost) of
+                Result ->
+                    {ok, Result}
+            catch
+                throw:Error ->
+                    {error, Error}
+            end;
+        {error, Error} ->
             {error, Error}
     end.
 
@@ -79,7 +88,7 @@ assert_allocatable(
     PaymentInstitutionRef
 ) ->
     try
-        lists:foldl(
+        lists:foreach(
             fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto, Acc) ->
                 Party = hg_party:get_party(PartyID),
                 Shop = hg_party:get_shop(ShopID, Party),
@@ -92,24 +101,20 @@ assert_allocatable(
                             throw({currency_mismatch, Proto})
                     end,
                 PIR = Contract#domain_Contract.payment_institution,
-                Shops = maps:get(PIR, Acc, []),
-                Acc#{PIR => [{Proto, PartyID, ShopID} | Shops]}
+                case PIR of
+                    PaymentInstitutionRef ->
+                        ok;
+                    _ ->
+                        throw({payment_institutions_mismatch, Proto, PartyID, ShopID})
+                end
             end,
-            #{PaymentInstitutionRef => []},
             Trxs
         )
-    of
-        PIMap0 ->
-            PIMap1 = maps:remove(PaymentInstitutionRef, PIMap0),
-            case maps:values(PIMap1) of
-                [] ->
-                    ok;
-                [{Proto, PartyID, ShopID} | _Shops] ->
-                    {error, {invalid_transaction, Proto, {payment_institutions_mismatch, PartyID, ShopID}}}
-            end
     catch
         throw:{currency_mismatch, Proto} ->
-            {error, {invalid_transaction, Proto, currency_mismatch}}
+            {error, {invalid_transaction, Proto, currency_mismatch}};
+        throw:{payment_institutions_mismatch, Proto, PartyID, ShopID} ->
+            {error, {invalid_transaction, Proto, {payment_institutions_mismatch, PartyID, ShopID}}}
     end;
 assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Cash, _PaymentInstitutionRef) ->
     {error, unallocatable}.

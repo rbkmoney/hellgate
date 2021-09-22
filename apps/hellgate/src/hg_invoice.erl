@@ -162,8 +162,11 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     Shop = assert_shop_exists(hg_party:get_shop(ShopID, Party)),
     _ = assert_party_shop_operable(Shop, Party),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
-    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms, Party),
-    ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams}),
+    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
+    AllocationPrototype = InvoiceParams#payproc_InvoiceParams.allocation,
+    Cost = InvoiceParams#payproc_InvoiceParams.cost,
+    Allocation = maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop),
+    ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams, Allocation}),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     DomainRevision = hg_domain:head(),
@@ -173,8 +176,11 @@ handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     TplID = Params#payproc_InvoiceWithTemplateParams.template_id,
     {Party, Shop, InvoiceParams} = make_invoice_params(Params),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
-    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms, Party),
-    ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams}),
+    ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
+    AllocationPrototype = InvoiceParams#payproc_InvoiceParams.allocation,
+    Cost = InvoiceParams#payproc_InvoiceParams.cost,
+    Allocation = maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop),
+    ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams, Allocation}),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CapturePaymentNew', Args, Opts) ->
     handle_function_('CapturePayment', Args, Opts);
@@ -290,6 +296,31 @@ handle_function_('RepairWithScenario', {UserInfo, InvoiceID, Scenario}, _Opts) -
     _ = set_invoicing_meta(InvoiceID),
     _ = assert_invoice(accessible, get_initial_state(InvoiceID)),
     repair(InvoiceID, {scenario, Scenario}).
+
+maybe_allocation(undefined, _Cost, _MerchantTerms, _Party, _Shop) ->
+    undefined;
+maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop) ->
+    #domain_PaymentsServiceTerms{
+        allocations = AllocationSelector
+    } = MerchantTerms,
+    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
+    case
+        hg_allocation:calculate(
+            AllocationPrototype,
+            Party#domain_Party.id,
+            Shop#domain_Shop.id,
+            Cost,
+            AllocationSelector,
+            PaymentInstitutionRef
+        )
+    of
+        {ok, A} ->
+            A;
+        {error, Error} ->
+            %% TODO Add real exceptions
+            throw(Error)
+    end.
 
 %%----------------- invoice asserts
 assert_invoice(Checks, #st{} = St) when is_list(Checks) ->
@@ -471,9 +502,9 @@ namespace() ->
     {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary()},
     hg_machine:machine()
 ) -> hg_machine:result().
-init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
+init({InvoiceTplID, PartyRevision, EncodedInvoiceParams, Allocation}, #{id := ID}) ->
     InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
-    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
+    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams, Allocation),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
@@ -1025,22 +1056,10 @@ get_chargeback_state(ID, PaymentState) ->
 
 %%
 
-create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
+create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}, Allocation) ->
     OwnerID = V#payproc_InvoiceParams.party_id,
     ShopID = V#payproc_InvoiceParams.shop_id,
     Cost = V#payproc_InvoiceParams.cost,
-    Allocation = hg_maybe:apply(
-        fun(AP) ->
-            case hg_allocation:calculate(AP, OwnerID, ShopID, Cost) of
-                {ok, A} ->
-                    A;
-                {error, Error} ->
-                    %% TODO Add real exceptions
-                    throw(Error)
-            end
-        end,
-        V#payproc_InvoiceParams.allocation
-    ),
     #domain_Invoice{
         id = ID,
         shop_id = ShopID,
@@ -1298,29 +1317,14 @@ make_invoice_params(Params) ->
     },
     {Party, Shop, InvoiceParams}.
 
-validate_invoice_params(#payproc_InvoiceParams{cost = Cost, allocation = Allocation}, Shop, MerchantTerms, Party) ->
+validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop, MerchantTerms) ->
     ok = validate_invoice_cost(Cost, Shop, MerchantTerms),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
-    validate_invoice_allocatable(Allocation, MerchantTerms, Cost, PaymentInstitutionRef).
+    ok.
 
 validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:validate_cost(Cost, Shop),
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
     ok.
-
-validate_invoice_allocatable(undefined, _MerchantTerms, _Cost, _PaymentInstitutionRef) ->
-    ok;
-validate_invoice_allocatable(Allocation, MerchantTerms, Cost, PaymentInstitutionRef) ->
-    PaymentTerms = MerchantTerms#domain_TermSet.payments,
-    AllocationSelector = PaymentTerms#domain_PaymentsServiceTerms.allocations,
-    case hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost, PaymentInstitutionRef) of
-        ok ->
-            ok;
-        {error, Error} ->
-            %% TODO make actual exceptions
-            throw(Error)
-    end.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
     VS = collect_varset(Params#payproc_InvoiceParams.cost, PartyId, Shop),
