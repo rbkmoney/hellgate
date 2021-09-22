@@ -1983,17 +1983,24 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     Invoice = get_invoice(Opts),
     Payment = get_payment(St),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
-    {ok, NewClock} = hg_accounting_new:plan(
-        construct_payment_plan_id(Invoice, Payment2),
-        [
-            {2, hg_cashflow:revert(get_cashflow(St))},
-            {3, FinalCashflow}
-        ],
-        Timestamp,
-        St#st.clock
-    ),
-    Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
+    case
+        hg_accounting_new:plan(
+            construct_payment_plan_id(Invoice, Payment2),
+            [
+                {2, hg_cashflow:revert(get_cashflow(St))},
+                {3, FinalCashflow}
+            ],
+            Timestamp,
+            St#st.clock
+        )
+    of
+        {ok, NewClock} ->
+            Events = start_session(?captured(Reason, Cost, Cart)),
+            {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end.
 
 %%
 
