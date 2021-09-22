@@ -67,13 +67,13 @@ call_with_retry(Fun, Strategy) ->
     case Fun() of
         {return, Result} ->
             Result;
-        retry ->
+        {retry, Error} ->
             case next_step(Strategy) of
                 {wait, Timeout, NextStrategy} ->
                     _ = timer:sleep(Timeout),
                     call_with_retry(Fun, NextStrategy);
                 finish ->
-                    throw({error, no_more_retries})
+                    Error
             end
     end.
 
