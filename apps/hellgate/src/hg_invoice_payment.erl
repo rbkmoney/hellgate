@@ -935,110 +935,8 @@ collect_validation_varset(Party, Shop, Payment, VS) ->
 
 %%
 
-collect_cashflow(
-    #domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector},
-    Shop,
-    Opts,
-    MerchantTerms,
-    Route,
-    undefined,
-    Payment,
-    Provider,
-    Revision,
-    Timestamp,
-    VS
-) ->
-    Party = get_party(Opts),
-    CF = construct_transaction_cashflow(
-        Party,
-        Shop,
-        Payment#domain_InvoicePayment.cost,
-        MerchantTerms,
-        Revision,
-        Timestamp,
-        Payment,
-        Provider,
-        VS
-    ),
-    ProviderCashflow = construct_provider_cashflow(
-        ProviderCashflowSelector,
-        Opts,
-        VS,
-        Revision,
-        Shop,
-        Route,
-        Payment,
-        Payment,
-        Provider
-    ),
-    CF ++ ProviderCashflow;
-collect_cashflow(
-    #domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector},
-    Shop,
-    Opts,
-    _TermSet,
-    Route,
-    ?allocation(Transactions),
-    Payment,
-    Provider,
-    Revision,
-    Timestamp,
-    VS
-) ->
-    CF = lists:foldl(
-        fun(?allocation_trx(_ID, Target, Amount), Acc) ->
-            ?allocation_trx_target_shop(PartyID, ShopID) = Target,
-            TargetParty = hg_party:get_party(PartyID),
-            TargetShop = hg_party:get_shop(ShopID, TargetParty),
-            construct_transaction_cashflow(
-                TargetParty,
-                TargetShop,
-                Amount,
-                undefined,
-                Revision,
-                Timestamp,
-                Payment,
-                Provider,
-                VS
-            ) ++ Acc
-        end,
-        [],
-        Transactions
-    ),
-    ProviderCashflow = construct_provider_cashflow(
-        ProviderCashflowSelector,
-        Opts,
-        VS,
-        Revision,
-        Shop,
-        Route,
-        Payment,
-        Payment,
-        Provider
-    ),
-    CF ++ ProviderCashflow.
-
-construct_transaction_cashflow(Party, Shop, Amount, undefined, Revision, Timestamp, Payment, Provider, VS0) ->
-    VS1 = VS0#{
-        party_id => Party#domain_Party.id,
-        shop_id => Shop#domain_Shop.id,
-        cost => Amount
-    },
-    TermSet = get_merchant_terms(Party, Shop, Revision, Timestamp, VS1),
-    MerchantTerms = TermSet#domain_TermSet.payments,
-    construct_transaction_cashflow(Party, Shop, Amount, MerchantTerms, Revision, Timestamp, Payment, Provider, VS0);
-construct_transaction_cashflow(Party, Shop, Amount, MerchantTerms, Revision, _Timestamp, Payment, Provider, VS0) ->
-    VS1 = VS0#{
-        party_id => Party#domain_Party.id,
-        shop_id => Shop#domain_Shop.id,
-        cost => Amount
-    },
-    MerchantCashflowSelector = MerchantTerms#domain_PaymentsServiceTerms.fees,
-    MerchantCashflow0 = get_selector_value(merchant_payment_fees, MerchantCashflowSelector),
-    construct_cashflow(MerchantCashflow0, Party, Shop, Amount, Revision, Payment, Provider, VS1).
-
-construct_final_cashflow(Cashflow, Context, AccountMap, PostingContext) ->
-    hg_cashflow:finalize(Cashflow, Context, AccountMap, PostingContext).
+construct_final_cashflow(Cashflow, Context, AccountMap) ->
+    hg_cashflow:finalize(Cashflow, Context, AccountMap).
 
 collect_cash_flow_context(
     #domain_InvoicePayment{cost = Cost}
@@ -1388,16 +1286,20 @@ validate_allocation(SubAllocation, Cash, St) ->
 
 make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS, Timestamp) ->
     Route = get_route(St),
+    Party = get_party(Opts),
     Shop = get_shop(Opts),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
     ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
     Allocation = Refund#domain_InvoicePaymentRefund.allocation,
     Provider = get_route_provider(Route, Revision),
-    collect_refund_cashflow(
+    collect_cashflow(
+        refund,
         ProviderTerms,
         MerchantTerms,
+        Party,
         Shop,
-        Opts,
+        PaymentInstitutionRef,
         Route,
         Allocation,
         Payment,
@@ -1559,25 +1461,30 @@ validate_common_refund_terms(Terms, Refund, Payment) ->
     ),
     ok.
 
-collect_refund_cashflow(
-    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector},
+collect_cashflow(
+    OpType,
+    ProvisionTerms,
     MerchantTerms,
+    Party,
     Shop,
-    Opts,
+    PaymentInstitutionRef,
     Route,
     undefined,
     Payment,
-    Refund,
+    ContextSource,
     Provider,
     Revision,
     Timestamp,
     VS
 ) ->
-    Party = get_party(Opts),
-    CF = construct_refund_transaction_cashflow(
+    ProviderCashflowSelector = get_provider_cashflow_selector(ProvisionTerms),
+    Amount = get_context_source_amount(ContextSource),
+    CF = construct_transaction_cashflow(
+        OpType,
         Party,
         Shop,
-        Refund#domain_InvoicePaymentRefund.cash,
+        Route,
+        Amount,
         MerchantTerms,
         Revision,
         Timestamp,
@@ -1587,25 +1494,28 @@ collect_refund_cashflow(
     ),
     ProviderCashflow = construct_provider_cashflow(
         ProviderCashflowSelector,
-        Opts,
+        PaymentInstitutionRef,
         VS,
         Revision,
+        Party,
         Shop,
         Route,
-        Refund,
+        ContextSource,
         Payment,
         Provider
     ),
     CF ++ ProviderCashflow;
-collect_refund_cashflow(
-    #domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector},
+collect_cashflow(
+    OpType,
+    ProvisionTerms,
     _MerchantTerms,
+    Party,
     Shop,
-    Opts,
+    PaymentInstitutionRef,
     Route,
     ?allocation(Transactions),
     Payment,
-    Refund,
+    ContextSource,
     Provider,
     Revision,
     Timestamp,
@@ -1616,9 +1526,11 @@ collect_refund_cashflow(
             ?allocation_trx_target_shop(PartyID, ShopID) = Target,
             TargetParty = hg_party:get_party(PartyID),
             TargetShop = hg_party:get_shop(ShopID, TargetParty),
-            construct_refund_transaction_cashflow(
+            construct_transaction_cashflow(
+                OpType,
                 TargetParty,
                 TargetShop,
+                Route,
                 Amount,
                 undefined,
                 Revision,
@@ -1631,45 +1543,40 @@ collect_refund_cashflow(
         [],
         Transactions
     ),
+    ProviderCashflowSelector = get_provider_cashflow_selector(ProvisionTerms),
     ProviderCashflow = construct_provider_cashflow(
         ProviderCashflowSelector,
-        Opts,
+        PaymentInstitutionRef,
         VS,
         Revision,
+        Party,
         Shop,
         Route,
-        Refund,
+        ContextSource,
         Payment,
         Provider
     ),
     CF ++ ProviderCashflow.
 
-construct_refund_transaction_cashflow(Party, Shop, Amount, undefined, Revision, Timestamp, Payment, Provider, VS0) ->
-    VS1 = VS0#{
-        party_id => Party#domain_Party.id,
-        shop_id => Shop#domain_Shop.id,
-        cost => Amount
-    },
-    TermSet = get_merchant_terms(Party, Shop, Revision, Timestamp, VS1),
-    MerchantPaymentsTerms = TermSet#domain_TermSet.payments,
-    construct_refund_transaction_cashflow(
-        Party,
-        Shop,
-        Amount,
-        MerchantPaymentsTerms,
-        Revision,
-        Timestamp,
-        Payment,
-        Provider,
-        VS0
-    );
-construct_refund_transaction_cashflow(
+get_context_source_amount(#domain_InvoicePayment{cost = Cost}) ->
+    Cost;
+get_context_source_amount(#domain_InvoicePaymentRefund{cash = Cash}) ->
+    Cash.
+
+get_provider_cashflow_selector(#domain_PaymentsProvisionTerms{cash_flow = ProviderCashflowSelector}) ->
+    ProviderCashflowSelector;
+get_provider_cashflow_selector(#domain_PaymentRefundsProvisionTerms{cash_flow = ProviderCashflowSelector}) ->
+    ProviderCashflowSelector.
+
+construct_transaction_cashflow(
+    OpType,
     Party,
     Shop,
+    Route,
     Amount,
-    MerchantPaymentsTerms,
+    MerchantPaymentsTerms0,
     Revision,
-    _Timestamp,
+    Timestamp,
     Payment,
     Provider,
     VS0
@@ -1679,12 +1586,25 @@ construct_refund_transaction_cashflow(
         shop_id => Shop#domain_Shop.id,
         cost => Amount
     },
-    MerchantRefundTerms = MerchantPaymentsTerms#domain_PaymentsServiceTerms.refunds,
-    MerchantRefundCashflowSelector = MerchantRefundTerms#domain_PaymentRefundsServiceTerms.fees,
-    MerchantCashflow0 = get_selector_value(merchant_payment_fees, MerchantRefundCashflowSelector),
-    construct_cashflow(MerchantCashflow0, Party, Shop, Amount, Revision, Payment, Provider, VS1).
+    MerchantPaymentsTerms1 =
+        case MerchantPaymentsTerms0 of
+            undefined ->
+                TermSet = get_merchant_terms(Party, Shop, Revision, Timestamp, VS1),
+                TermSet#domain_TermSet.payments;
+            _ ->
+                MerchantPaymentsTerms0
+        end,
+    MerchantCashflowSelector = get_terms_cashflow(OpType, MerchantPaymentsTerms1),
+    MerchantCashflow = get_selector_value(merchant_payment_fees, MerchantCashflowSelector),
+    construct_cashflow(MerchantCashflow, Party, Shop, Route, Amount, Revision, Payment, Provider, VS1).
 
-construct_cashflow(MerchantCashflow, Party, Shop, Amount, Revision, Payment, Provider, VS) ->
+get_terms_cashflow(payment, MerchantPaymentsTerms) ->
+    MerchantPaymentsTerms#domain_PaymentsServiceTerms.fees;
+get_terms_cashflow(refund, MerchantPaymentsTerms) ->
+    MerchantRefundTerms = MerchantPaymentsTerms#domain_PaymentsServiceTerms.refunds,
+    MerchantRefundTerms#domain_PaymentRefundsServiceTerms.fees.
+
+construct_cashflow(MerchantCashflow, Party, Shop, Route, Amount, Revision, Payment, Provider, VS) ->
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
     PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     PaymentInstitution = hg_payment_institution:compute_payment_institution(
@@ -1692,38 +1612,37 @@ construct_cashflow(MerchantCashflow, Party, Shop, Amount, Revision, Payment, Pro
         VS,
         Revision
     ),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
+    AccountMap = collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision),
     Context = #{
         operation_amount => Amount
     },
-    PostingContext = #{
-        party => Party,
-        shop => Shop
-    },
-    construct_final_cashflow(MerchantCashflow, Context, AccountMap, PostingContext).
+    construct_final_cashflow(MerchantCashflow, Context, AccountMap).
 
 construct_provider_cashflow(
     ProviderCashflowSelector,
-    Opts,
+    PaymentInstitutionRef,
     VS,
     Revision,
+    Party,
     Shop,
     Route,
     ContextSource,
     Payment,
     Provider
 ) ->
-    PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
     Context = collect_cash_flow_context(ContextSource),
+    AccountMap = collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision),
+    construct_final_cashflow(ProviderCashflow, Context, AccountMap).
+
+collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision) ->
     AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    PostingContext = #{
-        party => get_party(Opts),
+    AccountMap#{
+        party => Party,
         shop => Shop,
         route => Route
-    },
-    construct_final_cashflow(ProviderCashflow, Context, AccountMap, PostingContext).
+    }.
 
 prepare_refund_cashflow(RefundSt, St) ->
     hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
@@ -1923,14 +1842,19 @@ calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts, Allocation) ->
 ) -> final_cash_flow().
 calculate_cashflow(Route, Payment, ProviderTerms, MerchantTerms, VS, Revision, Opts, Timestamp, Allocation) ->
     Provider = get_route_provider(Route, Revision),
+    Party = get_party(Opts),
     Shop = get_shop(Opts),
+    PaymentInstitutionRef = get_payment_institution_ref(Opts),
     collect_cashflow(
+        payment,
         ProviderTerms,
-        Shop,
-        Opts,
         MerchantTerms,
+        Party,
+        Shop,
+        PaymentInstitutionRef,
         Route,
         Allocation,
+        Payment,
         Payment,
         Provider,
         Revision,

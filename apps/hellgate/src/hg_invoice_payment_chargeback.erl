@@ -430,16 +430,16 @@ build_chargeback_final_cash_flow(State, Opts) ->
     PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
-    ServiceContext = build_service_cash_flow_context(State),
-    ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
-    PostingContext = #{
+    AccountMap0 = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
+    AccountMap1 = AccountMap0#{
         party => Party,
         shop => Shop,
         route => Route
     },
-    ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap, PostingContext),
-    ProviderFinalCF = hg_cashflow:finalize(ProviderCashFlow, ProviderContext, AccountMap, PostingContext),
+    ServiceContext = build_service_cash_flow_context(State),
+    ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
+    ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap1),
+    ProviderFinalCF = hg_cashflow:finalize(ProviderCashFlow, ProviderContext, AccountMap1),
     ServiceFinalCF ++ ProviderFinalCF.
 
 build_service_cash_flow_context(State) ->

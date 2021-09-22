@@ -1309,12 +1309,11 @@ validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:assert_cost_payable(Cost, PaymentTerms),
     ok.
 
-validate_invoice_allocatable(undefined, _PaymentTerms, _Cost, _PaymentInstitutionRef) ->
+validate_invoice_allocatable(undefined, _MerchantTerms, _Cost, _PaymentInstitutionRef) ->
     ok;
-validate_invoice_allocatable(Allocation, PaymentTerms, Cost, PaymentInstitutionRef) ->
-    #domain_PaymentsServiceTerms{
-        allocations = AllocationSelector
-    } = PaymentTerms,
+validate_invoice_allocatable(Allocation, MerchantTerms, Cost, PaymentInstitutionRef) ->
+    PaymentTerms = MerchantTerms#domain_TermSet.payments,
+    AllocationSelector = PaymentTerms#domain_PaymentsServiceTerms.allocations,
     case hg_allocation:assert_allocatable(Allocation, AllocationSelector, Cost, PaymentInstitutionRef) of
         ok ->
             ok;
