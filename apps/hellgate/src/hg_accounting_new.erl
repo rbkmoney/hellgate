@@ -149,7 +149,7 @@ hold(PlanID, Batch, Timestamp) ->
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
 -spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) ->
-    {ok, clock()} | {error, {invalid_posting_params, _}}.
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 hold(PlanID, Batch, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp), AccounterClock).
