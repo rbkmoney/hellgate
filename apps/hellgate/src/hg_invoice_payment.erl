@@ -1705,17 +1705,17 @@ number_plan([NonEmpty | Tail], Number, Acc) ->
     number_plan(Tail, Number + 1, [{Number, NonEmpty} | Acc]).
 
 plan_adjustment_cashflow(_PlanID, [], _Timestamp, Clock) ->
-    Clock;
+    {ok, Clock};
 plan_adjustment_cashflow(PlanID, Plan, Timestamp, Clock) ->
     hg_accounting_new:plan(PlanID, Plan, Timestamp, Clock).
 
 commit_adjustment_cashflow(_PlanID, [], _Timestamp, Clock) ->
-    Clock;
+    {ok, Clock};
 commit_adjustment_cashflow(PlanID, Plan, Timestamp, Clock) ->
     hg_accounting_new:commit(PlanID, Plan, Timestamp, Clock).
 
 rollback_adjustment_cashflow(_PlanID, [], _Timestamp, Clock) ->
-    Clock;
+    {ok, Clock};
 rollback_adjustment_cashflow(PlanID, Plan, Timestamp, Clock) ->
     hg_accounting_new:rollback(PlanID, Plan, Timestamp, Clock).
 
@@ -1968,7 +1968,7 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 %%
 
 -spec process_adjustment_cashflow(adjustment_id(), action(), st()) -> machine_result().
-process_adjustment_cashflow(ID, Action, St) ->
+process_adjustment_cashflow(ID, _Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
     case prepare_adjustment_cashflow(Adjustment, St, Opts) of
@@ -1979,8 +1979,7 @@ process_adjustment_cashflow(ID, Action, St) ->
             ],
             {done, {Events, hg_machine_action:new()}};
         {error, not_ready} ->
-            _ = logger:warning("Accounter was not ready, retrying"),
-            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
     end.
 
 process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
