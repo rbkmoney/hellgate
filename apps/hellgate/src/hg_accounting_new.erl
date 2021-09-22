@@ -125,7 +125,8 @@ collect_external_account_map(Payment, VS, Revision, Acc) ->
     hg_accounting:collect_external_account_map(Payment, VS, Revision, Acc).
 
 %%
--spec plan(plan_id(), [batch()], hg_datetime:timestamp()) -> {ok, clock()} | {error, {invalid_posting_params, _}}.
+-spec plan(plan_id(), [batch()], hg_datetime:timestamp()) ->
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 plan(_PlanID, [], _Timestamp) ->
     error(badarg);
 plan(_PlanID, Batches, _Timestamp) when not is_list(Batches) ->
@@ -134,7 +135,7 @@ plan(PlanID, Batches, Timestamp) ->
     execute_plan(PlanID, Batches, Timestamp, undefined).
 
 -spec plan(plan_id(), [batch()], hg_datetime:timestamp(), clock()) ->
-    {ok, clock()} | {error, {invalid_posting_params, _}}.
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 plan(_PlanID, [], _Timestamp, _Clock) ->
     error(badarg);
 plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
@@ -142,7 +143,8 @@ plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
 plan(PlanID, Batches, Timestamp, Clock) ->
     execute_plan(PlanID, Batches, Timestamp, Clock).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp()) -> {ok, clock()} | {error, {invalid_posting_params, _}}.
+-spec hold(plan_id(), batch(), hg_datetime:timestamp()) ->
+    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 hold(PlanID, Batch, Timestamp) ->
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
 
