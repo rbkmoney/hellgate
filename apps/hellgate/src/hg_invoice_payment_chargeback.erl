@@ -372,8 +372,7 @@ finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts
         {ok, Clock} ->
             {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action};
         {error, not_ready} ->
-            _ = logger:warning("Accounter was not ready, retrying"),
-            {[], hg_machine_action:set_timeout(0, Action)}
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
     end.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
