@@ -1968,7 +1968,7 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 %%
 
 -spec process_adjustment_cashflow(adjustment_id(), action(), st()) -> machine_result().
-process_adjustment_cashflow(ID, _Action, St) ->
+process_adjustment_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
     case prepare_adjustment_cashflow(Adjustment, St, Opts) of
@@ -1979,7 +1979,8 @@ process_adjustment_cashflow(ID, _Action, St) ->
             ],
             {done, {Events, hg_machine_action:new()}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end.
 
 process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
