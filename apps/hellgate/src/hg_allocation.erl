@@ -89,7 +89,7 @@ assert_allocatable(
 ) ->
     try
         lists:foreach(
-            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto, Acc) ->
+            fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto) ->
                 Party = hg_party:get_party(PartyID),
                 Shop = hg_party:get_shop(ShopID, Party),
                 Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
