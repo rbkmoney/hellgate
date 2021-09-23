@@ -1397,7 +1397,7 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     PaymentParams = make_scenario_payment_params([good, fail, good], {hold, capture}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ?assertMatch(
-        #{min_available_amount := -1890, max_available_amount := 42000},
+        {ok, #{min_available_amount := -1890, max_available_amount := 42000}},
         hg_accounting_new:get_balance(SettlementID)
     ),
     ok = hg_client_invoicing:cancel_payment(InvoiceID, PaymentID, <<"cancel">>, Client),
@@ -1406,7 +1406,7 @@ payment_error_in_cancel_session_does_not_cause_payment_failure(C) ->
     ] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, Client),
     ?assertMatch(
-        #{min_available_amount := -1890, max_available_amount := 42000},
+        {ok, #{min_available_amount := -1890, max_available_amount := 42000}},
         hg_accounting_new:get_balance(SettlementID)
     ),
     ?assertException(
@@ -1431,7 +1431,7 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     PaymentParams = make_scenario_payment_params([good, fail, good], {hold, cancel}),
     PaymentID = process_payment(InvoiceID, PaymentParams, Client),
     ?assertMatch(
-        #{min_available_amount := -1890, max_available_amount := 42000},
+        {ok, #{min_available_amount := -1890, max_available_amount := 42000}},
         hg_accounting_new:get_balance(SettlementID)
     ),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"capture">>, Client),
@@ -1441,7 +1441,7 @@ payment_error_in_capture_session_does_not_cause_payment_failure(C) ->
     ] = next_event(InvoiceID, Client),
     timeout = next_event(InvoiceID, Client),
     ?assertMatch(
-        #{min_available_amount := -1890, max_available_amount := 42000},
+        {ok, #{min_available_amount := -1890, max_available_amount := 42000}},
         hg_accounting_new:get_balance(SettlementID)
     ),
     ?assertException(

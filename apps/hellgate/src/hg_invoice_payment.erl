@@ -1897,7 +1897,7 @@ process_cash_flow_building(Action, St) ->
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
-    Clock = hg_accounting_new:hold(
+    {ok, Clock} = hg_accounting_new:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow},
         Timestamp
@@ -2004,17 +2004,23 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     Invoice = get_invoice(Opts),
     Payment = get_payment(St),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
-    NewClock = hg_accounting_new:plan(
-        construct_payment_plan_id(Invoice, Payment2),
-        [
-            {2, hg_cashflow:revert(get_cashflow(St))},
-            {3, FinalCashflow}
-        ],
-        Timestamp,
-        St#st.clock
-    ),
-    Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}}.
+    case
+        hg_accounting_new:plan(
+            construct_payment_plan_id(Invoice, Payment2),
+            [
+                {2, hg_cashflow:revert(get_cashflow(St))},
+                {3, FinalCashflow}
+            ],
+            Timestamp,
+            St#st.clock
+        )
+    of
+        {ok, NewClock} ->
+            Events = start_session(?captured(Reason, Cost, Cart)),
+            {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}};
+        {error, not_ready} ->
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+    end.
 
 %%
 
@@ -2151,24 +2157,25 @@ process_result({payment, processing_accounter}, Action, St) ->
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
-    NewAction = hg_machine_action:set_timeout(0, Action),
-    _ = rollback_payment_limits(St),
-    Clock = rollback_payment_cashflow(St),
-    {done, {[?payment_clock_update(Clock), ?payment_status_changed(?failed(Failure))], NewAction}};
+    case rollback_payment_cashflow(St) of
+        {ok, AccounterClock} ->
+            _ = rollback_payment_limits(St),
+            NewAction = hg_machine_action:set_timeout(0, Action),
+            {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(?failed(Failure))], NewAction}};
+        {error, not_ready} ->
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+    end;
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    AccounterClock =
-        case Target of
-            ?captured() ->
-                _LimiterClock = commit_payment_limits(St),
-                commit_payment_cashflow(St);
-            ?cancelled() ->
-                _LimiterClock = rollback_payment_limits(St),
-                rollback_payment_cashflow(St)
-        end,
-    check_recurrent_token(St),
-    NewAction = get_action(Target, Action, St),
-    {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(Target)], NewAction}};
+    case finalize_payment_accounter(Target, St) of
+        {ok, AccounterClock} ->
+            _ = finalize_payment_limiter(Target, St),
+            _ = check_recurrent_token(St),
+            NewAction = get_action(Target, Action, St),
+            {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(Target)], NewAction}};
+        {error, not_ready} ->
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+    end;
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
@@ -2269,6 +2276,16 @@ process_payment_session_callback(Payload, State) ->
             _ = maybe_notify_fault_detector(error, State),
             erlang:raise(error, Reason, StackTrace)
     end.
+
+finalize_payment_accounter(?captured(), St) ->
+    commit_payment_cashflow(St);
+finalize_payment_accounter(?cancelled(), St) ->
+    rollback_payment_cashflow(St).
+
+finalize_payment_limiter(?captured(), St) ->
+    commit_payment_limits(St);
+finalize_payment_limiter(?cancelled(), St) ->
+    rollback_payment_limits(St).
 
 check_recurrent_token(#st{
     payment = #domain_InvoicePayment{id = ID, make_recurrent = true},
