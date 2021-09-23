@@ -2007,7 +2007,8 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
             Events = start_session(?captured(Reason, Cost, Cart)),
             {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end.
 
 %%
@@ -2151,7 +2152,8 @@ process_result({payment, processing_failure}, Action, St = #st{failure = Failure
             NewAction = hg_machine_action:set_timeout(0, Action),
             {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(?failed(Failure))], NewAction}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end;
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
@@ -2162,7 +2164,8 @@ process_result({payment, finalizing_accounter}, Action, St) ->
             NewAction = get_action(Target, Action, St),
             {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(Target)], NewAction}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end;
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
