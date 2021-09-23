@@ -59,7 +59,15 @@ get_possible_methods(
                 {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
                     payment_system_deprecated = PaymentSystem,
                     token_provider_deprecated = TokenProvider,
-                    tokenization_method = TokenizationMethod
+                    tokenization_method = dpan
+                }}
+        },
+        #domain_PaymentMethodRef{
+            id =
+                {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
+                    payment_system_deprecated = PaymentSystem,
+                    token_provider_deprecated = TokenProvider,
+                    tokenization_method = undefined
                 }}
         },
         create_payment_method_ref(BankCard#domain_BankCard{
