@@ -300,9 +300,8 @@ handle_function_('RepairWithScenario', {UserInfo, InvoiceID, Scenario}, _Opts) -
 maybe_allocation(undefined, _Cost, _MerchantTerms, _Party, _Shop) ->
     undefined;
 maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop) ->
-    #domain_PaymentsServiceTerms{
-        allocations = AllocationSelector
-    } = MerchantTerms,
+    PaymentTerms = MerchantTerms#domain_TermSet.payments,
+    AllocationSelector = PaymentTerms#domain_PaymentsServiceTerms.allocations,
     case
         hg_allocation:calculate(
             AllocationPrototype,
@@ -475,6 +474,7 @@ map_history_error({error, notfound}) ->
 -type party() :: dmsl_domain_thrift:'Party'().
 -type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 -type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
+-type allocation() :: dmsl_domain_thrift:'Allocation'().
 
 -type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
 
@@ -496,7 +496,7 @@ namespace() ->
     ?NS.
 
 -spec init(
-    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary()},
+    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary(), allocation()},
     hg_machine:machine()
 ) -> hg_machine:result().
 init({InvoiceTplID, PartyRevision, EncodedInvoiceParams, Allocation}, #{id := ID}) ->

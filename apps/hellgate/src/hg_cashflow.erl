@@ -14,9 +14,8 @@
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
 -type account_map() :: #{
     account() => account_id(),
-    shop := shop(),
-    party := party(),
-    route => route()
+    merchant := {party_id(), shop_id()},
+    provider := route()
 }.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
@@ -25,8 +24,8 @@
 -type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
 -type final_cash_flow_account() :: dmsl_domain_thrift:'FinalCashFlowAccount'().
 
--type shop() :: dmsl_domain_thrift:'Shop'().
--type party() :: hg_party:party().
+-type shop_id() :: dmsl_domain_thrift:'ShopID'().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type route() :: dmsl_domain_thrift:'PaymentRoute'().
 
 %%
