@@ -136,6 +136,9 @@
 -type result() ::
     {[change()], action()}.
 
+-type machine_result() ::
+    {next | done, result()}.
+
 -type change() ::
     dmsl_payment_processing_thrift:'InvoicePaymentChargebackChangePayload'().
 
@@ -274,7 +277,7 @@ merge_change(?chargeback_clock_update(_), State) ->
 merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
     set_cash_flow(CashFlow, State).
 
--spec process_timeout(activity(), state(), payment_state(), action(), opts()) -> result().
+-spec process_timeout(activity(), state(), payment_state(), action(), opts()) -> machine_result().
 process_timeout(preparing_initial_cash_flow, State, _PaymentSt, _Action, Opts) ->
     update_cash_flow(State, hg_machine_action:instant(), Opts);
 process_timeout(holding_initial_cash_flow, State, PaymentSt, _Action, Opts) ->
@@ -349,20 +352,25 @@ do_reopen(State, PaymentState, ReopenParams = ?reopen_params(Levy, Body)) ->
 
 %%
 
--spec update_cash_flow(state(), action(), opts()) -> result() | no_return().
+-spec update_cash_flow(state(), action(), opts()) -> machine_result() | no_return().
 update_cash_flow(State, Action, Opts) ->
     FinalCashFlow = build_chargeback_cash_flow(State, Opts),
-    {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
+    {done, {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}}.
 
--spec hold_cash_flow(state(), payment_state(), action(), opts()) -> result() | no_return().
+-spec hold_cash_flow(state(), payment_state(), action(), opts()) -> machine_result() | no_return().
 hold_cash_flow(State, PaymentSt, Action, Opts) ->
     CashFlowPlan = get_current_plan(State),
-    {ok, Clock} = prepare_cash_flow(get_clock(PaymentSt), State, CashFlowPlan, Opts),
-    {[?chargeback_clock_update(Clock)], Action}.
+    case prepare_cash_flow(get_clock(PaymentSt), State, CashFlowPlan, Opts) of
+        {ok, Clock} ->
+            {done, {[?chargeback_clock_update(Clock)], Action}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end.
 
--spec finalise(state(), payment_state(), action(), opts()) -> result() | no_return().
+-spec finalise(state(), payment_state(), action(), opts()) -> machine_result() | no_return().
 finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, _PaymentSt, Action, _Opts) ->
-    {[?chargeback_status_changed(Status)], Action};
+    {done, {[?chargeback_status_changed(Status)], Action}};
 finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts) when
     Status =:= ?chargeback_status_rejected();
     Status =:= ?chargeback_status_accepted();
@@ -370,9 +378,10 @@ finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts
 ->
     case commit_cash_flow(get_clock(PaymentSt), State, Opts) of
         {ok, Clock} ->
-            {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action};
+            {done, {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
