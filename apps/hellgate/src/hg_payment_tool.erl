@@ -41,13 +41,9 @@ get_possible_methods(
             tokenization_method = none
         } = BankCard}
 ) when PaymentSystem /= undefined andalso TokenProvider /= undefined ->
-    BankCard1 = BankCard#domain_BankCard{
-        token_provider_deprecated = undefined,
-        tokenization_method = undefined
-    },
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
-        create_payment_method_ref(BankCard1)
+        create_payment_method_ref(BankCard)
     ]);
 get_possible_methods(
     {bank_card,
@@ -66,9 +62,6 @@ get_possible_methods(
                     tokenization_method = TokenizationMethod
                 }}
         },
-        create_payment_method_ref(BankCard#domain_BankCard{
-            tokenization_method = undefined
-        }),
         create_payment_method_ref(BankCard#domain_BankCard{
             tokenization_method = genlib:define(TokenizationMethod, dpan)
         })
