@@ -959,10 +959,14 @@ collect_cash_flow_context(
     }.
 
 get_available_amount(AccountID, Clock) ->
-    #{
-        min_available_amount := AvailableAmount
-    } = hg_accounting_new:get_balance(AccountID, Clock),
-    AvailableAmount.
+    case hg_accounting_new:get_balance(AccountID, Clock) of
+        {ok, #{
+            min_available_amount := AvailableAmount
+        }} ->
+            {ok, AvailableAmount};
+        {error, _} = Error ->
+            Error
+    end.
 
 construct_payment_plan_id(St) ->
     construct_payment_plan_id(get_invoice(get_opts(St)), get_payment(St)).
@@ -2179,33 +2183,41 @@ process_result({payment, finalizing_accounter}, Action, St) ->
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
-    _ = rollback_refund_limits(RefundSt, St),
-    Clock = rollback_refund_cashflow(RefundSt, St),
-    Events = [
-        ?refund_ev(ID, ?refund_clock_update(Clock)),
-        ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
-    ],
-    {done, {Events, Action}};
+    case rollback_refund_cashflow(RefundSt, St) of
+        {ok, Clock} ->
+            _ = rollback_refund_limits(RefundSt, St),
+            Events = [
+                ?refund_ev(ID, ?refund_clock_update(Clock)),
+                ?refund_ev(ID, ?refund_status_changed(?refund_failed(Failure)))
+            ],
+            {done, {Events, Action}};
+        {error, not_ready} ->
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+    end;
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
-    _ = commit_refund_limits(RefundSt, St),
-    Clock = commit_refund_cashflow(RefundSt, St),
-    Events =
-        case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
-            ?cash(0, _) ->
-                [
-                    ?payment_status_changed(?refunded())
-                ];
-            ?cash(Amount, _) when Amount > 0 ->
-                []
-        end,
-    {done,
-        {[
-                ?refund_ev(ID, ?refund_clock_update(Clock)),
-                ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
-                | Events
-            ],
-            Action}}.
+    case commit_refund_cashflow(RefundSt, St) of
+        {ok, Clock} ->
+            _ = commit_refund_limits(RefundSt, St),
+            Events =
+                case get_remaining_payment_amount(get_refund_cash(get_refund(RefundSt)), St) of
+                    ?cash(0, _) ->
+                        [
+                            ?payment_status_changed(?refunded())
+                        ];
+                    ?cash(Amount, _) when Amount > 0 ->
+                        []
+                end,
+            {done,
+                {[
+                        ?refund_ev(ID, ?refund_clock_update(Clock)),
+                        ?refund_ev(ID, ?refund_status_changed(?refund_succeeded()))
+                        | Events
+                    ],
+                    Action}};
+        {error, not_ready} ->
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+    end.
 
 process_failure(Activity, Events, Action, Failure, St) ->
     process_failure(Activity, Events, Action, Failure, St, undefined).
