@@ -303,16 +303,13 @@ maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop) ->
     #domain_PaymentsServiceTerms{
         allocations = AllocationSelector
     } = MerchantTerms,
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     case
         hg_allocation:calculate(
             AllocationPrototype,
-            Party#domain_Party.id,
-            Shop#domain_Shop.id,
+            Party,
+            Shop,
             Cost,
-            AllocationSelector,
-            PaymentInstitutionRef
+            AllocationSelector
         )
     of
         {ok, A} ->
@@ -442,8 +439,8 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-ensure_started(ID, {TemplateID, PartyRevision, Params}) ->
-    SerializedArgs = {TemplateID, PartyRevision, marshal_invoice_params(Params)},
+ensure_started(ID, {TemplateID, PartyRevision, Params, Allocation}) ->
+    SerializedArgs = {TemplateID, PartyRevision, marshal_invoice_params(Params), Allocation},
     case hg_machine:start(?NS, ID, SerializedArgs) of
         {ok, _} -> ok;
         {error, exists} -> ok;

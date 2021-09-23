@@ -1020,16 +1020,13 @@ maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Opts) ->
     } = MerchantTerms,
     Party = get_party(Opts),
     Shop = get_shop(Opts),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    PaymentInstitutionRef = Contract#domain_Contract.payment_institution,
     case
         hg_allocation:calculate(
             AllocationPrototype,
-            Party#domain_Party.id,
-            Shop#domain_Shop.id,
+            Party,
+            Shop,
             Cost,
-            AllocationSelector,
-            PaymentInstitutionRef
+            AllocationSelector
         )
     of
         {ok, A} ->
@@ -1596,7 +1593,16 @@ construct_cashflow(MerchantCashflow, Party, Shop, Route, Amount, Revision, Payme
         VS,
         Revision
     ),
-    AccountMap = collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision),
+    AccountMap = hg_accounting:collect_account_map(
+        Payment,
+        Party,
+        Shop,
+        Route,
+        PaymentInstitution,
+        Provider,
+        VS,
+        Revision
+    ),
     Context = #{
         operation_amount => Amount
     },
@@ -1617,16 +1623,17 @@ construct_provider_cashflow(
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     ProviderCashflow = get_selector_value(provider_payment_cash_flow, ProviderCashflowSelector),
     Context = collect_cash_flow_context(ContextSource),
-    AccountMap = collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision),
+    AccountMap = hg_accounting:collect_account_map(
+        Payment,
+        Party,
+        Shop,
+        Route,
+        PaymentInstitution,
+        Provider,
+        VS,
+        Revision
+    ),
     construct_final_cashflow(ProviderCashflow, Context, AccountMap).
-
-collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision) ->
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision),
-    AccountMap#{
-        party => Party,
-        shop => Shop,
-        route => Route
-    }.
 
 prepare_refund_cashflow(RefundSt, St) ->
     hg_accounting:hold(construct_refund_plan_id(RefundSt, St), get_refund_cashflow_plan(RefundSt)).
@@ -2216,11 +2223,12 @@ maybe_set_charged_back_status(_ChargebackStatus, _ChargebackBody, _St) ->
 -spec process_refund_cashflow(refund_id(), action(), st()) -> machine_result().
 process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
+    Party = get_party(Opts),
     Shop = get_shop(Opts),
     RefundSt = try_get_refund_state(ID, St),
     hold_refund_limits(RefundSt, St),
 
-    #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
+    #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Party, Shop, #{}),
     Clock = prepare_refund_cashflow(RefundSt, St),
     % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
     case get_available_amount(SettlementID, Clock) of

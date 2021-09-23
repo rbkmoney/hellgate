@@ -81,9 +81,7 @@ construct_final_account(AccountType, AccountMap) ->
         transaction_account = construct_transaction_account(AccountType, AccountMap)
     }.
 
-construct_transaction_account({merchant, MerchantFlowAccount}, #{party := Party, shop := Shop}) ->
-    #domain_Party{id = PartyID} = Party,
-    #domain_Shop{id = ShopID} = Shop,
+construct_transaction_account({merchant, MerchantFlowAccount}, #{merchant := {PartyID, ShopID}}) ->
     AccountOwner = #domain_MerchantTransactionAccountOwner{
         party_id = PartyID,
         shop_id = ShopID
@@ -92,7 +90,7 @@ construct_transaction_account({merchant, MerchantFlowAccount}, #{party := Party,
         type = MerchantFlowAccount,
         owner = AccountOwner
     }};
-construct_transaction_account({provider, ProviderFlowAccount}, #{route := Route}) ->
+construct_transaction_account({provider, ProviderFlowAccount}, #{provider := Route}) ->
     #domain_PaymentRoute{
         provider = ProviderRef,
         terminal = TerminalRef
