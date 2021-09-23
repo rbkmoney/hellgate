@@ -965,7 +965,7 @@ get_available_amount(AccountID, Clock) ->
         }} ->
             {ok, AvailableAmount};
         {error, _} = Error ->
-            Error
+            throw(Error)
     end.
 
 construct_payment_plan_id(St) ->
@@ -1383,12 +1383,19 @@ collect_refund_cashflow(
 
 prepare_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
-    hg_accounting_new:hold(
-        construct_refund_plan_id(RefundSt, St),
-        get_refund_cashflow_plan(RefundSt),
-        Timestamp,
-        Clock
-    ).
+    case
+        hg_accounting_new:hold(
+            construct_refund_plan_id(RefundSt, St),
+            get_refund_cashflow_plan(RefundSt),
+            Timestamp,
+            Clock
+        )
+    of
+        {ok, _} = Result ->
+            Result;
+        {error, _} = Error ->
+            throw(Error)
+    end.
 
 commit_refund_cashflow(RefundSt, St = #st{clock = Clock}) ->
     #{timestamp := Timestamp} = get_opts(St),
@@ -1953,31 +1960,36 @@ process_refund_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Shop = get_shop(Opts),
     RefundSt = try_get_refund_state(ID, St),
-    hold_refund_limits(RefundSt, St),
-
     #{{merchant, settlement} := SettlementID} = hg_accounting:collect_merchant_account_map(Shop, #{}),
-    Clock = prepare_refund_cashflow(RefundSt, St),
-    % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
-    case get_available_amount(SettlementID, Clock) of
-        % TODO we must pull this rule out of refund terms
-        Available when Available >= 0 ->
-            Events = [
-                ?refund_clock_update(Clock),
-                ?session_ev(?refunded(), ?session_started())
-                | get_manual_refund_events(RefundSt)
-            ],
-            {next, {
-                [?refund_ev(ID, C) || C <- Events],
-                hg_machine_action:set_timeout(0, Action)
-            }};
-        _ ->
-            Failure =
-                {failure,
-                    payproc_errors:construct(
-                        'RefundFailure',
-                        {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
-                    )},
-            process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
+    try
+        {ok, Clock} = prepare_refund_cashflow(RefundSt, St),
+        % NOTE we assume that posting involving merchant settlement account MUST be present in the cashflow
+        case get_available_amount(SettlementID, Clock) of
+            % TODO we must pull this rule out of refund terms
+            {ok, Available} when Available >= 0 ->
+                _ = hold_refund_limits(RefundSt, St),
+                Events = [
+                    ?refund_clock_update(Clock),
+                    ?session_ev(?refunded(), ?session_started())
+                    | get_manual_refund_events(RefundSt)
+                ],
+                {next, {
+                    [?refund_ev(ID, C) || C <- Events],
+                    hg_machine_action:set_timeout(0, Action)
+                }};
+            _ ->
+                Failure =
+                    {failure,
+                        payproc_errors:construct(
+                            'RefundFailure',
+                            {terms_violated, {insufficient_merchant_funds, #payprocerr_GeneralFailure{}}}
+                        )},
+                process_failure(get_activity(St), [], Action, Failure, St, RefundSt)
+        end
+    catch
+        throw:{error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end.
 
 get_manual_refund_events(#refund_st{transaction_info = undefined}) ->
@@ -2195,7 +2207,8 @@ process_result({refund_failure, ID}, Action, St) ->
             ],
             {done, {Events, Action}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end;
 process_result({refund_accounter, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
@@ -2219,7 +2232,8 @@ process_result({refund_accounter, ID}, Action, St) ->
                     ],
                     Action}};
         {error, not_ready} ->
-            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
     end.
 
 process_failure(Activity, Events, Action, Failure, St) ->
