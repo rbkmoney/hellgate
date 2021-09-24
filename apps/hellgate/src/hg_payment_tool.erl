@@ -62,6 +62,7 @@ get_possible_methods(
                     tokenization_method = dpan
                 }}
         },
+        %  Delete after capi_pcidss migration
         #domain_PaymentMethodRef{
             id =
                 {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
