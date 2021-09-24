@@ -100,8 +100,7 @@ assert_allocatable(
                         {error, currency_mismatch} ->
                             throw({invalid_transaction, Proto, currency_mismatch})
                     end,
-                PIR = Contract#domain_Contract.payment_institution,
-                case PIR of
+                case Contract#domain_Contract.payment_institution of
                     PaymentInstitutionRef ->
                         ok;
                     _ ->
