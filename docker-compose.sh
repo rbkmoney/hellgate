@@ -137,7 +137,7 @@ services:
                               kafka-topics --create --if-not-exists --zookeeper zookeeper:2181 --partitions 1 --replication-factor 1 --topic operation_log'"
 
   shumaich:
-    image: dr2.rbkmoney.com/rbkmoney/shumaich:1e4ebe41a9aaae0c46b1c41edffb95f7d93c5f48
+    image: dr2.rbkmoney.com/rbkmoney/shumaich:3be4048303d9a649027faa95d87a5ecd99af1e6b
     hostname: shumaich
     container_name: shumaich
     restart: on-failure
