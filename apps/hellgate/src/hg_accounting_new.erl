@@ -280,16 +280,11 @@ construct_balance(
 call_accounter(Function, Args) ->
     hg_retry:call_with_retry(
         fun() ->
-            try call_service(Function, Args) of
+            case call_service(Function, Args) of
                 {ok, _} = Ok ->
                     {return, Ok};
                 {error, ErrorType} = Error ->
                     {map_error_action(ErrorType), Error}
-            catch
-                %% @FIXME: Because apparently `Hold` still throws NotReady exception internally
-                error:{woody_error, {external, result_unexpected, <<"internal thrift application error">>}} ->
-                    _ = logger:warning("Accounter has crashed, retrying"),
-                    {retry, {error, not_ready}}
             end
         end,
         get_retry_strategy(Function)
