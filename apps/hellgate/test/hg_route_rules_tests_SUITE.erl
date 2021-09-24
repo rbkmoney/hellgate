@@ -415,7 +415,6 @@ prefer_normal_conversion(_C) ->
     [_, {Route2, _}, _] = FailRatedRoutes1 = lists:zip(Routes, ProviderStatuses1),
     FailRatedRoutes2 = lists:zip(Routes, ProviderStatuses2),
 
-
     {Route1, Meta0} = hg_routing:choose_rated_route(FailRatedRoutes0),
     {Route2, Meta1} = hg_routing:choose_rated_route(FailRatedRoutes1),
     {Route3, Meta2} = hg_routing:choose_rated_route(FailRatedRoutes2),
