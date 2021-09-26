@@ -90,17 +90,17 @@ assert_allocatable(
     try
         lists:foreach(
             fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto) ->
-                Party = hg_party:get_party(PartyID),
-                Shop = hg_party:get_shop(ShopID, Party),
-                Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+                TargetParty = hg_party:get_party(PartyID),
+                TargetShop = hg_party:get_shop(ShopID, TargetParty),
+                TargetContract = hg_party:get_contract(TargetShop#domain_Shop.contract_id, TargetParty),
                 _ =
-                    case validate_currency(Cash, Shop) of
+                    case validate_currency(Cash, TargetShop) of
                         ok ->
                             ok;
                         {error, currency_mismatch} ->
                             throw({invalid_transaction, Proto, currency_mismatch})
                     end,
-                case Contract#domain_Contract.payment_institution of
+                case TargetContract#domain_Contract.payment_institution of
                     PaymentInstitutionRef ->
                         ok;
                     _ ->

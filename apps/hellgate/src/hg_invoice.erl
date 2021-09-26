@@ -166,7 +166,7 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     AllocationPrototype = InvoiceParams#payproc_InvoiceParams.allocation,
     Cost = InvoiceParams#payproc_InvoiceParams.cost,
     Allocation = maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop),
-    ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams, Allocation}),
+    ok = ensure_started(InvoiceID, undefined, Party#domain_Party.revision, InvoiceParams, Allocation),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     DomainRevision = hg_domain:head(),
@@ -180,7 +180,7 @@ handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     AllocationPrototype = InvoiceParams#payproc_InvoiceParams.allocation,
     Cost = InvoiceParams#payproc_InvoiceParams.cost,
     Allocation = maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop),
-    ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams, Allocation}),
+    ok = ensure_started(InvoiceID, TplID, Party#domain_Party.revision, InvoiceParams, Allocation),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CapturePaymentNew', Args, Opts) ->
     handle_function_('CapturePayment', Args, Opts);
@@ -438,9 +438,9 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-ensure_started(ID, {TemplateID, PartyRevision, Params, Allocation}) ->
-    SerializedArgs = {TemplateID, PartyRevision, marshal_invoice_params(Params), Allocation},
-    case hg_machine:start(?NS, ID, SerializedArgs) of
+ensure_started(ID, TemplateID, PartyRevision, Params, Allocation) ->
+    Invoice = create_invoice(ID, TemplateID, PartyRevision, Params, Allocation),
+    case hg_machine:start(?NS, ID, Invoice) of
         {ok, _} -> ok;
         {error, exists} -> ok;
         {error, Reason} -> erlang:error(Reason)
@@ -496,12 +496,20 @@ namespace() ->
     ?NS.
 
 -spec init(
-    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary(), allocation()},
+    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary(), allocation()} | invoice(),
     hg_machine:machine()
 ) -> hg_machine:result().
-init({InvoiceTplID, PartyRevision, EncodedInvoiceParams, Allocation}, #{id := ID}) ->
+%% TODO Remove after deploy
+init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
     InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
-    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams, Allocation),
+    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams, undefined),
+    % TODO ugly, better to roll state and events simultaneously, hg_party-like
+    handle_result(#{
+        changes => [?invoice_created(Invoice)],
+        action => set_invoice_timer(hg_machine_action:new(), #st{invoice = Invoice}),
+        state => #st{}
+    });
+init(Invoice, _Machine) ->
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
         changes => [?invoice_created(Invoice)],
