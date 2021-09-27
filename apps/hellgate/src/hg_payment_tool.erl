@@ -49,8 +49,7 @@ get_possible_methods(
     {bank_card,
         #domain_BankCard{
             payment_system_deprecated = PaymentSystem,
-            token_provider_deprecated = TokenProvider,
-            tokenization_method = TokenizationMethod
+            token_provider_deprecated = TokenProvider
         } = BankCard}
 ) when PaymentSystem /= undefined ->
     ordsets:from_list([
@@ -59,21 +58,10 @@ get_possible_methods(
                 {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
                     payment_system_deprecated = PaymentSystem,
                     token_provider_deprecated = TokenProvider,
-                    tokenization_method = dpan
-                }}
-        },
-        %  Delete after capi_pcidss migration
-        #domain_PaymentMethodRef{
-            id =
-                {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
-                    payment_system_deprecated = PaymentSystem,
-                    token_provider_deprecated = TokenProvider,
                     tokenization_method = undefined
                 }}
         },
-        create_payment_method_ref(BankCard#domain_BankCard{
-            tokenization_method = genlib:define(TokenizationMethod, dpan)
-        })
+        create_payment_method_ref(BankCard)
     ]);
 get_possible_methods({bank_card, #domain_BankCard{payment_system = PS} = BankCard}) when PS /= undefined ->
     ordsets:from_list([
