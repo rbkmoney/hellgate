@@ -21,18 +21,18 @@ has_any_payment_method(PaymentTool, SupportedMethods) ->
 -spec get_possible_methods(t()) -> ordsets:ordset(method()).
 get_possible_methods(
     {bank_card, #domain_BankCard{payment_system_deprecated = PS, is_cvv_empty = true} = BankCard}
-) when PS /= undefined ->
-    ordsets:from_list([
+) ->
+    ordsets:add_element(
         #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PS}},
-        create_payment_method_ref(BankCard)
-    ]);
+        get_possible_bank_card_methods(BankCard)
+    );
 get_possible_methods(
     {bank_card, #domain_BankCard{payment_system_deprecated = PS, token_provider_deprecated = undefined} = BankCard}
-) when PS /= undefined ->
-    ordsets:from_list([
+) ->
+    ordsets:add_element(
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PS}},
-        create_payment_method_ref(BankCard)
-    ]);
+        get_possible_bank_card_methods(BankCard)
+    );
 get_possible_methods(
     {bank_card,
         #domain_BankCard{
@@ -61,41 +61,19 @@ get_possible_methods(
                     tokenization_method = undefined
                 }}
         },
-        create_payment_method_ref(BankCard)
-    ]);
-get_possible_methods({bank_card, #domain_BankCard{payment_system = PS} = BankCard}) when PS /= undefined ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{
-            id =
-                {bank_card, #domain_BankCardPaymentMethod{
-                    payment_system = PS,
-                    is_cvv_empty = genlib:define(BankCard#domain_BankCard.is_cvv_empty, false),
-                    payment_token = BankCard#domain_BankCard.payment_token,
-                    tokenization_method = BankCard#domain_BankCard.tokenization_method
-                }}
-        }
-    ]);
+        get_possible_bank_card_methods(BankCard)
+    );
 %% ===== payment_terminal
-get_possible_methods({payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = Type}}) when
-    Type /= undefined
-->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {payment_terminal_deprecated, Type}}
-    ]);
-get_possible_methods({payment_terminal, #domain_PaymentTerminal{payment_service = Srv}}) when Srv /= undefined ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {payment_terminal, Srv}}
+get_possible_methods({payment_terminal, PaymentTerminal}) ->
+    filtermap_payment_methods_to_set([
+        {payment_terminal_deprecated, PaymentTerminal#domain_PaymentTerminal.terminal_type_deprecated},
+        {payment_terminal, PaymentTerminal#domain_PaymentTerminal.payment_service}
     ]);
 %% ===== digital_wallet
-get_possible_methods({digital_wallet, #domain_DigitalWallet{provider_deprecated = Provider}}) when
-    Provider /= undefined
-->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {digital_wallet_deprecated, Provider}}
-    ]);
-get_possible_methods({digital_wallet, #domain_DigitalWallet{payment_service = PS}}) when PS /= undefined ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {digital_wallet, PS}}
+get_possible_methods({digital_wallet, DigitalWallet}) ->
+    filtermap_payment_methods_to_set([
+        {digital_wallet_deprecated, DigitalWallet#domain_DigitalWallet.provider_deprecated},
+        {digital_wallet, DigitalWallet#domain_DigitalWallet.payment_service}
     ]);
 %% ===== crypto_currency
 get_possible_methods({crypto_currency_deprecated, CC}) ->
@@ -107,27 +85,52 @@ get_possible_methods({crypto_currency, CC}) ->
         #domain_PaymentMethodRef{id = {crypto_currency, CC}}
     ]);
 %% ===== mobile_commerce
-get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator_deprecated = Operator}}) when
-    Operator /= undefined
-->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {mobile_deprecated, Operator}}
-    ]);
-get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator = Operator}}) when Operator /= undefined ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {mobile, Operator}}
+get_possible_methods({mobile_commerce, MobileCommerce}) ->
+    filtermap_payment_methods_to_set([
+        {mobile_deprecated, MobileCommerce#domain_MobileCommerce.operator_deprecated},
+        {mobile, MobileCommerce#domain_MobileCommerce.operator}
     ]).
 
-create_payment_method_ref(#domain_BankCard{is_cvv_empty = IsCVVEmpty} = BC) ->
-    #domain_PaymentMethodRef{
-        id =
-            {bank_card, #domain_BankCardPaymentMethod{
-                payment_system_deprecated = BC#domain_BankCard.payment_system_deprecated,
-                is_cvv_empty = genlib:define(IsCVVEmpty, false),
-                token_provider_deprecated = BC#domain_BankCard.token_provider_deprecated,
-                tokenization_method = BC#domain_BankCard.tokenization_method
-            }}
-    }.
+get_possible_bank_card_methods(BankCard) ->
+    filtermap_payment_methods_to_set([
+        {bank_card, maybe_legacy_bank_card(BankCard)},
+        {bank_card, maybe_bank_card(BankCard)}
+    ]).
+
+filtermap_payment_methods_to_set(ItemList) ->
+    ordsets:from_list(
+        lists:filtermap(
+            fun
+                ({_K, undefined}) -> false;
+                (V) -> {true, #domain_PaymentMethodRef{id = V}}
+            end,
+            ItemList
+        )
+    ).
+
+maybe_legacy_bank_card(#domain_BankCard{payment_system_deprecated = PS} = BC) when
+    PS /= undefined
+->
+    #domain_BankCardPaymentMethod{
+        payment_system_deprecated = BC#domain_BankCard.payment_system_deprecated,
+        is_cvv_empty = genlib:define(BC#domain_BankCard.is_cvv_empty, false),
+        token_provider_deprecated = BC#domain_BankCard.token_provider_deprecated,
+        tokenization_method = BC#domain_BankCard.tokenization_method
+    };
+maybe_legacy_bank_card(_) ->
+    undefined.
+
+maybe_bank_card(#domain_BankCard{payment_system = PS} = BC) when
+    PS /= undefined
+->
+    #domain_BankCardPaymentMethod{
+        payment_system = PS,
+        is_cvv_empty = genlib:define(BC#domain_BankCard.is_cvv_empty, false),
+        payment_token = BC#domain_BankCard.payment_token,
+        tokenization_method = BC#domain_BankCard.tokenization_method
+    };
+maybe_bank_card(_) ->
+    undefined.
 
 %% Unmarshalling
 
