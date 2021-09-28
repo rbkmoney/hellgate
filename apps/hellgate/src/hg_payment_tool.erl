@@ -51,7 +51,7 @@ get_possible_methods(
             payment_system_deprecated = PaymentSystem,
             token_provider_deprecated = TokenProvider
         } = BankCard}
-) when PaymentSystem /= undefined ->
+) when PaymentSystem /= undefined andalso TokenProvider /= undefined ->
     ordsets:from_list([
         #domain_PaymentMethodRef{
             id =
