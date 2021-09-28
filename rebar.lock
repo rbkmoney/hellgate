@@ -86,7 +86,7 @@
   0},
  {<<"shumaich_proto">>,
   {git,"git@github.com:rbkmoney/shumaich-proto.git",
-       {ref,"be2c835aff55c90927df45d6fb85597b16cff747"}},
+       {ref,"32f6ad35d6ed9e432aadbf66cbb075c23d71fbc1"}},
   0},
  {<<"shumpune_proto">>,
   {git,"https://github.com/rbkmoney/shumpune-proto.git",
