@@ -59,7 +59,7 @@ services:
         condition: service_healthy
 
   shumway:
-    image: dr2.rbkmoney.com/rbkmoney/shumway:2f7d381d36ec69cfc90c77996f7e82b79d89e80b
+    image: dr2.rbkmoney.com/rbkmoney/shumway:8ab8dae452106acfd33c855ca20c0930f4ce2f7c
     hostname: shumway
     container_name: shumway
     ports:
