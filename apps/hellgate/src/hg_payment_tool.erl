@@ -43,7 +43,7 @@ get_possible_methods(
 ) when PaymentSystem /= undefined andalso TokenProvider /= undefined ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
-        create_payment_method_ref(BankCard)
+        get_possible_bank_card_methods(BankCard)
     ]);
 get_possible_methods(
     {bank_card,
@@ -62,7 +62,7 @@ get_possible_methods(
                 }}
         },
         get_possible_bank_card_methods(BankCard)
-    );
+    ]);
 %% ===== payment_terminal
 get_possible_methods({payment_terminal, PaymentTerminal}) ->
     filtermap_payment_methods_to_set([
