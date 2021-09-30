@@ -340,9 +340,11 @@ make_user_identity(UserID) ->
 
 -spec create_party(party_id(), party_client()) -> party().
 create_party(PartyID, {Client, Context}) ->
-    ok = party_client_thrift:create(PartyID, make_party_params(), Client, Context),
-    {ok, #domain_Party{id = PartyID} = Party} = party_client_thrift:get(PartyID, Client, Context),
-    Party.
+    case party_client_thrift:create(PartyID, make_party_params(), Client, Context) of
+        Result when Result =:= ok orelse Result =:= {error, #payproc_PartyExists{}} ->
+            {ok, #domain_Party{id = PartyID} = Party} = party_client_thrift:get(PartyID, Client, Context),
+            Party
+    end.
 
 -spec create_shop(
     party_id(),

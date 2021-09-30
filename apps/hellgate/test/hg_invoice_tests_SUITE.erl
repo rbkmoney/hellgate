@@ -1458,7 +1458,9 @@ switch_provider_after_limit_overflow(C, PmtSys, ProviderID) ->
 
     InvoiceID = start_invoice(PartyID, ShopID, <<"rubberduck">>, make_due_date(10), PaymentAmount, Client),
     ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(
-        InvoiceID, make_payment_params(PmtSys), Client
+        InvoiceID,
+        make_payment_params(PmtSys),
+        Client
     ),
     Route = start_payment_ev(InvoiceID, Client),
 
@@ -2067,7 +2069,8 @@ payment_w_mobile_commerce(C, Operator, Expectation) ->
         failure ->
             [
                 ?payment_ev(
-                    PaymentID, ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
+                    PaymentID,
+                    ?session_ev(?processed(), ?session_finished(?session_failed({failure, Failure})))
                 ),
                 ?payment_ev(PaymentID, ?payment_rollback_started({failure, Failure}))
             ] = next_event(InvoiceID, Client),
@@ -3131,10 +3134,12 @@ create_chargeback_inconsistent(C, PmtSys) ->
     InconsistentBody = make_chargeback_params(?cash(10, <<"RUB">>), ?cash(10, <<"USD">>)),
     PaymentParams = make_payment_params(PmtSys),
     ?assertMatch(
-        {_, _, _, ?inconsistent_chargeback_currency(_)}, start_chargeback(C, Cost, InconsistentLevy, PaymentParams)
+        {_, _, _, ?inconsistent_chargeback_currency(_)},
+        start_chargeback(C, Cost, InconsistentLevy, PaymentParams)
     ),
     ?assertMatch(
-        {_, _, _, ?inconsistent_chargeback_currency(_)}, start_chargeback(C, Cost, InconsistentBody, PaymentParams)
+        {_, _, _, ?inconsistent_chargeback_currency(_)},
+        start_chargeback(C, Cost, InconsistentBody, PaymentParams)
     ).
 
 -spec create_chargeback_exceeded(config()) -> _ | no_return().

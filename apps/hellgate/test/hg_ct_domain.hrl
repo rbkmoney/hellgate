@@ -81,7 +81,7 @@
     phone_number = Phone
 }).
 
--define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
+-define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, undefined)).
 
 -define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod), #domain_TokenizedBankCard{
     payment_system_deprecated = PaymentSystem,
