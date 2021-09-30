@@ -179,15 +179,14 @@ gen_limit_changes(TurnoverLimits, ChangeIDGenerator) ->
     ].
 
 construct_limit_change_id(LimitID, Route, Invoice, Payment) ->
-    ?route(ProviderRef, TerminalRef) = Route,
+    TerminalID = get_terminal_id(Route#domain_PaymentRoute.terminal),
     ComplexID = hg_utils:construct_complex_id([
         LimitID,
-        genlib:to_binary(get_provider_id(ProviderRef)),
-        genlib:to_binary(get_terminal_id(TerminalRef)),
+        genlib:to_binary(TerminalID),
         get_invoice_id(Invoice),
         get_payment_id(Payment)
     ]),
-    genlib_string:join($., [<<"limiter">>, ComplexID]).
+    genlib_string:join($., [<<"hellgate">>, ComplexID]).
 
 construct_limit_refund_change_id(LimitID, Invoice, Payment, Refund) ->
     ComplexID = hg_utils:construct_complex_id([
@@ -196,10 +195,7 @@ construct_limit_refund_change_id(LimitID, Invoice, Payment, Refund) ->
         get_payment_id(Payment),
         {refund_session, get_refund_id(Refund)}
     ]),
-    genlib_string:join($., [<<"limiter">>, ComplexID]).
-
-get_provider_id(#domain_ProviderRef{id = ID}) ->
-    ID.
+    genlib_string:join($., [<<"hellgate">>, ComplexID]).
 
 get_terminal_id(#domain_TerminalRef{id = ID}) ->
     ID.
