@@ -51,9 +51,8 @@ check_limits(TurnoverLimits, Invoice, Payment) ->
     try
         check_limits_(TurnoverLimits, Context, [])
     catch
-        throw:limit_overflow ->
-            IDs = [T#domain_TurnoverLimit.id || {T, _} <- TurnoverLimits],
-            {error, {limit_overflow, IDs}};
+        throw:{limit_overflow, LimitID} ->
+            {error, {limit_overflow, [LimitID]}};
         error:{not_found, _LimitID} = Error ->
             {error, Error};
         error:{invalid_request, Errors} ->
@@ -76,7 +75,7 @@ check_limits_([{T, Clock} | TurnoverLimits], Context, Acc) ->
                 LimiterAmount,
                 UpperBoundary
             ]),
-            throw(limit_overflow)
+            throw({limit_overflow, LimitID})
     end.
 
 -spec hold_payment_limits([turnover_w_clock()], route(), invoice(), payment()) -> [limit_result()].
