@@ -22,6 +22,7 @@
 -export([make_invoice_params/4]).
 -export([make_invoice_params/5]).
 -export([make_invoice_params/6]).
+-export([make_invoice_params/7]).
 
 -export([make_invoice_params_tpl/1]).
 -export([make_invoice_params_tpl/2]).
@@ -326,6 +327,7 @@ make_user_identity(UserID) ->
 -type invoice_tpl_update_params() :: dmsl_payment_processing_thrift:'InvoiceTemplateUpdateParams'().
 -type party_client() :: {party_client:client(), party_client:context()}.
 -type payment_inst_ref() :: dmsl_domain_thrift:'PaymentInstitutionRef'().
+-type allocation_prototype() :: dmsl_domain_thrift:'AllocationPrototype'().
 
 -spec create_party_and_shop(
     category(),
@@ -537,6 +539,18 @@ make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
 
 -spec make_invoice_params(invoice_id(), party_id(), shop_id(), binary(), timestamp(), cash()) -> invoice_params().
 make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost) ->
+    make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost, undefined).
+
+-spec make_invoice_params(
+    invoice_id(),
+    party_id(),
+    shop_id(),
+    binary(),
+    timestamp(),
+    cash(),
+    allocation_prototype() | undefined
+) -> invoice_params().
+make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost, AllocationPrototype) ->
     #payproc_InvoiceParams{
         id = InvoiceID,
         party_id = PartyID,
@@ -544,7 +558,8 @@ make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost) ->
         details = make_invoice_details(Product),
         due = hg_datetime:format_ts(Due),
         cost = Cost,
-        context = make_invoice_context()
+        context = make_invoice_context(),
+        allocation = AllocationPrototype
     }.
 
 -spec make_invoice_params_tpl(invoice_tpl_id()) -> invoice_params_tpl().

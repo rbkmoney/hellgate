@@ -31,10 +31,14 @@
 
 -type sub_errors() ::
     cost_mismatch
-    | {invalid_transaction, transaction(), negative_amount | currency_mismatch | no_transaction_to_sub}.
+    | {invalid_transaction, transaction(),
+        negative_amount
+        | currency_mismatch
+        | no_transaction_to_sub}.
 
 -type calculate_errors() ::
-    cost_mismatch
+    unallocatable
+    | cost_mismatch
     | {invalid_transaction, transaction() | transaction_proto(),
         negative_amount
         | zero_amount
@@ -76,7 +80,7 @@ sub(Allocation, SubAllocation, Cost) ->
             {error, Error}
     end.
 
--spec assert_allocatable(allocation_prototype() | undefined, allocation_terms(), party(), shop(), cash()) ->
+-spec assert_allocatable(allocation_prototype(), allocation_terms(), party(), shop(), cash()) ->
     ok | {error, allocatable_errors()}.
 assert_allocatable(
     ?allocation_prototype(Trxs),
@@ -113,8 +117,8 @@ assert_allocatable(
         throw:Error ->
             {error, Error}
     end;
-assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Party, _Shop, _Cash) ->
-    {error, unallocatable}.
+assert_allocatable(_Allocation, PaymentAllocationServiceTerms, _Party, _Shop, _Cash) ->
+    {error, unallocatable, PaymentAllocationServiceTerms}.
 
 validate_currency(#domain_Cash{currency = Currency}, Shop) ->
     ShopCurrency = hg_invoice_utils:get_shop_currency(Shop),

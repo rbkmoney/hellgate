@@ -12,6 +12,7 @@
 -include_lib("damsel/include/dmsl_proto_limiter_thrift.hrl").
 -include_lib("limiter_proto/include/lim_configurator_thrift.hrl").
 -include_lib("limiter_proto/include/lim_limiter_thrift.hrl").
+-include_lib("hellgate/include/allocation.hrl").
 
 -include_lib("stdlib/include/assert.hrl").
 
@@ -174,6 +175,8 @@
 
 -export([consistent_account_balances/1]).
 
+-export([allocation_create_invoice/1]).
+
 %%
 
 -behaviour(supervisor).
@@ -248,7 +251,9 @@ groups() ->
 
             {group, adhoc_repairs},
 
-            {group, repair_scenarios}
+            {group, repair_scenarios},
+
+            {group, allocation}
         ]},
 
         {base_payments, [parallel], [
@@ -406,6 +411,9 @@ groups() ->
             repair_fail_session_on_pre_processing,
             repair_complex_succeeded_first,
             repair_complex_succeeded_second
+        ]},
+        {allocation, [parallel], [
+            allocation_create_invoice
         ]}
     ].
 
@@ -436,9 +444,9 @@ init_per_suite(C) ->
 
     RootUrl = maps:get(hellgate_root_url, Ret),
 
-    PartyID = hg_utils:unique_id(),
+    PartyID0 = hg_utils:unique_id(),
     PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
-    CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
+    CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID0)),
 
     AnotherPartyID = hg_utils:unique_id(),
     AnotherPartyClient = {party_client:create_client(), party_client:create_context(user_info())},
@@ -446,16 +454,22 @@ init_per_suite(C) ->
 
     _ = timer:sleep(5000),
 
-    ShopID = create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID0 = create_party_and_shop(PartyID0, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    PartyID1 = hg_utils:unique_id(),
+    PartyID2 = hg_utils:unique_id(),
+    PartyID3 = hg_utils:unique_id(),
+    ShopID1= create_party_and_shop(PartyID1, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID2 = create_party_and_shop(PartyID2, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID3 = create_party_and_shop(PartyID3, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = create_party_and_shop(AnotherPartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
 
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
-        {party_id, PartyID},
+        {party_id, PartyID0},
         {party_client, PartyClient},
-        {shop_id, ShopID},
+        {shop_id, ShopID0},
         {customer_client, CustomerClient},
         {another_party_id, AnotherPartyID},
         {another_party_client, AnotherPartyClient},
@@ -463,7 +477,13 @@ init_per_suite(C) ->
         {another_customer_client, AnotherCustomerClient},
         {root_url, RootUrl},
         {apps, Apps},
-        {test_sup, SupPid}
+        {test_sup, SupPid},
+        {party_id_1, PartyID1},
+        {shop_id_1, ShopID1},
+        {party_id_2, PartyID2},
+        {shop_id_2, ShopID2},
+        {party_id_3, PartyID3},
+        {shop_id_3, ShopID3}
         | C
     ],
 
@@ -4967,6 +4987,91 @@ repair_complex_succeeded_second(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
+-spec allocation_create_invoice(config()) -> _ | no_return().
+allocation_create_invoice(C) ->
+    Client = cfg(client, C),
+    PartyID0 = cfg(party_id, C),
+    ShopID0 = cfg(shop_id, C),
+    PartyID1 = cfg(party_id_1, C),
+    ShopID1 = cfg(shop_id_1, C),
+    PartyID2 = cfg(party_id_2, C),
+    ShopID2 = cfg(shop_id_2, C),
+    PartyID3 = cfg(party_id_3, C),
+    ShopID3 = cfg(shop_id_3, C),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = <<"123">>,
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = ?allocation_prototype([
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID1, ShopID1),
+            ?allocation_trx_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_trx_details(Cart)
+        ),
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID2, ShopID2),
+            ?allocation_trx_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_trx_details(Cart)
+        ),
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID3, ShopID3),
+            ?allocation_trx_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_prototype_fee_share(15, 100)
+            ),
+            ?allocation_trx_details(Cart)
+        )
+    ]),
+    InvoiceParams0 = make_invoice_params(PartyID0, ShopID0, <<"rubberduck">>, make_due_date(10), make_cash(90, <<"RUB">>), AllocationPrototype),
+    InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    Invoice1 = hg_client_invoicing:create(InvoiceParams1, Client),
+    #payproc_Invoice{invoice = DomainInvoice} = Invoice1,
+    #domain_Invoice{
+        id = InvoiceID,
+        external_id = ExternalID,
+        allocation = ?allocation([
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(PartyID0, ShopID0),
+                ?cash(15, <<"RUB">>)
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(PartyID3, ShopID3),
+                ?cash(25, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(PartyID0, ShopID0),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(5, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(PartyID2, ShopID2),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(PartyID0, ShopID0),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(10, <<"RUB">>)
+                )
+            ),
+            ?allocation_trx(
+                <<"1">>,
+                ?allocation_trx_target_shop(PartyID1, ShopID1),
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_details(Cart)
+            )
+        ])
+    } = DomainInvoice.
+
 %%
 
 -spec consistent_account_balances(config()) -> test_return().
@@ -5088,6 +5193,10 @@ make_invoice_params(PartyID, ShopID, Product, Cost) ->
 
 make_invoice_params(PartyID, ShopID, Product, Due, Cost) ->
     hg_ct_helper:make_invoice_params(PartyID, ShopID, Product, Due, Cost).
+
+make_invoice_params(PartyID, ShopID, Product, Due, Cost, AllocationPrototype) ->
+    InvoiceID = hg_utils:unique_id(),
+    hg_ct_helper:make_invoice_params(InvoiceID, PartyID, ShopID, Product, Due, Cost, AllocationPrototype).
 
 make_cash(Amount) ->
     make_cash(Amount, <<"RUB">>).
@@ -5973,6 +6082,9 @@ construct_domain_fixture() ->
                             }
                         ]}
                 }
+            },
+            allocations = #domain_PaymentAllocationServiceTerms{
+                allow = {constant, true}
             }
         },
         recurrent_paytools = #domain_RecurrentPaytoolsServiceTerms{
