@@ -478,6 +478,14 @@ init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
         changes => [?invoice_created(Invoice)],
         action => set_invoice_timer(hg_machine_action:new(), #st{invoice = Invoice}),
         state => #st{}
+    });
+init(Invoice, _Machine) ->
+    UnmarshalledInvoice = unmarshal_invoice(Invoice),
+    % TODO ugly, better to roll state and events simultaneously, hg_party-like
+    handle_result(#{
+        changes => [?invoice_created(UnmarshalledInvoice)],
+        action => set_invoice_timer(hg_machine_action:new(), #st{invoice = UnmarshalledInvoice}),
+        state => #st{}
     }).
 
 %%
@@ -1489,6 +1497,11 @@ unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
 -spec unmarshal_invoice_params(binary()) -> invoice_params().
 unmarshal_invoice_params(Bin) ->
     Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
+    hg_proto_utils:deserialize(Type, Bin).
+
+-spec unmarshal_invoice(binary()) -> invoice().
+unmarshal_invoice(Bin) ->
+    Type = {struct, struct, {dmsl_domain_thrift, 'Invoice'}},
     hg_proto_utils:deserialize(Type, Bin).
 
 %% Legacy formats unmarshal
