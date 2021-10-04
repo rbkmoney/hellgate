@@ -228,7 +228,8 @@ gather_route_success(_C) ->
         Revision
     ),
     ?assertMatch(?trm(1), hg_routing:terminal_ref(Route)),
-    ?assertMatch([
+    ?assertMatch(
+        [
             {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
             {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
         ],
