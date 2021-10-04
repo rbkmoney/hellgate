@@ -258,7 +258,7 @@ init(EncodedParams, #{id := RecPaymentToolID}) ->
         throw:risk_score_is_too_high = Error ->
             error(handle_route_error(Error, RecPaymentTool));
         throw:{no_route_found, {unknown, _}} = Error ->
-            error(handle_route_error(Error, RecPaymentTool))
+            error(handle_route_error(Error, RecPaymentTool, VS1))
     end.
 
 gather_routes(PaymentInstitution, VS, Revision) ->
@@ -271,8 +271,8 @@ gather_routes(PaymentInstitution, VS, Revision) ->
             Revision
         )
     of
-        {ok, {[], RejectContext}} ->
-            throw({no_route_found, {unknown, RejectContext}});
+        {ok, {[], RejectedRoutes}} ->
+            throw({no_route_found, {unknown, RejectedRoutes}});
         {ok, {Routes, _RejectContext}} ->
             Routes;
         {error, {misconfiguration, _Reason}} ->
@@ -363,8 +363,8 @@ validate_risk_score(RiskScore) when RiskScore == low; RiskScore == high ->
 
 handle_route_error(risk_score_is_too_high = Reason, RecPaymentTool) ->
     _ = logger:log(info, "No route found, reason = ~p", [Reason], logger:get_process_metadata()),
-    {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}};
-handle_route_error({no_route_found, {Reason, RejectContext}}, RecPaymentTool) ->
+    {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}.
+handle_route_error({no_route_found, {Reason, RejectedRoutes}}, RecPaymentTool, Varset) ->
     LogFun = fun(Msg, Param) ->
         _ = logger:log(
             error,
@@ -373,8 +373,8 @@ handle_route_error({no_route_found, {Reason, RejectContext}}, RecPaymentTool) ->
             logger:get_process_metadata()
         )
     end,
-    _ = LogFun("No route found, reason = ~p, varset: ~p", hg_routing:varset(RejectContext)),
-    _ = LogFun("No route found, reason = ~p, rejected routes: ~p", hg_routing:rejected_routes(RejectContext)),
+    _ = LogFun("No route found, reason = ~p, varset: ~p", Varset),
+    _ = LogFun("No route found, reason = ~p, rejected routes: ~p", RejectedRoutes),
     {misconfiguration, {'No route found for a recurrent payment tool', RecPaymentTool}}.
 
 start_session() ->

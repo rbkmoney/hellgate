@@ -769,11 +769,11 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
             Revision
         )
     of
-        {ok, {[], RejectContext}} ->
-            _ = log_reject_context(unknown, RejectContext),
+        {ok, {[], RejectedRoutes}} ->
+            _ = log_rejected_routes(unknown, RejectedRoutes, VS),
             throw({no_route_found, unknown});
-        {ok, {Routes, RejectContext}} ->
-            _ = log_reject_context(unknown, RejectContext),
+        {ok, {Routes, RejectedRoutes}} ->
+            _ = log_rejected_routes(unknown, RejectedRoutes, VS),
             Routes;
         {error, {misconfiguration, _Reason} = Error} ->
             _ = log_misconfigurations(Error),
@@ -798,24 +798,24 @@ log_route_choice_meta(ChoiceMeta, Revision) ->
     _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)).
 
 log_misconfigurations({misconfiguration, _} = Error) ->
-    {Text, Details} = hg_routing:prepare_log_message(Error),
-    _ = logger:warning(Text, [Details]),
+    {Format, Details} = hg_routing:prepare_log_message(Error),
+    _ = logger:warning(Format, Details),
     ok.
 
-log_reject_context(RejectReason, RejectContext) ->
-    log_reject_context(warning, RejectReason, RejectContext).
+log_rejected_routes(RejectReason, RejectedRoutes, Varset) ->
+    log_rejected_routes(warning, RejectReason, RejectedRoutes, Varset).
 
-log_reject_context(Level, RejectReason, RejectContext) ->
+log_rejected_routes(Level, RejectReason, RejectedRoutes, Varset) ->
     _ = logger:log(
         Level,
         "No route found, reason = ~p, varset: ~p",
-        [RejectReason, maps:get(varset, RejectContext)],
+        [RejectReason, Varset],
         logger:get_process_metadata()
     ),
     _ = logger:log(
         Level,
         "No route found, reason = ~p, rejected routes: ~p",
-        [RejectReason, hg_routing:rejected_routes(RejectContext)],
+        [RejectReason, RejectedRoutes],
         logger:get_process_metadata()
     ),
     ok.
@@ -1800,7 +1800,9 @@ process_callback(_Tag, _Payload, _Action, undefined, _St) ->
 %%
 -spec process_risk_score(action(), st()) -> machine_result().
 process_risk_score(Action, St) ->
-    {_Invoice, Payment, Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
     VS1 = get_varset(St, #{}),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
@@ -1816,7 +1818,9 @@ process_risk_score(Action, St) ->
 
 -spec process_routing(action(), st()) -> machine_result().
 process_routing(Action, St) ->
-    {_Invoice, Payment, Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
     #{payment_tool := PaymentTool} = VS1 = get_varset(St, #{risk_score => get_risk_score(St)}),
     CreatedAt = get_payment_created_at(Payment),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
@@ -1880,7 +1884,10 @@ handle_choose_route_error(Reason, Events, St, Action) ->
 -spec process_cash_flow_building(action(), st()) -> machine_result().
 process_cash_flow_building(Action, St) ->
     Route = get_route(St),
-    {Invoice, Payment, Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
     VS = get_varset(St, #{}),
     CreatedAt = get_payment_created_at(Payment),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
@@ -2515,7 +2522,10 @@ filter_limit_overflow_routes(Routes, VS, St) ->
     end.
 
 get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
-    {Invoice, Payment, _Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
     lists:foldl(
         fun(Route, {RoutesNoOverflowIn, RejectedIn}) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
@@ -2536,7 +2546,10 @@ get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
     ).
 
 hold_limit_routes(Routes, VS, St) ->
-    {Invoice, Payment, _Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
     lists:foreach(
         fun(Route) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
@@ -2548,7 +2561,10 @@ hold_limit_routes(Routes, VS, St) ->
     ).
 
 rollback_payment_limits(Routes, St) ->
-    {Invoice, Payment, _Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
     VS = get_varset(St, #{}),
     lists:foreach(
         fun(Route) ->
@@ -2570,7 +2586,10 @@ get_turnover_limits(ProviderTerms) ->
     hg_limiter:get_turnover_limits(TurnoverLimitSelector).
 
 commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
-    {Invoice, Payment, _Opts, Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Revision = get_payment_revision(St),
+    Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
     Route = get_route(St),
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
     ProviderTerms = get_provider_terms(St, Revision),
@@ -2886,15 +2905,9 @@ get_payer_payment_tool(?recurrent_payer(PaymentTool, _, _)) ->
 get_resource_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
 
-fetch_values(St) ->
-    Opts = get_opts(St),
-    Revision = get_payment_revision(St),
-    Payment = get_payment(St),
-    Invoice = get_invoice(Opts),
-    {Invoice, Payment, Opts, Revision}.
-
 get_varset(St, InitialValue) ->
-    {_Invoice, Payment, Opts, _Revision} = fetch_values(St),
+    Opts = get_opts(St),
+    Payment = get_payment(St),
     VS0 = reconstruct_payment_flow(Payment, InitialValue),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     VS1.

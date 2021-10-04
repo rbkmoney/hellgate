@@ -22,8 +22,6 @@
 -export([provider_ref/1]).
 -export([terminal_ref/1]).
 
--export([varset/1]).
--export([rejected_routes/1]).
 -export([prepare_log_message/1]).
 %% Using in ct
 -export([gather_fail_rates/1]).
@@ -47,12 +45,6 @@
 
 -define(rejected(Reason), {rejected, Reason}).
 
--type reject_context() :: #{
-    varset := varset(),
-    rejected_routes := list(rejected_route())
-}.
-
-% -type rejected_provider() :: {provider_ref(), Reason :: term()}.
 -type rejected_route() :: {provider_ref(), terminal_ref(), Reason :: term()}.
 
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
@@ -105,8 +97,6 @@
 
 -export_type([route/0]).
 -export_type([route_predestination/0]).
--export_type([reject_context/0]).
--export_type([varset/0]).
 
 %% Route accessors
 
@@ -164,23 +154,13 @@ to_payment_route(#route{} = Route) ->
 set_weight(Weight, Route) ->
     Route#route{weight = Weight}.
 
-%% RejectContext accessors
-
--spec varset(reject_context()) -> varset().
-varset(#{varset := VS}) ->
-    VS.
-
--spec rejected_routes(reject_context()) -> [rejected_route()].
-rejected_routes(#{rejected_routes := Routes}) ->
-    Routes.
-
--spec prepare_log_message(misconfiguration_error()) -> {binary(), term()}.
+-spec prepare_log_message(misconfiguration_error()) -> {io:format(), [term()]}.
 prepare_log_message({misconfiguration, {routing_decisions, Details}}) ->
     Message = <<"PaymentRoutingDecisions couldn\'t be reduced to candidates">>,
-    {Message, Details};
+    {"~p, ~p", [Message, Details]};
 prepare_log_message({misconfiguration, {routing_candidate, Candidate}}) ->
     Message = <<"PaymentRoutingCandidate couldn\'t be reduced">>,
-    {Message, Candidate}.
+    {"~p, ~p", [Message, Candidate]}.
 
 %%
 
@@ -190,15 +170,11 @@ prepare_log_message({misconfiguration, {routing_candidate, Candidate}}) ->
     varset(),
     revision()
 ) ->
-    {ok, {[route()], reject_context()}}
+    {ok, {[route()], [rejected_route()]}}
     | {error, misconfiguration_error()}.
-gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, VS, _) ->
-    {ok, {[], #{varset => VS, rejected_routes => []}}};
+gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, _, _) ->
+    {ok, {[], []}};
 gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
-    RejectedContext = #{
-        varset => VS,
-        rejected_routes => []
-    },
     #domain_RoutingRules{
         policies = Policies,
         prohibitions = Prohibitions
@@ -209,7 +185,7 @@ gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules =
             collect_routes(Predestination, Candidates, VS, Revision),
             get_table_prohibitions(Prohibitions, VS, Revision)
         ),
-        {ok, {Accepted, RejectedContext#{rejected_routes => RejectedRoutes}}}
+        {ok, {Accepted, RejectedRoutes}}
     catch
         throw:{misconfiguration, _Reason} = Error ->
             {error, Error}

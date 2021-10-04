@@ -189,27 +189,23 @@ no_route_found_for_payment(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {ok, {[], RejectContext}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
-    #{
-        rejected_routes := [
-            {?prv(1), ?trm(1), {'PaymentsProvisionTerms', cost}},
-            {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
-            {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
-        ]
-    } = RejectContext,
+    {ok, {[], RejectedRoutes}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    [
+        {?prv(1), ?trm(1), {'PaymentsProvisionTerms', cost}},
+        {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
+        {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
+    ] = RejectedRoutes,
 
     VS1 = VS#{
         currency => ?cur(<<"EUR">>),
         cost => ?cash(1000, <<"EUR">>)
     },
-    {ok, {[], RejectContext1}} = hg_routing:gather_routes(payment, PaymentInstitution, VS1, Revision),
-    #{
-        rejected_routes := [
-            {?prv(1), ?trm(1), {'PaymentsProvisionTerms', currency}},
-            {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
-            {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
-        ]
-    } = RejectContext1.
+    {ok, {[], RejectedRoutes1}} = hg_routing:gather_routes(payment, PaymentInstitution, VS1, Revision),
+    [
+        {?prv(1), ?trm(1), {'PaymentsProvisionTerms', currency}},
+        {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
+        {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
+    ] = RejectedRoutes1.
 
 -spec gather_route_success(config()) -> test_return().
 gather_route_success(_C) ->
@@ -225,21 +221,18 @@ gather_route_success(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    {ok, {[Route], RejectContext}} = hg_routing:gather_routes(
+    {ok, {[Route], RejectedRoutes}} = hg_routing:gather_routes(
         payment,
         PaymentInstitution,
         VS,
         Revision
     ),
     ?assertMatch(?trm(1), hg_routing:terminal_ref(Route)),
-    ?assertMatch(
-        #{
-            rejected_routes := [
-                {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
-                {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
-            ]
-        },
-        RejectContext
+    ?assertMatch([
+            {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}},
+            {?prv(3), ?trm(3), {'PaymentsProvisionTerms', payment_tool}}
+        ],
+        RejectedRoutes
     ).
 
 -spec rejected_by_table_prohibitions(config()) -> test_return().
@@ -263,15 +256,12 @@ rejected_by_table_prohibitions(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {ok, {[], RejectContext}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
-
-    #{
-        rejected_routes := [
-            {?prv(3), ?trm(3), {'RoutingRule', undefined}},
-            {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
-            {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}}
-        ]
-    } = RejectContext,
+    {ok, {[], RejectedRoutes}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    [
+        {?prv(3), ?trm(3), {'RoutingRule', undefined}},
+        {?prv(1), ?trm(1), {'PaymentsProvisionTerms', payment_tool}},
+        {?prv(2), ?trm(2), {'PaymentsProvisionTerms', category}}
+    ] = RejectedRoutes,
     ok.
 
 -spec empty_candidate_ok(config()) -> test_return().
@@ -293,11 +283,7 @@ empty_candidate_ok(_C) ->
 
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(2)}),
-    {ok,
-        {[], #{
-            varset := VS,
-            rejected_routes := []
-        }}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision).
+    {ok, {[], []}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision).
 
 -spec ruleset_misconfig(config()) -> test_return().
 ruleset_misconfig(_C) ->
@@ -353,7 +339,7 @@ prefer_alive(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {ok, {Routes, _RejectContext}} = hg_routing:gather_routes(
+    {ok, {Routes, _RejectedRoutes}} = hg_routing:gather_routes(
         payment,
         PaymentInstitution,
         VS,
@@ -545,7 +531,7 @@ gathers_fail_rated_routes(_C) ->
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
 
-    {ok, {Routes0, _RejectContext0}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {ok, {Routes0, _RejectedRoutes}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
     Result = hg_routing:gather_fail_rates(Routes0),
     ?assertEqual(
         [
@@ -577,7 +563,7 @@ terminal_priority_for_shop(PartyID, ShopID, _C) ->
     },
     Revision = hg_domain:head(),
     PaymentInstitution = hg_domain:get(Revision, {payment_institution, ?pinst(1)}),
-    {ok, {Routes, _RejectContext}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
+    {ok, {Routes, _RejectedRoutes}} = hg_routing:gather_routes(payment, PaymentInstitution, VS, Revision),
     FailRatedRoutes = hg_routing:gather_fail_rates(Routes),
     hg_routing:choose_rated_route(FailRatedRoutes).
 
