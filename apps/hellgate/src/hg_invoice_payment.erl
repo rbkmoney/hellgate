@@ -734,10 +734,6 @@ validate_payment_tool(PaymentTool, PaymentMethodSelector) ->
     _ =
         case hg_payment_tool:has_any_payment_method(PaymentTool, PMs) of
             false ->
-                %% TODO delete logging after successfull migration tokenization method in domain_config
-                %% https://rbkmoney.atlassian.net/browse/ED-87
-                logger:info("PaymentTool: ~p", [PaymentTool]),
-                logger:info("PaymentMethods: ~p", [PMs]),
                 throw_invalid_request(<<"Invalid payment method">>);
             true ->
                 ok
@@ -2787,10 +2783,7 @@ construct_proxy_shop(
         category = ShopCategoryRef
     }
 ) ->
-    ShopCategory = hg_domain:get(
-        hg_domain:head(),
-        {category, ShopCategoryRef}
-    ),
+    ShopCategory = hg_domain:get({category, ShopCategoryRef}),
     #prxprv_Shop{
         id = ShopID,
         category = ShopCategory,
@@ -2802,10 +2795,9 @@ construct_proxy_cash(#domain_Cash{
     amount = Amount,
     currency = CurrencyRef
 }) ->
-    Revision = hg_domain:head(),
     #prxprv_Cash{
         amount = Amount,
-        currency = hg_domain:get(Revision, {currency, CurrencyRef})
+        currency = hg_domain:get({currency, CurrencyRef})
     }.
 
 construct_proxy_refund(#refund_st{refund = Refund} = St) ->

@@ -7,8 +7,6 @@
 %%
 
 -export([has_any_payment_method/2]).
--export([get_possible_methods/1]).
-
 -export([unmarshal/1]).
 
 %%
@@ -22,71 +20,113 @@ has_any_payment_method(PaymentTool, SupportedMethods) ->
 
 -spec get_possible_methods(t()) -> ordsets:ordset(method()).
 get_possible_methods(
-    {bank_card, #domain_BankCard{payment_system_deprecated = PaymentSystem, is_cvv_empty = true} = BankCard}
+    {bank_card, #domain_BankCard{payment_system_deprecated = PS, is_cvv_empty = true} = BankCard}
 ) ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PaymentSystem}},
-        create_bank_card_payment_method_ref(BankCard)
-    ]);
+    ordsets:add_element(
+        #domain_PaymentMethodRef{id = {empty_cvv_bank_card_deprecated, PS}},
+        get_possible_bank_card_methods(BankCard)
+    );
 get_possible_methods(
-    {bank_card,
-        #domain_BankCard{payment_system_deprecated = PaymentSystem, token_provider_deprecated = undefined} = BankCard}
+    {bank_card, #domain_BankCard{payment_system_deprecated = PS, token_provider_deprecated = undefined} = BankCard}
 ) ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
-        create_bank_card_payment_method_ref(BankCard)
-    ]);
+    ordsets:add_element(
+        #domain_PaymentMethodRef{id = {bank_card_deprecated, PS}},
+        get_possible_bank_card_methods(BankCard)
+    );
 get_possible_methods(
     {bank_card,
         #domain_BankCard{
             payment_system_deprecated = PaymentSystem,
             token_provider_deprecated = TokenProvider,
-            tokenization_method = TokenizationMethod
+            tokenization_method = none
         } = BankCard}
-) ->
-    ordsets:from_list([
+) when PaymentSystem /= undefined andalso TokenProvider /= undefined ->
+    ordsets:add_element(
+        #domain_PaymentMethodRef{id = {bank_card_deprecated, PaymentSystem}},
+        get_possible_bank_card_methods(BankCard)
+    );
+get_possible_methods(
+    {bank_card,
+        #domain_BankCard{
+            payment_system_deprecated = PaymentSystem,
+            token_provider_deprecated = TokenProvider
+        } = BankCard}
+) when PaymentSystem /= undefined andalso TokenProvider /= undefined ->
+    ordsets:add_element(
         #domain_PaymentMethodRef{
             id =
                 {tokenized_bank_card_deprecated, #domain_TokenizedBankCard{
                     payment_system_deprecated = PaymentSystem,
                     token_provider_deprecated = TokenProvider,
-                    tokenization_method = TokenizationMethod
+                    tokenization_method = undefined
                 }}
         },
-        create_bank_card_payment_method_ref(BankCard)
+        get_possible_bank_card_methods(BankCard)
+    );
+%% ===== payment_terminal
+get_possible_methods({payment_terminal, PaymentTerminal}) ->
+    filtermap_payment_methods_to_set([
+        {payment_terminal_deprecated, PaymentTerminal#domain_PaymentTerminal.terminal_type_deprecated},
+        {payment_terminal, PaymentTerminal#domain_PaymentTerminal.payment_service}
     ]);
-get_possible_methods({payment_terminal, #domain_PaymentTerminal{terminal_type_deprecated = TerminalType}}) ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {payment_terminal_deprecated, TerminalType}}
+%% ===== digital_wallet
+get_possible_methods({digital_wallet, DigitalWallet}) ->
+    filtermap_payment_methods_to_set([
+        {digital_wallet_deprecated, DigitalWallet#domain_DigitalWallet.provider_deprecated},
+        {digital_wallet, DigitalWallet#domain_DigitalWallet.payment_service}
     ]);
-get_possible_methods({digital_wallet, #domain_DigitalWallet{provider_deprecated = Provider}}) ->
-    ordsets:from_list([
-        #domain_PaymentMethodRef{id = {digital_wallet_deprecated, Provider}}
-    ]);
+%% ===== crypto_currency
 get_possible_methods({crypto_currency_deprecated, CC}) ->
     ordsets:from_list([
         #domain_PaymentMethodRef{id = {crypto_currency_deprecated, CC}}
     ]);
-get_possible_methods({mobile_commerce, #domain_MobileCommerce{operator_deprecated = Operator}}) ->
+get_possible_methods({crypto_currency, CC}) ->
     ordsets:from_list([
-        #domain_PaymentMethodRef{id = {mobile_deprecated, Operator}}
+        #domain_PaymentMethodRef{id = {crypto_currency, CC}}
+    ]);
+%% ===== mobile_commerce
+get_possible_methods({mobile_commerce, MobileCommerce}) ->
+    filtermap_payment_methods_to_set([
+        {mobile_deprecated, MobileCommerce#domain_MobileCommerce.operator_deprecated},
+        {mobile, MobileCommerce#domain_MobileCommerce.operator}
     ]).
 
-create_bank_card_payment_method_ref(#domain_BankCard{
-    payment_system_deprecated = PaymentSystem,
-    is_cvv_empty = IsCVVEmpty,
-    token_provider_deprecated = TokenProvider,
-    tokenization_method = TokenizationMethod
-}) ->
-    #domain_PaymentMethodRef{
-        id =
-            {bank_card, #domain_BankCardPaymentMethod{
-                payment_system_deprecated = PaymentSystem,
-                is_cvv_empty = genlib:define(IsCVVEmpty, false),
-                token_provider_deprecated = TokenProvider,
-                tokenization_method = TokenizationMethod
-            }}
-    }.
+get_possible_bank_card_methods(BankCard) ->
+    filtermap_payment_methods_to_set([
+        {bank_card, maybe_legacy_bank_card(BankCard)},
+        {bank_card, maybe_bank_card(BankCard)}
+    ]).
+
+filtermap_payment_methods_to_set(ItemList) ->
+    ordsets:from_list(
+        lists:filtermap(
+            fun
+                ({_K, undefined}) -> false;
+                (V) -> {true, #domain_PaymentMethodRef{id = V}}
+            end,
+            ItemList
+        )
+    ).
+
+maybe_legacy_bank_card(#domain_BankCard{payment_system_deprecated = PS} = BC) when PS /= undefined ->
+    #domain_BankCardPaymentMethod{
+        payment_system_deprecated = BC#domain_BankCard.payment_system_deprecated,
+        is_cvv_empty = genlib:define(BC#domain_BankCard.is_cvv_empty, false),
+        token_provider_deprecated = BC#domain_BankCard.token_provider_deprecated,
+        tokenization_method = BC#domain_BankCard.tokenization_method
+    };
+maybe_legacy_bank_card(_) ->
+    undefined.
+
+maybe_bank_card(#domain_BankCard{payment_system = PS} = BC) when PS /= undefined ->
+    #domain_BankCardPaymentMethod{
+        payment_system = PS,
+        is_cvv_empty = genlib:define(BC#domain_BankCard.is_cvv_empty, false),
+        payment_token = BC#domain_BankCard.payment_token,
+        tokenization_method = BC#domain_BankCard.tokenization_method
+    };
+maybe_bank_card(_) ->
+    undefined.
 
 %% Unmarshalling
 
@@ -97,8 +137,19 @@ unmarshal(PaymentTool) ->
     unmarshal(payment_tool, PaymentTool).
 
 unmarshal(payment_tool, [3, PMV, V]) ->
-    PaymentMethod = unmarshal(payment_method, PMV),
+    PaymentMethod = payment_method(PMV),
     {PaymentMethod, unmarshal(PaymentMethod, V)};
+unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
+    {bank_card, unmarshal(bank_card, BankCard)};
+unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
+    BCard = #domain_BankCard{
+        token = unmarshal(str, Token),
+        bin = unmarshal(str, Bin),
+        last_digits = unmarshal(str, MaskedPan)
+    },
+    {bank_card, set_payment_system(BCard, PaymentSystem)};
+unmarshal(payment_tool, [2, TerminalType]) when is_binary(TerminalType) ->
+    {payment_terminal, unmarshal(payment_terminal, TerminalType)};
 unmarshal(
     bank_card = T,
     #{
@@ -113,140 +164,118 @@ unmarshal(
     BankName = genlib_map:get(<<"bank_name">>, V),
     MD = genlib_map:get(<<"metadata">>, V),
     IsCVVEmpty = genlib_map:get(<<"is_cvv_empty">>, V),
-    #domain_BankCard{
+    BCard = #domain_BankCard{
         token = unmarshal(str, Token),
-        payment_system_deprecated = unmarshal({T, payment_system}, PaymentSystem),
         bin = unmarshal(str, Bin),
         last_digits = unmarshal(str, MaskedPan),
-        token_provider_deprecated = unmarshal({T, token_provider}, TokenProvider),
         issuer_country = unmarshal({T, issuer_country}, IssuerCountry),
-        bank_name = unmarshal({T, bank_name}, BankName),
+        bank_name = unmarshal(str, BankName),
         metadata = unmarshal({T, metadata}, MD),
         is_cvv_empty = unmarshal({T, boolean}, IsCVVEmpty)
-    };
-unmarshal(payment_terminal = T, TerminalType) ->
-    #domain_PaymentTerminal{
-        terminal_type_deprecated = unmarshal({T, type}, TerminalType)
-    };
-unmarshal(digital_wallet = T, #{
+    },
+    set_token_provider(
+        set_payment_system(BCard, PaymentSystem),
+        TokenProvider
+    );
+unmarshal(payment_terminal, TerminalType) ->
+    case TerminalType of
+        <<"euroset">> -> #domain_PaymentTerminal{terminal_type_deprecated = euroset};
+        <<"wechat">> -> #domain_PaymentTerminal{terminal_type_deprecated = wechat};
+        <<"alipay">> -> #domain_PaymentTerminal{terminal_type_deprecated = alipay};
+        <<"zotapay">> -> #domain_PaymentTerminal{terminal_type_deprecated = zotapay};
+        <<"qps">> -> #domain_PaymentTerminal{terminal_type_deprecated = qps};
+        <<"uzcard">> -> #domain_PaymentTerminal{terminal_type_deprecated = uzcard};
+        PSrvRef -> #domain_PaymentTerminal{payment_service = #domain_PaymentServiceRef{id = PSrvRef}}
+    end;
+unmarshal(digital_wallet, #{
     <<"provider">> := Provider,
     <<"id">> := ID
-}) ->
-    #domain_DigitalWallet{
-        provider_deprecated = unmarshal({T, provider}, Provider),
-        id = unmarshal(str, ID)
-    };
-unmarshal(crypto_currency = T, CC) ->
-    {crypto_currency_deprecated, unmarshal({T, currency}, CC)};
-unmarshal(mobile_commerce = T, #{
+}) when is_binary(Provider) ->
+    {Field, Value} =
+        case Provider of
+            <<"qiwi">> -> {#domain_DigitalWallet.provider_deprecated, qiwi};
+            PSrvRef -> {#domain_DigitalWallet.payment_service, #domain_PaymentServiceRef{id = PSrvRef}}
+        end,
+    setelement(Field, #domain_DigitalWallet{id = unmarshal(str, ID)}, Value);
+unmarshal(crypto_currency, CC) when is_binary(CC) ->
+    case CC of
+        <<"bitcoin">> -> {crypto_currency_deprecated, bitcoin};
+        <<"litecoin">> -> {crypto_currency_deprecated, litecoin};
+        <<"bitcoin_cash">> -> {crypto_currency_deprecated, bitcoin_cash};
+        <<"ripple">> -> {crypto_currency_deprecated, ripple};
+        <<"ethereum">> -> {crypto_currency_deprecated, ethereum};
+        <<"zcash">> -> {crypto_currency_deprecated, zcash};
+        CryptoCurRef -> {crypto_currency, #domain_CryptoCurrencyRef{id = CryptoCurRef}}
+    end;
+unmarshal(mobile_commerce, #{
     <<"operator">> := Operator,
     <<"phone">> := #{cc := CC, ctn := Ctn}
 }) ->
-    #domain_MobileCommerce{
-        operator_deprecated = unmarshal({T, operator}, Operator),
+    PTool = #domain_MobileCommerce{
         phone = #domain_MobilePhone{
             cc = unmarshal(str, CC),
             ctn = unmarshal(str, Ctn)
         }
-    };
-unmarshal(payment_tool, [2, #{<<"token">> := _} = BankCard]) ->
-    {bank_card, unmarshal(bank_card, BankCard)};
-unmarshal(payment_tool, [2, TerminalType]) ->
-    {payment_terminal, #domain_PaymentTerminal{
-        terminal_type_deprecated = unmarshal({payment_terminal, type}, TerminalType)
-    }};
-unmarshal(payment_tool, [1, ?legacy_bank_card(Token, PaymentSystem, Bin, MaskedPan)]) ->
-    {bank_card, #domain_BankCard{
-        token = unmarshal(str, Token),
-        payment_system_deprecated = unmarshal({bank_card, payment_system}, PaymentSystem),
-        bin = unmarshal(str, Bin),
-        last_digits = unmarshal(str, MaskedPan)
-    }};
-unmarshal(payment_method, <<"card">>) ->
-    bank_card;
-unmarshal(payment_method, <<"payterm">>) ->
-    payment_terminal;
-unmarshal(payment_method, <<"wallet">>) ->
-    digital_wallet;
-unmarshal(payment_method, <<"crypto_currency">>) ->
-    crypto_currency;
-unmarshal(payment_method, <<"mobile_commerce">>) ->
-    mobile_commerce;
-unmarshal({bank_card, payment_system}, <<"visa">>) ->
-    visa;
-unmarshal({bank_card, payment_system}, <<"mastercard">>) ->
-    mastercard;
-unmarshal({bank_card, payment_system}, <<"visaelectron">>) ->
-    visaelectron;
-unmarshal({bank_card, payment_system}, <<"maestro">>) ->
-    maestro;
-unmarshal({bank_card, payment_system}, <<"forbrugsforeningen">>) ->
-    forbrugsforeningen;
-unmarshal({bank_card, payment_system}, <<"dankort">>) ->
-    dankort;
-unmarshal({bank_card, payment_system}, <<"amex">>) ->
-    amex;
-unmarshal({bank_card, payment_system}, <<"dinersclub">>) ->
-    dinersclub;
-unmarshal({bank_card, payment_system}, <<"discover">>) ->
-    discover;
-unmarshal({bank_card, payment_system}, <<"unionpay">>) ->
-    unionpay;
-unmarshal({bank_card, payment_system}, <<"jcb">>) ->
-    jcb;
-unmarshal({bank_card, payment_system}, <<"nspkmir">>) ->
-    nspkmir;
-unmarshal({bank_card, token_provider}, <<"applepay">>) ->
-    applepay;
-unmarshal({bank_card, token_provider}, <<"googlepay">>) ->
-    googlepay;
-unmarshal({bank_card, token_provider}, <<"samsungpay">>) ->
-    samsungpay;
+    },
+    {Field, Value} =
+        case Operator of
+            <<"mts">> -> {#domain_MobileCommerce.operator_deprecated, mts};
+            <<"megafone">> -> {#domain_MobileCommerce.operator_deprecated, megafone};
+            <<"yota">> -> {#domain_MobileCommerce.operator_deprecated, yota};
+            <<"tele2">> -> {#domain_MobileCommerce.operator_deprecated, tele2};
+            <<"beeline">> -> {#domain_MobileCommerce.operator_deprecated, beeline};
+            BinRef -> {#domain_MobileCommerce.operator, #domain_MobileOperatorRef{id = BinRef}}
+        end,
+    setelement(Field, PTool, Value);
 unmarshal({bank_card, issuer_country}, Residence) when is_binary(Residence) ->
     binary_to_existing_atom(unmarshal(str, Residence), utf8);
-unmarshal({bank_card, bank_name}, Name) when is_binary(Name) ->
-    unmarshal(str, Name);
 unmarshal({bank_card, metadata}, MD) when is_map(MD) ->
     maps:map(fun(_, V) -> hg_msgpack_marshalling:marshal(V) end, MD);
-unmarshal({payment_terminal, type}, <<"euroset">>) ->
-    euroset;
-unmarshal({payment_terminal, type}, <<"wechat">>) ->
-    wechat;
-unmarshal({payment_terminal, type}, <<"alipay">>) ->
-    alipay;
-unmarshal({payment_terminal, type}, <<"zotapay">>) ->
-    zotapay;
-unmarshal({payment_terminal, type}, <<"qps">>) ->
-    qps;
-unmarshal({payment_terminal, type}, <<"uzcard">>) ->
-    uzcard;
-unmarshal({digital_wallet, provider}, <<"qiwi">>) ->
-    qiwi;
 unmarshal({bank_card, boolean}, <<"true">>) ->
     true;
 unmarshal({bank_card, boolean}, <<"false">>) ->
     false;
-unmarshal({crypto_currency, currency}, <<"bitcoin">>) ->
-    bitcoin;
-unmarshal({crypto_currency, currency}, <<"litecoin">>) ->
-    litecoin;
-unmarshal({crypto_currency, currency}, <<"bitcoin_cash">>) ->
-    bitcoin_cash;
-unmarshal({crypto_currency, currency}, <<"ripple">>) ->
-    ripple;
-unmarshal({crypto_currency, currency}, <<"ethereum">>) ->
-    ethereum;
-unmarshal({crypto_currency, currency}, <<"zcash">>) ->
-    zcash;
-unmarshal({mobile_commerce, operator}, <<"mts">>) ->
-    mts;
-unmarshal({mobile_commerce, operator}, <<"megafone">>) ->
-    megafone;
-unmarshal({mobile_commerce, operator}, <<"yota">>) ->
-    yota;
-unmarshal({mobile_commerce, operator}, <<"tele2">>) ->
-    tele2;
-unmarshal({mobile_commerce, operator}, <<"beeline">>) ->
-    beeline;
 unmarshal(_, Other) ->
     Other.
+
+payment_method(<<"card">>) ->
+    bank_card;
+payment_method(<<"payterm">>) ->
+    payment_terminal;
+payment_method(<<"wallet">>) ->
+    digital_wallet;
+payment_method(<<"crypto_currency">>) ->
+    crypto_currency;
+payment_method(<<"mobile_commerce">>) ->
+    mobile_commerce.
+
+set_payment_system(BCard, PSysBin) when is_binary(PSysBin) ->
+    {Field, Value} =
+        case PSysBin of
+            <<"visa">> -> {#domain_BankCard.payment_system_deprecated, visa};
+            <<"mastercard">> -> {#domain_BankCard.payment_system_deprecated, mastercard};
+            <<"visaelectron">> -> {#domain_BankCard.payment_system_deprecated, visaelectron};
+            <<"maestro">> -> {#domain_BankCard.payment_system_deprecated, maestro};
+            <<"forbrugsforeningen">> -> {#domain_BankCard.payment_system_deprecated, forbrugsforeningen};
+            <<"dankort">> -> {#domain_BankCard.payment_system_deprecated, dankort};
+            <<"amex">> -> {#domain_BankCard.payment_system_deprecated, amex};
+            <<"dinersclub">> -> {#domain_BankCard.payment_system_deprecated, dinersclub};
+            <<"discover">> -> {#domain_BankCard.payment_system_deprecated, discover};
+            <<"unionpay">> -> {#domain_BankCard.payment_system_deprecated, unionpay};
+            <<"jcb">> -> {#domain_BankCard.payment_system_deprecated, jcb};
+            <<"nspkmir">> -> {#domain_BankCard.payment_system_deprecated, nspkmir};
+            PSysRef -> {#domain_BankCard.payment_system, #domain_PaymentSystemRef{id = PSysRef}}
+        end,
+    setelement(Field, BCard, Value).
+
+set_token_provider(BCard, TokenProvider) when is_binary(TokenProvider) ->
+    {Field, Value} =
+        case TokenProvider of
+            <<"applepay">> -> {#domain_BankCard.token_provider_deprecated, applepay};
+            <<"googlepay">> -> {#domain_BankCard.token_provider_deprecated, googlepay};
+            <<"samsungpay">> -> {#domain_BankCard.token_provider_deprecated, samsungpay};
+            TSrvRef -> {#domain_BankCard.payment_token, #domain_BankCardTokenServiceRef{id = TSrvRef}}
+        end,
+    setelement(Field, BCard, Value);
+set_token_provider(BCard, _) ->
+    BCard.
