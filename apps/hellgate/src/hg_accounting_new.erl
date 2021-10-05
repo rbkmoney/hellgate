@@ -131,21 +131,11 @@ plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
 plan(PlanID, Batches, Timestamp, Clock) ->
     execute_plan(PlanID, Batches, Timestamp, Clock).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp()) ->
-    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
-hold(PlanID, Batch, Timestamp) ->
-    do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
-
 -spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) ->
     {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 hold(PlanID, Batch, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp), AccounterClock).
-
--spec commit(plan_id(), [batch()], hg_datetime:timestamp()) ->
-    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
-commit(PlanID, Batches, Timestamp) ->
-    do('CommitPlan', construct_plan(PlanID, Batches, Timestamp)).
 
 -spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) ->
     {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
@@ -153,19 +143,11 @@ commit(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
 
--spec rollback(plan_id(), [batch()], hg_datetime:timestamp()) ->
-    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
-rollback(PlanID, Batches, Timestamp) ->
-    do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp)).
-
 -spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) ->
     {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 rollback(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
-
-do(Op, Plan) ->
-    do(Op, Plan, {latest, #shumaich_LatestClock{}}).
 
 do(Op, Plan, PreviousClock) ->
     case call_accounter(Op, {Plan, PreviousClock}) of
