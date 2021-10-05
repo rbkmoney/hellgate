@@ -156,11 +156,9 @@ set_weight(Weight, Route) ->
 
 -spec prepare_log_message(misconfiguration_error()) -> {io:format(), [term()]}.
 prepare_log_message({misconfiguration, {routing_decisions, Details}}) ->
-    Message = <<"PaymentRoutingDecisions couldn\'t be reduced to candidates">>,
-    {"~p, ~p", [Message, Details]};
+    {<<"PaymentRoutingDecisions couldn\'t be reduced to candidates, ~p">>, [Details]};
 prepare_log_message({misconfiguration, {routing_candidate, Candidate}}) ->
-    Message = <<"PaymentRoutingCandidate couldn\'t be reduced">>,
-    {"~p, ~p", [Message, Candidate]}.
+    {<<"PaymentRoutingCandidate couldn\'t be reduced, ~p">>, [Candidate]}.
 
 %%
 
