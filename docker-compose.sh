@@ -135,7 +135,7 @@ services:
     command: >
       bash -c 'echo Waiting for Kafka to be ready... &&
         cub kafka-ready -b broker:9092 1 60 &&
-        kafka-topics --create --if-not-exists --zookeeper zookeeper:2181 --partitions 1 --replication-factor 1 --topic operation_log'"
+        kafka-topics --create --if-not-exists --zookeeper zookeeper:2181 --partitions 1 --replication-factor 1 --topic operation_log'
 
   shumaich:
     image: dr2.rbkmoney.com/rbkmoney/shumaich:3be4048303d9a649027faa95d87a5ecd99af1e6b
