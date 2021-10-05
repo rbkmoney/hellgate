@@ -108,9 +108,7 @@ filtermap_payment_methods_to_set(ItemList) ->
         )
     ).
 
-maybe_legacy_bank_card(#domain_BankCard{payment_system_deprecated = PS} = BC) when
-    PS /= undefined
-->
+maybe_legacy_bank_card(#domain_BankCard{payment_system_deprecated = PS} = BC) when PS /= undefined ->
     #domain_BankCardPaymentMethod{
         payment_system_deprecated = BC#domain_BankCard.payment_system_deprecated,
         is_cvv_empty = genlib:define(BC#domain_BankCard.is_cvv_empty, false),
@@ -120,9 +118,7 @@ maybe_legacy_bank_card(#domain_BankCard{payment_system_deprecated = PS} = BC) wh
 maybe_legacy_bank_card(_) ->
     undefined.
 
-maybe_bank_card(#domain_BankCard{payment_system = PS} = BC) when
-    PS /= undefined
-->
+maybe_bank_card(#domain_BankCard{payment_system = PS} = BC) when PS /= undefined ->
     #domain_BankCardPaymentMethod{
         payment_system = PS,
         is_cvv_empty = genlib:define(BC#domain_BankCard.is_cvv_empty, false),

@@ -6,13 +6,9 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("fault_detector_proto/include/fd_proto_fault_detector_thrift.hrl").
 
--export([gather_fail_rates/1]).
+-export([gather_routes/4]).
 -export([choose_route/1]).
--export([choose_rated_route/1]).
-
--export([get_payments_terms/2]).
-
--export([acceptable_terminal/5]).
+-export([get_payment_terms/3]).
 
 -export([marshal/1]).
 -export([unmarshal/1]).
@@ -20,39 +16,41 @@
 -export([get_logger_metadata/2]).
 
 -export([from_payment_route/1]).
+-export([new/2]).
 -export([new/4]).
 -export([to_payment_route/1]).
 -export([provider_ref/1]).
 -export([terminal_ref/1]).
+
+-export([prepare_log_message/1]).
+%% Using in ct
+-export([gather_fail_rates/1]).
+-export([choose_rated_route/1]).
 %%
 
 -include("domain.hrl").
 
--type terms() ::
-    dmsl_domain_thrift:'PaymentsProvisionTerms'()
-    | dmsl_domain_thrift:'RecurrentPaytoolsProvisionTerms'()
-    | undefined.
+-record(route, {
+    provider_ref :: dmsl_domain_thrift:'ProviderRef'(),
+    terminal_ref :: dmsl_domain_thrift:'TerminalRef'(),
+    weight :: integer(),
+    priority :: integer()
+}).
 
+-type route() :: #route{}.
+-type payment_terms() :: dmsl_domain_thrift:'PaymentsProvisionTerms'().
+-type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type payment_route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type route_predestination() :: payment | recurrent_paytool | recurrent_payment.
 
 -define(rejected(Reason), {rejected, Reason}).
 
--type reject_context() :: #{
-    varset := varset(),
-    rejected_providers := list(rejected_provider()),
-    rejected_routes := list(rejected_route())
-}.
-
--type rejected_provider() :: {provider_ref(), Reason :: term()}.
 -type rejected_route() :: {provider_ref(), terminal_ref(), Reason :: term()}.
 
 -type provider_ref() :: dmsl_domain_thrift:'ProviderRef'().
--type terminal() :: dmsl_domain_thrift:'Terminal'().
 -type terminal_ref() :: dmsl_domain_thrift:'TerminalRef'().
 
 -type fd_service_stats() :: fd_proto_fault_detector_thrift:'ServiceStatistics'().
--type unweighted_terminal() :: {terminal_ref(), terminal()}.
 
 -type terminal_priority_rating() :: integer().
 
@@ -71,38 +69,19 @@
 
 -type route_groups_by_priority() :: #{{availability_condition(), terminal_priority_rating()} => [fail_rated_route()]}.
 
--type route() :: #{
-    provider_ref := dmsl_domain_thrift:'ProviderRef'(),
-    terminal_ref := dmsl_domain_thrift:'TerminalRef'(),
-    weight => integer(),
-    priority := integer()
-}.
-
 -type fail_rated_route() :: {route(), provider_status()}.
 
 -type scored_route() :: {route_scores(), route()}.
 
--type route_choice_meta() :: #{
+-type route_choice_context() :: #{
     chosen_route => route(),
     preferable_route => route(),
     % Contains one of the field names defined in #route_scores{}
     reject_reason => atom()
 }.
 
--type varset() :: #{
-    category => dmsl_domain_thrift:'CategoryRef'(),
-    currency => dmsl_domain_thrift:'CurrencyRef'(),
-    cost => dmsl_domain_thrift:'Cash'(),
-    payment_tool => dmsl_domain_thrift:'PaymentTool'(),
-    party_id => dmsl_domain_thrift:'PartyID'(),
-    shop_id => dmsl_domain_thrift:'ShopID'(),
-    risk_score => dmsl_domain_thrift:'RiskScore'(),
-    flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
-    payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
-    wallet_id => dmsl_domain_thrift:'WalletID'(),
-    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
-    p2p_tool => dmsl_domain_thrift:'P2PTool'()
-}.
+-type varset() :: hg_varset:varset().
+-type revision() :: hg_domain:revision().
 
 -record(route_scores, {
     availability_condition :: condition_score(),
@@ -114,79 +93,206 @@
 }).
 
 -type route_scores() :: #route_scores{}.
+-type misconfiguration_error() :: {misconfiguration, {routing_decisions, _} | {routing_candidate, _}}.
 
 -export_type([route/0]).
 -export_type([route_predestination/0]).
--export_type([reject_context/0]).
--export_type([varset/0]).
 
--define(DEFAULT_ROUTE_WEIGHT, 0).
-% Set value like in protocol
-% https://github.com/rbkmoney/damsel/blob/fa979b0e7e5bcf0aff7b55927689368317e0d858/proto/domain.thrift#L2814
--define(DEFAULT_ROUTE_PRIORITY, 1000).
+%% Route accessors
 
--spec from_payment_route(payment_route()) -> route().
-from_payment_route(Route) ->
-    ?route(ProviderRef, TerminalRef) = Route,
-    #{
-        provider_ref => ProviderRef,
-        terminal_ref => TerminalRef,
-        weight => ?DEFAULT_ROUTE_WEIGHT,
-        priority => ?DEFAULT_ROUTE_PRIORITY
+-spec new(provider_ref(), terminal_ref()) -> route().
+new(ProviderRef, TerminalRef) ->
+    #route{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef,
+        weight = ?DOMAIN_CANDIDATE_WEIGHT,
+        priority = ?DOMAIN_CANDIDATE_PRIORITY
     }.
 
 -spec new(provider_ref(), terminal_ref(), integer() | undefined, integer()) -> route().
 new(ProviderRef, TerminalRef, undefined, Priority) ->
-    new(ProviderRef, TerminalRef, ?DEFAULT_ROUTE_WEIGHT, Priority);
+    new(ProviderRef, TerminalRef, ?DOMAIN_CANDIDATE_WEIGHT, Priority);
 new(ProviderRef, TerminalRef, Weight, Priority) ->
-    #{
-        provider_ref => ProviderRef,
-        terminal_ref => TerminalRef,
-        weight => Weight,
-        priority => Priority
+    #route{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef,
+        weight = Weight,
+        priority = Priority
     }.
 
--spec to_payment_route(route()) -> payment_route().
-to_payment_route(#{provider_ref := _, terminal_ref := _} = Route) ->
-    ?route(provider_ref(Route), terminal_ref(Route)).
-
 -spec provider_ref(route()) -> provider_ref().
-provider_ref(#{provider_ref := Ref}) ->
+provider_ref(#route{provider_ref = Ref}) ->
     Ref.
 
 -spec terminal_ref(route()) -> terminal_ref().
-terminal_ref(#{terminal_ref := Ref}) ->
+terminal_ref(#route{terminal_ref = Ref}) ->
     Ref.
 
 -spec priority(route()) -> integer().
-priority(#{priority := Priority}) ->
+priority(#route{priority = Priority}) ->
     Priority.
 
 -spec weight(route()) -> integer().
-weight(Route) ->
-    maps:get(weight, Route).
+weight(#route{weight = Weight}) ->
+    Weight.
+
+-spec from_payment_route(payment_route()) -> route().
+from_payment_route(Route) ->
+    ?route(ProviderRef, TerminalRef) = Route,
+    #route{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef,
+        weight = ?DOMAIN_CANDIDATE_WEIGHT,
+        priority = ?DOMAIN_CANDIDATE_PRIORITY
+    }.
+
+-spec to_payment_route(route()) -> payment_route().
+to_payment_route(#route{} = Route) ->
+    ?route(provider_ref(Route), terminal_ref(Route)).
 
 -spec set_weight(integer(), route()) -> route().
 set_weight(Weight, Route) ->
-    Route#{weight => Weight}.
+    Route#route{weight = Weight}.
+
+-spec prepare_log_message(misconfiguration_error()) -> {io:format(), [term()]}.
+prepare_log_message({misconfiguration, {routing_decisions, Details}}) ->
+    {"PaymentRoutingDecisions couldn't be reduced to candidates, ~p", [Details]};
+prepare_log_message({misconfiguration, {routing_candidate, Candidate}}) ->
+    {"PaymentRoutingCandidate couldn't be reduced, ~p", [Candidate]}.
+
+%%
+
+-spec gather_routes(
+    route_predestination(),
+    payment_institution(),
+    varset(),
+    revision()
+) ->
+    {ok, {[route()], [rejected_route()]}}
+    | {error, misconfiguration_error()}.
+gather_routes(_, #domain_PaymentInstitution{payment_routing_rules = undefined}, _, _) ->
+    {ok, {[], []}};
+gather_routes(Predestination, #domain_PaymentInstitution{payment_routing_rules = RoutingRules}, VS, Revision) ->
+    #domain_RoutingRules{
+        policies = Policies,
+        prohibitions = Prohibitions
+    } = RoutingRules,
+    try
+        Candidates = get_candidates(Policies, VS, Revision),
+        {Accepted, RejectedRoutes} = filter_routes(
+            collect_routes(Predestination, Candidates, VS, Revision),
+            get_table_prohibitions(Prohibitions, VS, Revision)
+        ),
+        {ok, {Accepted, RejectedRoutes}}
+    catch
+        throw:{misconfiguration, _Reason} = Error ->
+            {error, Error}
+    end.
+
+get_table_prohibitions(Prohibitions, VS, Revision) ->
+    RuleSetDeny = compute_rule_set(Prohibitions, VS, Revision),
+    lists:foldr(
+        fun(#domain_RoutingCandidate{terminal = K, description = V}, AccIn) ->
+            AccIn#{K => V}
+        end,
+        #{},
+        get_decisions_candidates(RuleSetDeny)
+    ).
+
+get_candidates(RoutingRule, VS, Revision) ->
+    get_decisions_candidates(
+        compute_rule_set(RoutingRule, VS, Revision)
+    ).
+
+get_decisions_candidates(#domain_RoutingRuleset{decisions = Decisions}) ->
+    case Decisions of
+        {delegates, _Delegates} ->
+            throw({misconfiguration, {routing_decisions, Decisions}});
+        {candidates, Candidates} ->
+            ok = validate_decisions_candidates(Candidates),
+            Candidates
+    end.
+
+validate_decisions_candidates([]) ->
+    ok;
+validate_decisions_candidates([#domain_RoutingCandidate{allowed = {constant, true}} | Rest]) ->
+    validate_decisions_candidates(Rest);
+validate_decisions_candidates([Candidate | _]) ->
+    throw({misconfiguration, {routing_candidate, Candidate}}).
+
+collect_routes(Predestination, Candidates, VS, Revision) ->
+    lists:foldr(
+        fun(Candidate, {Accepted, Rejected}) ->
+            #domain_RoutingCandidate{
+                terminal = TerminalRef,
+                priority = Priority,
+                weight = Weight
+            } = Candidate,
+            % Looks like overhead, we got Terminal only for provider_ref. Maybe we can remove provider_ref from route().
+            % https://github.com/rbkmoney/hellgate/pull/583#discussion_r682745123
+            #domain_Terminal{
+                provider_ref = ProviderRef
+            } = hg_domain:get(Revision, {terminal, TerminalRef}),
+            try
+                true = acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision),
+                Route = new(ProviderRef, TerminalRef, Weight, Priority),
+                {[Route | Accepted], Rejected}
+            catch
+                {rejected, Reason} ->
+                    {Accepted, [{ProviderRef, TerminalRef, Reason} | Rejected]};
+                error:{misconfiguration, Reason} ->
+                    {Accepted, [{ProviderRef, TerminalRef, {'Misconfiguration', Reason}} | Rejected]}
+            end
+        end,
+        {[], []},
+        Candidates
+    ).
+
+filter_routes({Routes, Rejected}, Prohibitions) ->
+    lists:foldr(
+        fun(Route, {AccIn, RejectedIn}) ->
+            TRef = terminal_ref(Route),
+            case maps:find(TRef, Prohibitions) of
+                error ->
+                    {[Route | AccIn], RejectedIn};
+                {ok, Description} ->
+                    PRef = provider_ref(Route),
+                    RejectedOut = [{PRef, TRef, {'RoutingRule', Description}} | RejectedIn],
+                    {AccIn, RejectedOut}
+            end
+        end,
+        {[], Rejected},
+        Routes
+    ).
+
+compute_rule_set(RuleSetRef, VS, Revision) ->
+    Ctx = hg_context:load(),
+    {ok, RuleSet} = party_client_thrift:compute_routing_ruleset(
+        RuleSetRef,
+        Revision,
+        hg_varset:prepare_varset(VS),
+        hg_context:get_party_client(Ctx),
+        hg_context:get_party_client_context(Ctx)
+    ),
+    RuleSet.
 
 -spec gather_fail_rates([route()]) -> [fail_rated_route()].
 gather_fail_rates(Routes) ->
     score_routes_with_fault_detector(Routes).
 
--spec choose_route([route()]) -> {route(), route_choice_meta()}.
+-spec choose_route([route()]) -> {route(), route_choice_context()}.
 choose_route(Routes) ->
     FailRatedRoutes = gather_fail_rates(Routes),
     choose_rated_route(FailRatedRoutes).
 
--spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_meta()}.
+-spec choose_rated_route([fail_rated_route()]) -> {route(), route_choice_context()}.
 choose_rated_route(FailRatedRoutes) ->
     BalancedRoutes = balance_routes(FailRatedRoutes),
     ScoredRoutes = score_routes(BalancedRoutes),
     {ChosenScoredRoute, IdealRoute} = find_best_routes(ScoredRoutes),
-    RouteChoiceMeta = get_route_choice_meta(ChosenScoredRoute, IdealRoute),
+    RouteChoiceContext = get_route_choice_context(ChosenScoredRoute, IdealRoute),
     {_, Route} = ChosenScoredRoute,
-    {Route, RouteChoiceMeta}.
+    {Route, RouteChoiceContext}.
 
 -spec find_best_routes([scored_route()]) -> {Chosen :: scored_route(), Ideal :: scored_route()}.
 find_best_routes([Route]) ->
@@ -224,28 +330,28 @@ set_ideal_score({RouteScores, PT}) ->
         PT
     }.
 
-get_route_choice_meta({_, SameRoute}, {_, SameRoute}) ->
+get_route_choice_context({_, SameRoute}, {_, SameRoute}) ->
     #{
         chosen_route => SameRoute
     };
-get_route_choice_meta({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
+get_route_choice_context({ChosenScores, ChosenRoute}, {IdealScores, IdealRoute}) ->
     #{
         chosen_route => ChosenRoute,
         preferable_route => IdealRoute,
         reject_reason => map_route_switch_reason(ChosenScores, IdealScores)
     }.
 
--spec get_logger_metadata(route_choice_meta(), hg_domain:revision()) -> LoggerFormattedMetadata :: map().
-get_logger_metadata(RouteChoiceMeta, Revision) ->
-    #{route_choice_metadata => format_logger_metadata(RouteChoiceMeta, Revision)}.
+-spec get_logger_metadata(route_choice_context(), revision()) -> LoggerFormattedMetadata :: map().
+get_logger_metadata(RouteChoiceContext, Revision) ->
+    #{route_choice_metadata => format_logger_metadata(RouteChoiceContext, Revision)}.
 
-format_logger_metadata(RouteChoiceMeta, Revision) ->
+format_logger_metadata(RouteChoiceContext, Revision) ->
     maps:fold(
         fun(K, V, Acc) ->
             Acc ++ format_logger_metadata(K, V, Revision)
         end,
         [],
-        RouteChoiceMeta
+        RouteChoiceContext
     ).
 
 format_logger_metadata(reject_reason, Reason, _) ->
@@ -259,9 +365,13 @@ add_route_name(Route, Revision) ->
     TerminalRef = terminal_ref(Route),
     #domain_Provider{name = PName} = hg_domain:get(Revision, {provider, ProviderRef}),
     #domain_Terminal{name = TName} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    genlib_map:compact(Route#{
+    genlib_map:compact(#{
         provider_name => PName,
-        terminal_name => TName
+        terminal_name => TName,
+        provider_ref => ProviderRef,
+        terminal_ref => TerminalRef,
+        priority => priority(Route),
+        weight => weight(Route)
     }).
 
 map_route_switch_reason(SameScores, SameScores) ->
@@ -418,20 +528,27 @@ build_fd_availability_service_id(#domain_ProviderRef{id = ID}) ->
 build_fd_conversion_service_id(#domain_ProviderRef{id = ID}) ->
     hg_fault_detector_client:build_service_id(provider_conversion, ID).
 
--spec get_payments_terms(payment_route(), hg_domain:revision()) -> terms().
-get_payments_terms(?route(ProviderRef, TerminalRef), Revision) ->
-    #domain_Provider{terms = Terms0} = hg_domain:get(Revision, {provider, ProviderRef}),
-    #domain_Terminal{terms = Terms1} = hg_domain:get(Revision, {terminal, TerminalRef}),
-    Terms = merge_terms(Terms0, Terms1),
-    Terms#domain_ProvisionTermSet.payments.
+-spec get_payment_terms(payment_route(), varset(), revision()) -> payment_terms() | undefined.
+get_payment_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
+    PreparedVS = hg_varset:prepare_varset(VS),
+    {Client, Context} = get_party_client(),
+    {ok, TermsSet} = party_client_thrift:compute_provider_terminal_terms(
+        ProviderRef,
+        TerminalRef,
+        Revision,
+        PreparedVS,
+        Client,
+        Context
+    ),
+    TermsSet#domain_ProvisionTermSet.payments.
 
 -spec acceptable_terminal(
     route_predestination(),
     provider_ref(),
     terminal_ref(),
     varset(),
-    hg_domain:revision()
-) -> unweighted_terminal() | no_return().
+    revision()
+) -> true | no_return().
 acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
     {Client, Context} = get_party_client(),
     Result = party_client_thrift:compute_provider_terminal_terms(
@@ -442,15 +559,12 @@ acceptable_terminal(Predestination, ProviderRef, TerminalRef, VS, Revision) ->
         Client,
         Context
     ),
-    ProvisionTermSet =
-        case Result of
-            {ok, Terms} ->
-                Terms;
-            {error, #payproc_ProvisionTermSetUndefined{}} ->
-                undefined
-        end,
-    _ = check_terms_acceptability(Predestination, ProvisionTermSet, VS),
-    {TerminalRef, hg_domain:get(Revision, {terminal, TerminalRef})}.
+    case Result of
+        {ok, ProvisionTermSet} ->
+            check_terms_acceptability(Predestination, ProvisionTermSet, VS);
+        {error, #payproc_ProvisionTermSetUndefined{}} ->
+            throw(?rejected({'ProvisionTermSet', undefined}))
+    end.
 
 %%
 
@@ -461,35 +575,13 @@ get_party_client() ->
     {Client, Context}.
 
 check_terms_acceptability(payment, Terms, VS) ->
-    _ = acceptable_provision_payment_terms(Terms, VS);
+    acceptable_payment_terms(Terms#domain_ProvisionTermSet.payments, VS);
 check_terms_acceptability(recurrent_paytool, Terms, VS) ->
-    _ = acceptable_provision_recurrent_terms(Terms, VS);
+    acceptable_recurrent_paytool_terms(Terms#domain_ProvisionTermSet.recurrent_paytools, VS);
 check_terms_acceptability(recurrent_payment, Terms, VS) ->
     % Use provider check combined from recurrent_paytool and payment check
-    _ = acceptable_provision_payment_terms(Terms, VS),
-    _ = acceptable_provision_recurrent_terms(Terms, VS).
-
-acceptable_provision_payment_terms(
-    #domain_ProvisionTermSet{
-        payments = PaymentTerms
-    },
-    VS
-) ->
-    _ = acceptable_payment_terms(PaymentTerms, VS),
-    true;
-acceptable_provision_payment_terms(undefined, _VS) ->
-    throw(?rejected({'ProvisionTermSet', undefined})).
-
-acceptable_provision_recurrent_terms(
-    #domain_ProvisionTermSet{
-        recurrent_paytools = RecurrentTerms
-    },
-    VS
-) ->
-    _ = acceptable_recurrent_paytool_terms(RecurrentTerms, VS),
-    true;
-acceptable_provision_recurrent_terms(undefined, _VS) ->
-    throw(?rejected({'ProvisionTermSet', undefined})).
+    _ = acceptable_payment_terms(Terms#domain_ProvisionTermSet.payments, VS),
+    acceptable_recurrent_paytool_terms(Terms#domain_ProvisionTermSet.recurrent_paytools, VS).
 
 acceptable_payment_terms(
     #domain_PaymentsProvisionTerms{
@@ -567,63 +659,6 @@ acceptable_partial_refunds_terms(
         throw(?rejected({'PartialRefundsProvisionTerms', cash_limit}));
 acceptable_partial_refunds_terms(undefined, _RVS) ->
     throw(?rejected({'PartialRefundsProvisionTerms', undefined})).
-
-merge_terms(
-    #domain_ProvisionTermSet{
-        payments = PPayments,
-        recurrent_paytools = PRecurrents
-    },
-    #domain_ProvisionTermSet{
-        payments = TPayments,
-        % TODO: Allow to define recurrent terms in terminal
-        recurrent_paytools = _TRecurrents
-    }
-) ->
-    #domain_ProvisionTermSet{
-        payments = merge_payment_terms(PPayments, TPayments),
-        recurrent_paytools = PRecurrents
-    };
-merge_terms(ProviderTerms, TerminalTerms) ->
-    hg_utils:select_defined(TerminalTerms, ProviderTerms).
-
--spec merge_payment_terms(terms(), terms()) -> terms().
-merge_payment_terms(
-    #domain_PaymentsProvisionTerms{
-        currencies = PCurrencies,
-        categories = PCategories,
-        payment_methods = PPaymentMethods,
-        cash_limit = PCashLimit,
-        cash_flow = PCashflow,
-        holds = PHolds,
-        refunds = PRefunds,
-        chargebacks = PChargebacks,
-        risk_coverage = PRiskCoverage
-    },
-    #domain_PaymentsProvisionTerms{
-        currencies = TCurrencies,
-        categories = TCategories,
-        payment_methods = TPaymentMethods,
-        cash_limit = TCashLimit,
-        cash_flow = TCashflow,
-        holds = THolds,
-        refunds = TRefunds,
-        chargebacks = TChargebacks,
-        risk_coverage = TRiskCoverage
-    }
-) ->
-    #domain_PaymentsProvisionTerms{
-        currencies = hg_utils:select_defined(TCurrencies, PCurrencies),
-        categories = hg_utils:select_defined(TCategories, PCategories),
-        payment_methods = hg_utils:select_defined(TPaymentMethods, PPaymentMethods),
-        cash_limit = hg_utils:select_defined(TCashLimit, PCashLimit),
-        cash_flow = hg_utils:select_defined(TCashflow, PCashflow),
-        holds = hg_utils:select_defined(THolds, PHolds),
-        refunds = hg_utils:select_defined(TRefunds, PRefunds),
-        chargebacks = hg_utils:select_defined(TChargebacks, PChargebacks),
-        risk_coverage = hg_utils:select_defined(TRiskCoverage, PRiskCoverage)
-    };
-merge_payment_terms(ProviderTerms, TerminalTerms) ->
-    hg_utils:select_defined(TerminalTerms, ProviderTerms).
 
 %%
 
@@ -771,33 +806,33 @@ record_comparsion_test() ->
 balance_routes_test() ->
     Status = {{alive, 0.0}, {normal, 0.0}},
     WithWeight = [
-        {new(?prv(1), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 2, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 2, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
 
     Result1 = [
-        {new(?prv(1), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     Result2 = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 1, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 1, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     Result3 = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(3), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(4), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(5), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(3), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(4), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(5), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     [
         ?assertEqual(Result1, lists:reverse(calc_random_condition(0.0, 0.2, WithWeight, []))),
@@ -809,12 +844,12 @@ balance_routes_test() ->
 balance_routes_with_default_weight_test() ->
     Status = {{alive, 0.0}, {normal, 0.0}},
     Routes = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     Result = [
-        {new(?prv(1), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status},
-        {new(?prv(2), ?trm(1), 0, ?DEFAULT_ROUTE_PRIORITY), Status}
+        {new(?prv(1), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status},
+        {new(?prv(2), ?trm(1), 0, ?DOMAIN_CANDIDATE_PRIORITY), Status}
     ],
     [
         ?assertEqual(Result, set_routes_random_condition(Routes))

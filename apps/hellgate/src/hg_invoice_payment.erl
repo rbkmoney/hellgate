@@ -208,7 +208,6 @@
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type payment_tool() :: dmsl_domain_thrift:'PaymentTool'().
 -type recurrent_paytool_service_terms() :: dmsl_domain_thrift:'RecurrentPaytoolsServiceTerms'().
-
 -type session_status() :: active | suspended | finished.
 
 -type session() :: #{
@@ -465,21 +464,6 @@ get_merchant_terms(Party, Shop, DomainRevision, Timestamp, VS) ->
         Context
     ),
     Terms.
-
--spec get_provider_terminal_terms(route(), hg_varset:varset(), hg_domain:revision()) ->
-    dmsl_domain_thrift:'PaymentsProvisionTerms'() | undefined.
-get_provider_terminal_terms(?route(ProviderRef, TerminalRef), VS, Revision) ->
-    PreparedVS = hg_varset:prepare_varset(VS),
-    {Client, Context} = get_party_client(),
-    {ok, TermsSet} = party_client_thrift:compute_provider_terminal_terms(
-        ProviderRef,
-        TerminalRef,
-        Revision,
-        PreparedVS,
-        Client,
-        Context
-    ),
-    TermsSet#domain_ProvisionTermSet.payments.
 
 assert_contract_active(#domain_Contract{status = {active, _}}) ->
     ok;
@@ -774,19 +758,22 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
     Payment = get_payment(St),
     Predestination = choose_routing_predestination(Payment),
     case
-        hg_routing_rule:gather_routes(
+        hg_routing:gather_routes(
             Predestination,
             PaymentInstitution,
             VS,
             Revision
         )
     of
-        {[], RejectContext} ->
-            _ = log_reject_context(unknown, RejectContext),
+        {ok, {[], RejectedRoutes}} ->
+            _ = log_rejected_routes(unknown, RejectedRoutes, VS),
             throw({no_route_found, unknown});
-        {Routes, RejectContext} ->
-            _ = log_misconfigurations(RejectContext),
-            Routes
+        {ok, {Routes, RejectedRoutes}} ->
+            _ = log_rejected_routes(unknown, RejectedRoutes, VS),
+            Routes;
+        {error, {misconfiguration, _Reason} = Error} ->
+            _ = log_misconfigurations(Error),
+            throw({no_route_found, misconfiguration})
     end.
 
 -spec check_risk_score(risk_score()) -> ok | {error, risk_score_is_too_high}.
@@ -806,42 +793,25 @@ choose_routing_predestination(#domain_InvoicePayment{payer = ?payment_resource_p
 log_route_choice_meta(ChoiceMeta, Revision) ->
     _ = logger:log(info, "Routing decision made", hg_routing:get_logger_metadata(ChoiceMeta, Revision)).
 
-log_misconfigurations(RejectContext) ->
-    RejectedProviders = maps:get(rejected_providers, RejectContext),
-    RejectedRoutes = maps:get(rejected_routes, RejectContext),
-    Rejects = RejectedProviders ++ RejectedRoutes,
-    _ = lists:foreach(fun maybe_log_misconfiguration/1, Rejects),
+log_misconfigurations({misconfiguration, _} = Error) ->
+    {Format, Details} = hg_routing:prepare_log_message(Error),
+    _ = logger:warning(Format, Details),
     ok.
 
-maybe_log_misconfiguration({PRef, {'Misconfiguration', Reason}}) ->
-    Text = "The provider with ref ~p has been misconfigured: ~p",
-    _ = logger:warning(Text, [PRef, Reason]);
-maybe_log_misconfiguration({PRef, TRef, {'Misconfiguration', Reason}}) ->
-    Text = "The route with provider ref ~p and terminal ref ~p has been misconfigured: ~p",
-    _ = logger:warning(Text, [PRef, TRef, Reason]);
-maybe_log_misconfiguration(_NotMisconfiguration) ->
-    ok.
+log_rejected_routes(RejectReason, RejectedRoutes, Varset) ->
+    log_rejected_routes(warning, RejectReason, RejectedRoutes, Varset).
 
-log_reject_context(RejectReason, RejectContext) ->
-    log_reject_context(warning, RejectReason, RejectContext).
-
-log_reject_context(Level, RejectReason, RejectContext) ->
+log_rejected_routes(Level, RejectReason, RejectedRoutes, Varset) ->
     _ = logger:log(
         Level,
         "No route found, reason = ~p, varset: ~p",
-        [RejectReason, maps:get(varset, RejectContext)],
-        logger:get_process_metadata()
-    ),
-    _ = logger:log(
-        Level,
-        "No route found, reason = ~p, rejected providers: ~p",
-        [RejectReason, maps:get(rejected_providers, RejectContext)],
+        [RejectReason, Varset],
         logger:get_process_metadata()
     ),
     _ = logger:log(
         Level,
         "No route found, reason = ~p, rejected routes: ~p",
-        [RejectReason, maps:get(rejected_routes, RejectContext)],
+        [RejectReason, RejectedRoutes],
         logger:get_process_metadata()
     ),
     ok.
@@ -1024,7 +994,7 @@ partial_capture(St0, Reason, Cost, Cart, Opts) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     ok = validate_merchant_hold_terms(MerchantTerms),
     Route = get_route(St),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     ok = validate_provider_holds_terms(ProviderTerms),
     FinalCashflow = calculate_cashflow(Route, Payment2, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     Changes = start_partial_capture(Reason, Cost, Cart, FinalCashflow),
@@ -1206,7 +1176,7 @@ make_refund_cashflow(Refund, Payment, Revision, CreatedAt, St, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_refunds_terms(get_merchant_payments_terms(Opts, Revision, CreatedAt, VS)),
     ok = validate_refund(MerchantTerms, Refund, Payment),
-    ProviderPaymentsTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderPaymentsTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     ProviderTerms = get_provider_refunds_terms(ProviderPaymentsTerms, Refund, Payment),
     Cashflow = collect_refund_cashflow(MerchantTerms, ProviderTerms),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
@@ -1554,7 +1524,7 @@ get_cash_flow_for_target_status({failed, _}, _St, _Opts) ->
 ) -> cash_flow().
 calculate_cashflow(Route, Payment, Timestamp, VS, Revision, Opts) ->
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
-    ProviderTerms = get_provider_terminal_terms(Route, VS, Revision),
+    ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
     calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts).
 
 -spec calculate_cashflow(
@@ -1829,9 +1799,8 @@ process_risk_score(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
+    VS1 = get_varset(St, #{}),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
-    VS0 = reconstruct_payment_flow(Payment, #{}),
-    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     RiskScore = repair_inspect(Payment, PaymentInstitution, Opts, St),
     Events = [?risk_score_changed(RiskScore)],
@@ -1848,20 +1817,18 @@ process_routing(Action, St) ->
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
+    #{payment_tool := PaymentTool} = VS1 = get_varset(St, #{risk_score => get_risk_score(St)}),
     CreatedAt = get_payment_created_at(Payment),
     PaymentInstitutionRef = get_payment_institution_ref(Opts),
-    VS0 = #{risk_score => get_risk_score(St)},
-    VS1 = reconstruct_payment_flow(Payment, VS0),
-    #{payment_tool := PaymentTool} = VS2 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS1),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS2),
-    VS3 = collect_refund_varset(
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS1),
+    VS2 = collect_refund_varset(
         MerchantTerms#domain_PaymentsServiceTerms.refunds,
         PaymentTool,
-        VS2
+        VS1
     ),
-    VS4 = collect_chargeback_varset(
+    VS3 = collect_chargeback_varset(
         MerchantTerms#domain_PaymentsServiceTerms.chargebacks,
-        VS3
+        VS2
     ),
     PaymentInstitution = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS1, Revision),
     try
@@ -1871,10 +1838,10 @@ process_routing(Action, St) ->
                 {ok, PaymentRoute} ->
                     [hg_routing:from_payment_route(PaymentRoute)];
                 undefined ->
-                    gather_routes(PaymentInstitution, VS4, Revision, St)
+                    gather_routes(PaymentInstitution, VS3, Revision, St)
             end,
         Events = handle_gathered_route_result(
-            filter_limit_overflow_routes(Routes, VS4, St),
+            filter_limit_overflow_routes(Routes, VS3, St),
             [hg_routing:to_payment_route(R) || R <- Routes],
             Revision
         ),
@@ -1885,8 +1852,8 @@ process_routing(Action, St) ->
     end.
 
 handle_gathered_route_result({ok, RoutesNoOverflow}, Routes, Revision) ->
-    {ChoosenRoute, ChoiceMeta} = hg_routing:choose_route(RoutesNoOverflow),
-    _ = log_route_choice_meta(ChoiceMeta, Revision),
+    {ChoosenRoute, ChoiceContext} = hg_routing:choose_route(RoutesNoOverflow),
+    _ = log_route_choice_meta(ChoiceContext, Revision),
     [?route_changed(hg_routing:to_payment_route(ChoosenRoute), Routes)];
 handle_gathered_route_result({error, not_found}, Routes, _) ->
     Failure =
@@ -1912,17 +1879,16 @@ handle_choose_route_error(Reason, Events, St, Action) ->
 
 -spec process_cash_flow_building(action(), st()) -> machine_result().
 process_cash_flow_building(Action, St) ->
+    Route = get_route(St),
     Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
     Invoice = get_invoice(Opts),
-    Route = get_route(St),
-    Timestamp = get_payment_created_at(Payment),
-    VS0 = reconstruct_payment_flow(Payment, #{}),
-    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS1),
-    ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
-    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
+    VS = get_varset(St, #{}),
+    CreatedAt = get_payment_created_at(Payment),
+    MerchantTerms = get_merchant_payments_terms(Opts, Revision, CreatedAt, VS),
+    ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
+    FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS, Revision, Opts),
     _ = rollback_unused_payment_limits(St),
     _Clock = hg_accounting:hold(
         construct_payment_plan_id(Invoice, Payment),
@@ -2539,7 +2505,7 @@ get_provider_terms(St, Revision) ->
     Payment = get_payment(St),
     VS0 = reconstruct_payment_flow(Payment, #{}),
     VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
-    get_provider_terminal_terms(Route, VS1, Revision).
+    hg_routing:get_payment_terms(Route, VS1, Revision).
 
 filter_limit_overflow_routes(Routes, VS, St) ->
     ok = hold_limit_routes(Routes, VS, St),
@@ -2552,13 +2518,14 @@ filter_limit_overflow_routes(Routes, VS, St) ->
     end.
 
 get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
+    Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
-    Invoice = get_invoice(get_opts(St)),
+    Invoice = get_invoice(Opts),
     lists:foldl(
         fun(Route, {RoutesNoOverflowIn, RejectedIn}) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
-            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
+            ProviderTerms = hg_routing:get_payment_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
                 {ok, _} ->
@@ -2575,13 +2542,14 @@ get_limit_overflow_routes(Routes, VS, St, RejectedRoutes) ->
     ).
 
 hold_limit_routes(Routes, VS, St) ->
+    Opts = get_opts(St),
     Revision = get_payment_revision(St),
     Payment = get_payment(St),
-    Invoice = get_invoice(get_opts(St)),
+    Invoice = get_invoice(Opts),
     lists:foreach(
         fun(Route) ->
             PaymentRoute = hg_routing:to_payment_route(Route),
-            ProviderTerms = get_provider_terminal_terms(PaymentRoute, VS, Revision),
+            ProviderTerms = hg_routing:get_payment_terms(PaymentRoute, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             ok = hg_limiter:hold_payment_limits(TurnoverLimits, PaymentRoute, Invoice, Payment)
         end,
@@ -2589,15 +2557,14 @@ hold_limit_routes(Routes, VS, St) ->
     ).
 
 rollback_payment_limits(Routes, St) ->
-    Revision = get_payment_revision(St),
     Opts = get_opts(St),
+    Revision = get_payment_revision(St),
     Payment = get_payment(St),
-    Invoice = get_invoice(get_opts(St)),
-    VS0 = reconstruct_payment_flow(Payment, #{}),
-    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    Invoice = get_invoice(Opts),
+    VS = get_varset(St, #{}),
     lists:foreach(
         fun(Route) ->
-            ProviderTerms = get_provider_terminal_terms(Route, VS1, Revision),
+            ProviderTerms = hg_routing:get_payment_terms(Route, VS, Revision),
             TurnoverLimits = get_turnover_limits(ProviderTerms),
             ok = hg_limiter:rollback_payment_limits(TurnoverLimits, Route, Invoice, Payment)
         end,
@@ -2615,9 +2582,10 @@ get_turnover_limits(ProviderTerms) ->
     hg_limiter:get_turnover_limits(TurnoverLimitSelector).
 
 commit_payment_limits(#st{capture_params = CaptureParams} = St) ->
+    Opts = get_opts(St),
     Revision = get_payment_revision(St),
-    Invoice = get_invoice(get_opts(St)),
     Payment = get_payment(St),
+    Invoice = get_invoice(Opts),
     Route = get_route(St),
     #payproc_InvoicePaymentCaptureParams{cash = CapturedCash} = CaptureParams,
     ProviderTerms = get_provider_terms(St, Revision),
@@ -2928,6 +2896,13 @@ get_payer_payment_tool(?recurrent_payer(PaymentTool, _, _)) ->
 
 get_resource_payment_tool(#domain_DisposablePaymentResource{payment_tool = PaymentTool}) ->
     PaymentTool.
+
+get_varset(St, InitialValue) ->
+    Opts = get_opts(St),
+    Payment = get_payment(St),
+    VS0 = reconstruct_payment_flow(Payment, InitialValue),
+    VS1 = collect_validation_varset(get_party(Opts), get_shop(Opts), Payment, VS0),
+    VS1.
 
 %%
 
