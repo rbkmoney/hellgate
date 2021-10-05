@@ -132,9 +132,10 @@ services:
     container_name: kafka-setup
     depends_on:
       - broker
-    command: "bash -c 'echo Waiting for Kafka to be ready... && \
-                              cub kafka-ready -b broker:9092 1 60 && \
-                              kafka-topics --create --if-not-exists --zookeeper zookeeper:2181 --partitions 1 --replication-factor 1 --topic operation_log'"
+    command: >
+      bash -c 'echo Waiting for Kafka to be ready... &&
+        cub kafka-ready -b broker:9092 1 60 &&
+        kafka-topics --create --if-not-exists --zookeeper zookeeper:2181 --partitions 1 --replication-factor 1 --topic operation_log'"
 
   shumaich:
     image: dr2.rbkmoney.com/rbkmoney/shumaich:3be4048303d9a649027faa95d87a5ecd99af1e6b
@@ -162,13 +163,6 @@ services:
       interval: 5s
       timeout: 1s
       retries: 20
-
-  holmes:
-    image: dr2.rbkmoney.com/rbkmoney/holmes:7d496d0886a1489044c57eee4ba4bfcf8f8b6a48
-    hostname: holmes
-    container_name: holmes
-    volumes:
-      - ./_build/default/lib/shumpune-proto/proto/:/opt/holmes/shumaich-proto
 
   postgres:
     image: postgres:9.6

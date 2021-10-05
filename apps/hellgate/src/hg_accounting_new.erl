@@ -13,24 +13,19 @@
 -export([get_balance/1]).
 -export([get_balance/2]).
 
--export([create_account/1]).
-
 -export([collect_account_map/6]).
 -export([collect_merchant_account_map/2]).
 -export([collect_provider_account_map/3]).
 -export([collect_system_account_map/4]).
 -export([collect_external_account_map/4]).
 
--export([hold/3]).
 -export([hold/4]).
 
 -export([plan/3]).
 -export([plan/4]).
 
--export([commit/3]).
 -export([commit/4]).
 
--export([rollback/3]).
 -export([rollback/4]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
@@ -96,13 +91,6 @@ get_balance(AccountID, Clock) ->
         {error, _} = Error ->
             Error
     end.
-
--spec create_account(currency_code()) -> account_id().
-create_account(_CurrencyCode) ->
-    WoodyCtx = hg_context:get_woody_context(hg_context:load()),
-    % FIXME: placeholder, the sequence id should probably be passed externally
-    %        not sure about the minimum too
-    hg_utils:gen_sequence(<<"create_shumaich_account">>, WoodyCtx, #{minimum => 10000}).
 
 -spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
@@ -278,7 +266,7 @@ construct_balance(
 %%
 
 call_accounter(Function, Args) ->
-    hg_retry:call_with_retry(
+    hg_retry:apply(
         fun() ->
             case call_service(Function, Args) of
                 {ok, _} = Ok ->

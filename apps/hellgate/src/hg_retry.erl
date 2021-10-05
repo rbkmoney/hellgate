@@ -4,7 +4,7 @@
     next_step/1,
     skip_steps/2,
     new_strategy/1,
-    call_with_retry/2
+    apply/2
 ]).
 
 -type retries_num() :: pos_integer() | infinity.
@@ -59,11 +59,14 @@ skip_steps(Strategy, N) when N > 0 ->
         end,
     skip_steps(NewStrategy, N - 1).
 
--type retry_fun_return() :: term() | no_return().
--type retry_fun() :: fun(() -> retry_fun_return()).
+-type retry_fun_result() :: any().
+-type retry_fun_action() :: retry | return.
+-type retry_fun() :: fun(() -> {retry_fun_action(), retry_fun_result()}).
 
--spec call_with_retry(retry_fun(), strategy()) -> retry_fun_return().
-call_with_retry(Fun, Strategy) ->
+-compile({no_auto_import, [apply/2]}).
+
+-spec apply(retry_fun(), strategy()) -> retry_fun_result().
+apply(Fun, Strategy) ->
     case Fun() of
         {return, Result} ->
             Result;
@@ -71,7 +74,7 @@ call_with_retry(Fun, Strategy) ->
             case next_step(Strategy) of
                 {wait, Timeout, NextStrategy} ->
                     _ = timer:sleep(Timeout),
-                    call_with_retry(Fun, NextStrategy);
+                    apply(Fun, NextStrategy);
                 finish ->
                     Error
             end
