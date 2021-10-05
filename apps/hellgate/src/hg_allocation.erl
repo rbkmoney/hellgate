@@ -44,13 +44,15 @@
         | zero_amount
         | target_conflict
         | currency_mismatch
-        | payment_institutions_mismatch}.
+        | payment_institutions_mismatch
+        | not_aggregator_party}.
 
 -type allocatable_errors() ::
     unallocatable
     | {invalid_transaction, transaction_proto(),
         payment_institutions_mismatch
-        | currency_mismatch}.
+        | currency_mismatch
+        | not_aggregator_party}.
 
 -spec calculate(allocation_prototype(), party(), shop(), cash(), allocation_terms()) ->
     {ok, allocation()} | {error, calculate_errors()}.
@@ -94,6 +96,13 @@ assert_allocatable(
     try
         lists:foreach(
             fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto) ->
+                ok =
+                    case Party#domain_Party.id of
+                        PartyID ->
+                            ok;
+                        _ ->
+                            throw({invalid_transaction, Proto, not_aggregator_party})
+                    end,
                 TargetParty = hg_party:get_party(PartyID),
                 TargetShop = hg_party:get_shop(ShopID, TargetParty),
                 TargetContract = hg_party:get_contract(TargetShop#domain_Shop.contract_id, TargetParty),
@@ -117,8 +126,8 @@ assert_allocatable(
         throw:Error ->
             {error, Error}
     end;
-assert_allocatable(_Allocation, PaymentAllocationServiceTerms, _Party, _Shop, _Cash) ->
-    {error, unallocatable, PaymentAllocationServiceTerms}.
+assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Party, _Shop, _Cash) ->
+    {error, unallocatable}.
 
 validate_currency(#domain_Cash{currency = Currency}, Shop) ->
     ShopCurrency = hg_invoice_utils:get_shop_currency(Shop),

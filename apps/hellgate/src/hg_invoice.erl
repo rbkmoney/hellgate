@@ -438,17 +438,9 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-%% TODO Enable after deploy
-%%ensure_started(ID, TemplateID, PartyRevision, Params, Allocation) ->
-%%    Invoice = create_invoice(ID, TemplateID, PartyRevision, Params, Allocation),
-%%    case hg_machine:start(?NS, ID, marshal_invoice(Invoice)) of
-%%        {ok, _} -> ok;
-%%        {error, exists} -> ok;
-%%        {error, Reason} -> erlang:error(Reason)
-%%    end;
-ensure_started(ID, TemplateID, PartyRevision, Params, _Allocation) ->
-    SerializedArgs = {TemplateID, PartyRevision, marshal_invoice_params(Params)},
-    case hg_machine:start(?NS, ID, SerializedArgs) of
+ensure_started(ID, TemplateID, PartyRevision, Params, Allocation) ->
+    Invoice = create_invoice(ID, TemplateID, PartyRevision, Params, Allocation),
+    case hg_machine:start(?NS, ID, marshal_invoice(Invoice)) of
         {ok, _} -> ok;
         {error, exists} -> ok;
         {error, Reason} -> erlang:error(Reason)
@@ -481,7 +473,6 @@ map_history_error({error, notfound}) ->
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type party() :: dmsl_domain_thrift:'Party'().
 -type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
--type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 
 -type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
 
@@ -506,16 +497,6 @@ namespace() ->
     {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary()} | invoice(),
     hg_machine:machine()
 ) -> hg_machine:result().
-%% TODO Remove after deploy
-init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
-    InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
-    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams, undefined),
-    % TODO ugly, better to roll state and events simultaneously, hg_party-like
-    handle_result(#{
-        changes => [?invoice_created(Invoice)],
-        action => set_invoice_timer(hg_machine_action:new(), #st{invoice = Invoice}),
-        state => #st{}
-    });
 init(Invoice, _Machine) ->
     UnmarshalledInvoice = unmarshal_invoice(Invoice),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
@@ -1514,16 +1495,10 @@ get_message(invoice_status_changed) ->
 marshal_event_payload(Changes) when is_list(Changes) ->
     wrap_event_payload({invoice_changes, Changes}).
 
--spec marshal_invoice_params(invoice_params()) -> binary().
-marshal_invoice_params(Params) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
-    hg_proto_utils:serialize(Type, Params).
-
-%% TODO Enable after deploy
-%%-spec marshal_invoice(invoice()) -> binary().
-%%marshal_invoice(Invoice) ->
-%%    Type = {struct, struct, {dmsl_domain_thrift, 'Invoice'}},
-%%    hg_proto_utils:serialize(Type, Invoice).
+-spec marshal_invoice(invoice()) -> binary().
+marshal_invoice(Invoice) ->
+    Type = {struct, struct, {dmsl_domain_thrift, 'Invoice'}},
+    hg_proto_utils:serialize(Type, Invoice).
 
 %% Unmarshalling
 
@@ -1542,11 +1517,6 @@ unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
     Buf;
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, changes}, Changes).
-
--spec unmarshal_invoice_params(binary()) -> invoice_params().
-unmarshal_invoice_params(Bin) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
-    hg_proto_utils:deserialize(Type, Bin).
 
 -spec unmarshal_invoice(binary()) -> invoice().
 unmarshal_invoice(Bin) ->

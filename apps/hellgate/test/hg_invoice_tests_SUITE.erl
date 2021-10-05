@@ -455,12 +455,6 @@ init_per_suite(C) ->
     _ = timer:sleep(5000),
 
     ShopID0 = create_party_and_shop(PartyID0, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    PartyID1 = hg_utils:unique_id(),
-    PartyID2 = hg_utils:unique_id(),
-    PartyID3 = hg_utils:unique_id(),
-    ShopID1= create_party_and_shop(PartyID1, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    ShopID2 = create_party_and_shop(PartyID2, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    ShopID3 = create_party_and_shop(PartyID3, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     AnotherShopID = create_party_and_shop(AnotherPartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), AnotherPartyClient),
 
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
@@ -477,13 +471,7 @@ init_per_suite(C) ->
         {another_customer_client, AnotherCustomerClient},
         {root_url, RootUrl},
         {apps, Apps},
-        {test_sup, SupPid},
-        {party_id_1, PartyID1},
-        {shop_id_1, ShopID1},
-        {party_id_2, PartyID2},
-        {shop_id_2, ShopID2},
-        {party_id_3, PartyID3},
-        {shop_id_3, ShopID3}
+        {test_sup, SupPid}
         | C
     ],
 
@@ -670,6 +658,8 @@ end_per_suite(C) ->
 -spec init_per_group(group_name(), config()) -> config().
 init_per_group(operation_limits, C) ->
     init_operation_limits_group(C);
+init_per_group(allocation, C) ->
+    init_operation_allocation(C);
 init_per_group(_, C) ->
     C.
 
@@ -4987,28 +4977,38 @@ repair_complex_succeeded_second(C) ->
         ?payment_ev(PaymentID, ?payment_status_changed(?failed({failure, Failure})))
     ] = next_event(InvoiceID, Client).
 
+init_operation_allocation(C) ->
+    PartyID = cfg(party_id, C),
+    PartyClient = cfg(party_client, C),
+    ShopID1 = create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID2 = create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID3 = create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    [
+        {shop_id_1, ShopID1},
+        {shop_id_2, ShopID2},
+        {shop_id_3, ShopID3}
+        | C
+    ].
+
 -spec allocation_create_invoice(config()) -> _ | no_return().
 allocation_create_invoice(C) ->
     Client = cfg(client, C),
-    PartyID0 = cfg(party_id, C),
+    PartyID = cfg(party_id, C),
     ShopID0 = cfg(shop_id, C),
-    PartyID1 = cfg(party_id_1, C),
     ShopID1 = cfg(shop_id_1, C),
-    PartyID2 = cfg(party_id_2, C),
     ShopID2 = cfg(shop_id_2, C),
-    PartyID3 = cfg(party_id_3, C),
     ShopID3 = cfg(shop_id_3, C),
     InvoiceID = hg_utils:unique_id(),
     ExternalID = <<"123">>,
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
-            ?allocation_trx_target_shop(PartyID1, ShopID1),
+            ?allocation_trx_target_shop(PartyID, ShopID1),
             ?allocation_trx_prototype_body_amount(?cash(30, <<"RUB">>)),
             ?allocation_trx_details(Cart)
         ),
         ?allocation_trx_prototype(
-            ?allocation_trx_target_shop(PartyID2, ShopID2),
+            ?allocation_trx_target_shop(PartyID, ShopID2),
             ?allocation_trx_prototype_body_total(
                 ?cash(30, <<"RUB">>),
                 ?allocation_trx_prototype_fee_fixed(?cash(10, <<"RUB">>))
@@ -5016,7 +5016,7 @@ allocation_create_invoice(C) ->
             ?allocation_trx_details(Cart)
         ),
         ?allocation_trx_prototype(
-            ?allocation_trx_target_shop(PartyID3, ShopID3),
+            ?allocation_trx_target_shop(PartyID, ShopID3),
             ?allocation_trx_prototype_body_total(
                 ?cash(30, <<"RUB">>),
                 ?allocation_trx_prototype_fee_share(15, 100)
@@ -5024,7 +5024,14 @@ allocation_create_invoice(C) ->
             ?allocation_trx_details(Cart)
         )
     ]),
-    InvoiceParams0 = make_invoice_params(PartyID0, ShopID0, <<"rubberduck">>, make_due_date(10), make_cash(90, <<"RUB">>), AllocationPrototype),
+    InvoiceParams0 = make_invoice_params(
+        PartyID,
+        ShopID0,
+        <<"rubberduck">>,
+        make_due_date(10),
+        make_cash(90, <<"RUB">>),
+        AllocationPrototype
+    ),
     InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
         id = InvoiceID,
         external_id = ExternalID
@@ -5037,16 +5044,16 @@ allocation_create_invoice(C) ->
         allocation = ?allocation([
             ?allocation_trx(
                 <<"4">>,
-                ?allocation_trx_target_shop(PartyID0, ShopID0),
+                ?allocation_trx_target_shop(PartyID, ShopID0),
                 ?cash(15, <<"RUB">>)
             ),
             ?allocation_trx(
                 <<"3">>,
-                ?allocation_trx_target_shop(PartyID3, ShopID3),
+                ?allocation_trx_target_shop(PartyID, ShopID3),
                 ?cash(25, <<"RUB">>),
                 ?allocation_trx_details(Cart),
                 ?allocation_trx_body_total(
-                    ?allocation_trx_target_shop(PartyID0, ShopID0),
+                    ?allocation_trx_target_shop(PartyID, ShopID0),
                     ?cash(30, <<"RUB">>),
                     ?cash(5, <<"RUB">>),
                     ?allocation_trx_fee_share(15, 100)
@@ -5054,18 +5061,18 @@ allocation_create_invoice(C) ->
             ),
             ?allocation_trx(
                 <<"2">>,
-                ?allocation_trx_target_shop(PartyID2, ShopID2),
+                ?allocation_trx_target_shop(PartyID, ShopID2),
                 ?cash(20, <<"RUB">>),
                 ?allocation_trx_details(Cart),
                 ?allocation_trx_body_total(
-                    ?allocation_trx_target_shop(PartyID0, ShopID0),
+                    ?allocation_trx_target_shop(PartyID, ShopID0),
                     ?cash(30, <<"RUB">>),
                     ?cash(10, <<"RUB">>)
                 )
             ),
             ?allocation_trx(
                 <<"1">>,
-                ?allocation_trx_target_shop(PartyID1, ShopID1),
+                ?allocation_trx_target_shop(PartyID, ShopID1),
                 ?cash(30, <<"RUB">>),
                 ?allocation_trx_details(Cart)
             )
