@@ -148,7 +148,8 @@
     capture_params :: undefined | capture_params(),
     failure :: undefined | failure(),
     timings :: undefined | hg_timings:t(),
-    latest_change_at :: undefined | hg_datetime:timestamp()
+    latest_change_at :: undefined | hg_datetime:timestamp(),
+    clock :: undefined | hg_accounting_new:clock()
 }).
 
 -record(refund_st, {
@@ -1879,11 +1880,13 @@ process_cash_flow_building(Action, St) ->
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     ok = hg_limiter:hold_payment_limits(TurnoverLimits, Invoice, Payment),
     FinalCashflow = calculate_cashflow(Route, Payment, MerchantTerms, ProviderTerms, VS1, Revision, Opts),
-    _Clock = hg_accounting:hold(
+    {ok, Clock} = hg_accounting_new:hold(
         construct_payment_plan_id(Invoice, Payment),
-        {1, FinalCashflow}
+        {1, FinalCashflow},
+        Timestamp,
+        undefined
     ),
-    Events = [?cash_flow_changed(FinalCashflow)],
+    Events = [?cash_flow_changed(FinalCashflow), ?payment_clock_update(Clock)],
     case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
         {ok, _} ->
             {next, {Events, hg_machine_action:set_timeout(0, Action)}};
@@ -1972,7 +1975,7 @@ process_adjustment_cashflow(ID, _Action, St) ->
     {done, {Events, hg_machine_action:new()}}.
 
 process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
-    Opts = get_opts(St),
+    #{timestamp := Timestamp} = Opts = get_opts(St),
     #payproc_InvoicePaymentCaptureParams{
         reason = Reason,
         cash = Cost,
@@ -1981,15 +1984,24 @@ process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, cap
     Invoice = get_invoice(Opts),
     Payment = get_payment(St),
     Payment2 = Payment#domain_InvoicePayment{cost = Cost},
-    _Clock = hg_accounting:plan(
-        construct_payment_plan_id(Invoice, Payment2),
-        [
-            {2, hg_cashflow:revert(get_cashflow(St))},
-            {3, FinalCashflow}
-        ]
-    ),
-    Events = start_session(?captured(Reason, Cost, Cart)),
-    {next, {Events, hg_machine_action:set_timeout(0, Action)}}.
+    case
+        hg_accounting_new:plan(
+            construct_payment_plan_id(Invoice, Payment2),
+            [
+                {2, hg_cashflow:revert(get_cashflow(St))},
+                {3, FinalCashflow}
+            ],
+            Timestamp,
+            St#st.clock
+        )
+    of
+        {ok, NewClock} ->
+            Events = start_session(?captured(Reason, Cost, Cart)),
+            {next, {[?payment_clock_update(NewClock) | Events], hg_machine_action:set_timeout(0, Action)}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end.
 
 %%
 
@@ -2126,24 +2138,27 @@ process_result({payment, processing_accounter}, Action, St) ->
     NewAction = get_action(Target, Action, St),
     {done, {[?payment_status_changed(Target)], NewAction}};
 process_result({payment, processing_failure}, Action, St = #st{failure = Failure}) ->
-    NewAction = hg_machine_action:set_timeout(0, Action),
-    _ = rollback_payment_limits(St),
-    _Clocks = rollback_payment_cashflow(St),
-    {done, {[?payment_status_changed(?failed(Failure))], NewAction}};
+    case rollback_payment_cashflow(St) of
+        {ok, AccounterClock} ->
+            _ = rollback_payment_limits(St),
+            NewAction = hg_machine_action:set_timeout(0, Action),
+            {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(?failed(Failure))], NewAction}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end;
 process_result({payment, finalizing_accounter}, Action, St) ->
     Target = get_target(St),
-    _Clocks =
-        case Target of
-            ?captured() ->
-                commit_payment_limits(St),
-                commit_payment_cashflow(St);
-            ?cancelled() ->
-                rollback_payment_limits(St),
-                rollback_payment_cashflow(St)
-        end,
-    check_recurrent_token(St),
-    NewAction = get_action(Target, Action, St),
-    {done, {[?payment_status_changed(Target)], NewAction}};
+    case finalize_payment_accounter(Target, St) of
+        {ok, AccounterClock} ->
+            _ = finalize_payment_limiter(Target, St),
+            _ = check_recurrent_token(St),
+            NewAction = get_action(Target, Action, St),
+            {done, {[?payment_clock_update(AccounterClock), ?payment_status_changed(Target)], NewAction}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end;
 process_result({refund_failure, ID}, Action, St) ->
     RefundSt = try_get_refund_state(ID, St),
     Failure = RefundSt#refund_st.failure,
@@ -2237,6 +2252,16 @@ process_payment_session_callback(Payload, State) ->
             _ = maybe_notify_fault_detector(error, State),
             erlang:raise(error, Reason, StackTrace)
     end.
+
+finalize_payment_accounter(?captured(), St) ->
+    commit_payment_cashflow(St);
+finalize_payment_accounter(?cancelled(), St) ->
+    rollback_payment_cashflow(St).
+
+finalize_payment_limiter(?captured(), St) ->
+    commit_payment_limits(St);
+finalize_payment_limiter(?cancelled(), St) ->
+    rollback_payment_limits(St).
 
 check_recurrent_token(#st{
     payment = #domain_InvoicePayment{id = ID, make_recurrent = true},
@@ -2545,11 +2570,13 @@ rollback_refund_limits(RefundSt, St) ->
     TurnoverLimits = get_turnover_limits(ProviderTerms),
     hg_limiter:rollback_refund_limits(TurnoverLimits, Invoice, Payment, Refund).
 
-commit_payment_cashflow(St) ->
-    hg_accounting:commit(construct_payment_plan_id(St), get_cashflow_plan(St)).
+commit_payment_cashflow(St = #st{clock = Clock}) ->
+    #{timestamp := Timestamp} = get_opts(St),
+    hg_accounting_new:commit(construct_payment_plan_id(St), get_cashflow_plan(St), Timestamp, Clock).
 
-rollback_payment_cashflow(St) ->
-    hg_accounting:rollback(construct_payment_plan_id(St), get_cashflow_plan(St)).
+rollback_payment_cashflow(St = #st{clock = Clock}) ->
+    #{timestamp := Timestamp} = get_opts(St),
+    hg_accounting_new:rollback(construct_payment_plan_id(St), get_cashflow_plan(St), Timestamp, Clock).
 
 get_cashflow_plan(St = #st{partial_cash_flow = PartialCashFlow}) when PartialCashFlow =/= undefined ->
     [
@@ -2902,6 +2929,22 @@ merge_change(Change = ?cash_flow_changed(Cashflow), #st{activity = Activity} = S
         _ ->
             St
     end;
+merge_change(Change = ?payment_clock_update(Clock), #st{} = St, Opts) ->
+    _ = validate_transition(
+        [
+            {payment, S}
+            || S <- [
+                   processing_session,
+                   updating_accounter,
+                   processing_failure,
+                   finalizing_accounter
+               ]
+        ],
+        Change,
+        St,
+        Opts
+    ),
+    St#st{clock = Clock};
 merge_change(Change = ?rec_token_acquired(Token), #st{} = St, Opts) ->
     _ = validate_transition([{payment, processing_session}, {payment, finalizing_session}], Change, St, Opts),
     St#st{recurrent_token = Token};

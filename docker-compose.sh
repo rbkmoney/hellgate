@@ -76,7 +76,7 @@ services:
       - shumaich
     healthcheck:
       # FIXME: dirty trick, hangs in "health: staring" otherwise
-      #        used to be fine
+      # used to be fine
       test: "exit 0"
       # test: "curl http://localhost:8022/"
       # interval: 5s
