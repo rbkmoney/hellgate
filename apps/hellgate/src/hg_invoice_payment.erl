@@ -1660,30 +1660,35 @@ cancel_adjustment(ID, St, Options) ->
 finalize_adjustment(ID, Intent, St, Options = #{timestamp := Timestamp}) ->
     Adjustment = get_adjustment(ID, St),
     ok = assert_adjustment_status(processed, Adjustment),
-    ok = finalize_adjustment_cashflow(Intent, Adjustment, St, Options),
-    Status =
-        case Intent of
-            capture ->
-                ?adjustment_captured(Timestamp);
-            cancel ->
-                ?adjustment_cancelled(Timestamp)
-        end,
-    Event = ?adjustment_ev(ID, ?adjustment_status_changed(Status)),
-    {ok, {[Event], hg_machine_action:new()}}.
+    case finalize_adjustment_cashflow(Intent, Adjustment, St, Options) of
+        {ok, Clock} ->
+            Status =
+                case Intent of
+                    capture ->
+                        ?adjustment_captured(Timestamp);
+                    cancel ->
+                        ?adjustment_cancelled(Timestamp)
+                end,
+            ClockEvent = ?adjustment_ev(ID, ?adjustment_clock_update(Clock)),
+            Event = ?adjustment_ev(ID, ?adjustment_status_changed(Status)),
+            {ok, {[ClockEvent, Event], hg_machine_action:new()}};
+        {error, not_ready} ->
+            woody_error:raise(system, {external, resource_unavailable, <<"Accounter was not ready">>})
+    end.
 
-prepare_adjustment_cashflow(Adjustment, St, Options) ->
+prepare_adjustment_cashflow(Adjustment, St, Options = #{timestamp := Timestamp}) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
     Plan = get_adjustment_cashflow_plan(Adjustment),
-    plan(PlanID, Plan).
+    plan_adjustment_cashflow(PlanID, Plan, Timestamp, St#st.clock).
 
-finalize_adjustment_cashflow(Intent, Adjustment, St, Options) ->
+finalize_adjustment_cashflow(Intent, Adjustment, St, Options = #{timestamp := Timestamp}) ->
     PlanID = construct_adjustment_plan_id(Adjustment, St, Options),
     Plan = get_adjustment_cashflow_plan(Adjustment),
     case Intent of
         capture ->
-            commit(PlanID, Plan);
+            commit_adjustment_cashflow(PlanID, Plan, Timestamp, St#st.clock);
         cancel ->
-            rollback(PlanID, Plan)
+            rollback_adjustment_cashflow(PlanID, Plan, Timestamp, St#st.clock)
     end.
 
 get_adjustment_cashflow_plan(#domain_InvoicePaymentAdjustment{
@@ -1699,23 +1704,20 @@ number_plan([[] | Tail], Number, Acc) ->
 number_plan([NonEmpty | Tail], Number, Acc) ->
     number_plan(Tail, Number + 1, [{Number, NonEmpty} | Acc]).
 
-plan(_PlanID, []) ->
-    ok;
-plan(PlanID, Plan) ->
-    _ = hg_accounting:plan(PlanID, Plan),
-    ok.
+plan_adjustment_cashflow(_PlanID, [], _Timestamp, Clock) ->
+    {ok, Clock};
+plan_adjustment_cashflow(PlanID, Plan, Timestamp, Clock) ->
+    hg_accounting_new:plan(PlanID, Plan, Timestamp, Clock).
 
-commit(_PlanID, []) ->
-    ok;
-commit(PlanID, Plan) ->
-    _ = hg_accounting:commit(PlanID, Plan),
-    ok.
+commit_adjustment_cashflow(_PlanID, [], _Timestamp, Clock) ->
+    {ok, Clock};
+commit_adjustment_cashflow(PlanID, Plan, Timestamp, Clock) ->
+    hg_accounting_new:commit(PlanID, Plan, Timestamp, Clock).
 
-rollback(_PlanID, []) ->
-    ok;
-rollback(PlanID, Plan) ->
-    _ = hg_accounting:rollback(PlanID, Plan),
-    ok.
+rollback_adjustment_cashflow(_PlanID, [], _Timestamp, Clock) ->
+    {ok, Clock};
+rollback_adjustment_cashflow(PlanID, Plan, Timestamp, Clock) ->
+    hg_accounting_new:rollback(PlanID, Plan, Timestamp, Clock).
 
 assert_adjustment_status(Status, #domain_InvoicePaymentAdjustment{status = {Status, _}}) ->
     ok;
@@ -1967,12 +1969,20 @@ get_manual_refund_events(#refund_st{transaction_info = TransactionInfo}) ->
 %%
 
 -spec process_adjustment_cashflow(adjustment_id(), action(), st()) -> machine_result().
-process_adjustment_cashflow(ID, _Action, St) ->
+process_adjustment_cashflow(ID, Action, St) ->
     Opts = get_opts(St),
     Adjustment = get_adjustment(ID, St),
-    ok = prepare_adjustment_cashflow(Adjustment, St, Opts),
-    Events = [?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))],
-    {done, {Events, hg_machine_action:new()}}.
+    case prepare_adjustment_cashflow(Adjustment, St, Opts) of
+        {ok, Clock} ->
+            Events = [
+                ?adjustment_ev(ID, ?adjustment_clock_update(Clock)),
+                ?adjustment_ev(ID, ?adjustment_status_changed(?adjustment_processed()))
+            ],
+            {done, {Events, hg_machine_action:new()}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end.
 
 process_accounter_update(Action, St = #st{partial_cash_flow = FinalCashflow, capture_params = CaptureParams}) ->
     #{timestamp := Timestamp} = Opts = get_opts(St),
@@ -3092,12 +3102,15 @@ merge_change(Change = ?adjustment_ev(ID, Event), St, Opts) ->
             ?adjustment_status_changed(?adjustment_processed()) ->
                 _ = validate_transition({adjustment_new, ID}, Change, St, Opts),
                 St#st{activity = {adjustment_pending, ID}};
+            ?adjustment_clock_update(_) ->
+                _ = validate_transition([{adjustment_new, ID}, {adjustment_pending, ID}], Change, St, Opts),
+                St;
             ?adjustment_status_changed(_) ->
                 _ = validate_transition({adjustment_pending, ID}, Change, St, Opts),
                 St#st{activity = idle}
         end,
     Adjustment = merge_adjustment_change(Event, try_get_adjustment(ID, St1)),
-    St2 = set_adjustment(ID, Adjustment, St1),
+    St2 = set_adjustment_clock(Event, set_adjustment(ID, Adjustment, St1)),
     % TODO new cashflow imposed implicitly on the payment state? rough
     case get_adjustment_status(Adjustment) of
         ?adjustment_captured(_) ->
@@ -3188,6 +3201,8 @@ merge_refund_change(?session_ev(?refunded(), Change), St) ->
     update_refund_session(merge_session_change(Change, get_refund_session(St), #{}), St).
 
 merge_adjustment_change(?adjustment_created(Adjustment), undefined) ->
+    Adjustment;
+merge_adjustment_change(?adjustment_clock_update(_), Adjustment) ->
     Adjustment;
 merge_adjustment_change(?adjustment_status_changed(Status), Adjustment) ->
     Adjustment#domain_InvoicePaymentAdjustment{status = Status}.
@@ -3364,6 +3379,14 @@ try_get_adjustment(ID, #st{adjustments = As}) ->
 
 set_adjustment(ID, Adjustment, St = #st{adjustments = As}) ->
     St#st{adjustments = lists:keystore(ID, #domain_InvoicePaymentAdjustment.id, As, Adjustment)}.
+
+set_adjustment_clock(?adjustment_clock_update(Clock), St = #st{activity = {AdjustmentActivity, _}}) when
+    AdjustmentActivity =:= adjustment_new;
+    AdjustmentActivity =:= adjustment_pending
+->
+    St#st{clock = Clock};
+set_adjustment_clock(_, St = #st{}) ->
+    St.
 
 merge_session_change(?session_finished(Result), Session, Opts) ->
     Session2 = Session#{status := finished, result => Result},

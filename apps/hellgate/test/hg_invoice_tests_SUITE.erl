@@ -1907,6 +1907,7 @@ payment_adjustment_success(C) ->
     ?invalid_adjustment_pending(AdjustmentID) =
         hg_client_invoicing:create_payment_adjustment(InvoiceID, PaymentID, make_adjustment_params(), Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok =
@@ -1916,6 +1917,7 @@ payment_adjustment_success(C) ->
     ?invalid_adjustment_status(?adjustment_captured(_)) =
         hg_client_invoicing:cancel_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     %% verify that cash deposited correctly everywhere
@@ -2043,6 +2045,7 @@ payment_adjustment_captured_partial(C) ->
     #domain_InvoicePaymentAdjustment{new_cash_flow = CF2} =
         ?adjustment_reason(AdjReason) =
         hg_client_invoicing:get_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
+    % verify that cash deposited correctly everywhere
     PrvAccount2 = get_cashflow_account({provider, settlement}, CF2),
     SysAccount2 = get_cashflow_account({system, settlement}, CF2),
     MrcAccount2 = get_cashflow_account({merchant, settlement}, CF2),
@@ -2252,7 +2255,8 @@ get_cashflow_account(Type, CF) ->
            } <- CF,
            T == Type
     ],
-    hg_ct_helper:get_balance(ID).
+    {ok, Balance} = hg_accounting_new:get_balance(ID),
+    Balance.
 
 -spec invalid_payment_w_deprived_party(config()) -> test_return().
 invalid_payment_w_deprived_party(C) ->
@@ -5425,10 +5429,12 @@ execute_payment_adjustment(InvoiceID, PaymentID, Params, Client) ->
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_created(Adjustment)))
     ] = next_event(InvoiceID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_processed())))
     ] = next_event(InvoiceID, Client),
     ok = hg_client_invoicing:capture_payment_adjustment(InvoiceID, PaymentID, AdjustmentID, Client),
     [
+        ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_clock_update(_))),
         ?payment_ev(PaymentID, ?adjustment_ev(AdjustmentID, ?adjustment_status_changed(?adjustment_captured(_))))
     ] = next_event(InvoiceID, Client),
     AdjustmentID.
