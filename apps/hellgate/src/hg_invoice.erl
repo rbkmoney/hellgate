@@ -313,10 +313,34 @@ maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop) ->
     of
         {ok, A} ->
             A;
-        {error, Error} ->
-            %% TODO Add real exceptions
-            throw(Error)
+        {error, unallocatable} ->
+            throw(#payproc_AllocationNotAllowed{});
+        {error, cost_mismatch} ->
+            throw(#payproc_AllocationExceededPaymentAmount{});
+        {error, {invalid_transaction, Transaction, Details}} ->
+            throw(#payproc_AllocationInvalidTransaction{
+                transaction = marshal_transaction(Transaction),
+                reason = marshal_allocation_details(Details)
+            })
     end.
+
+marshal_transaction(#domain_AllocationTransaction{} = T) ->
+    {transaction, T};
+marshal_transaction(#domain_AllocationTransactionPrototype{} = TP) ->
+    {transaction_prototype, TP}.
+
+marshal_allocation_details(negative_amount) ->
+    <<"Transaction amount is negative">>;
+marshal_allocation_details(zero_amount) ->
+    <<"Transaction amount is zero">>;
+marshal_allocation_details(target_conflict) ->
+    <<"Transaction with similar target">>;
+marshal_allocation_details(currency_mismatch) ->
+    <<"Transaction currency mismatch">>;
+marshal_allocation_details(payment_institutions_mismatch) ->
+    <<"Transaction target shop Payment Institution mismatch">>;
+marshal_allocation_details(not_aggregator_party) ->
+    <<"Transaction target party mismatch">>.
 
 %%----------------- invoice asserts
 assert_invoice(Checks, #st{} = St) when is_list(Checks) ->

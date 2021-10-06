@@ -176,6 +176,8 @@
 -export([consistent_account_balances/1]).
 
 -export([allocation_create_invoice/1]).
+-export([allocation_capture_payment/1]).
+-export([allocation_refund_payment/1]).
 
 %%
 
@@ -413,7 +415,9 @@ groups() ->
             repair_complex_succeeded_second
         ]},
         {allocation, [parallel], [
-            allocation_create_invoice
+            allocation_create_invoice,
+            allocation_capture_payment,
+            allocation_refund_payment
         ]}
     ].
 
@@ -5079,6 +5083,171 @@ allocation_create_invoice(C) ->
         ])
     } = DomainInvoice.
 
+-spec allocation_capture_payment(config()) -> _ | no_return().
+allocation_capture_payment(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID0 = cfg(shop_id, C),
+    ShopID1 = cfg(shop_id_1, C),
+    ShopID2 = cfg(shop_id_2, C),
+    ShopID3 = cfg(shop_id_3, C),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = <<"123">>,
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = ?allocation_prototype([
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID, ShopID1),
+            ?allocation_trx_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_trx_details(Cart)
+        ),
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID, ShopID2),
+            ?allocation_trx_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_trx_details(Cart)
+        ),
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID, ShopID3),
+            ?allocation_trx_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_prototype_fee_share(15, 100)
+            ),
+            ?allocation_trx_details(Cart)
+        )
+    ]),
+    InvoiceParams0 = make_invoice_params(
+        PartyID,
+        ShopID0,
+        <<"rubberduck">>,
+        make_due_date(10),
+        make_cash(90, <<"RUB">>),
+        AllocationPrototype
+    ),
+    InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    InvoiceID = create_invoice(InvoiceParams1, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client).
+
+-spec allocation_refund_payment(config()) -> _ | no_return().
+allocation_refund_payment(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID0 = cfg(shop_id, C),
+    ShopID1 = cfg(shop_id_1, C),
+    ShopID2 = cfg(shop_id_2, C),
+    ShopID3 = cfg(shop_id_3, C),
+    InvoiceID = hg_utils:unique_id(),
+    ExternalID = <<"123">>,
+    Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
+    AllocationPrototype = ?allocation_prototype([
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID, ShopID1),
+            ?allocation_trx_prototype_body_amount(?cash(30, <<"RUB">>)),
+            ?allocation_trx_details(Cart)
+        ),
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID, ShopID2),
+            ?allocation_trx_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_prototype_fee_fixed(?cash(10, <<"RUB">>))
+            ),
+            ?allocation_trx_details(Cart)
+        ),
+        ?allocation_trx_prototype(
+            ?allocation_trx_target_shop(PartyID, ShopID3),
+            ?allocation_trx_prototype_body_total(
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_prototype_fee_share(15, 100)
+            ),
+            ?allocation_trx_details(Cart)
+        )
+    ]),
+    InvoiceParams0 = make_invoice_params(
+        PartyID,
+        ShopID0,
+        <<"rubberduck">>,
+        make_due_date(10),
+        make_cash(90, <<"RUB">>),
+        AllocationPrototype
+    ),
+    InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
+        id = InvoiceID,
+        external_id = ExternalID
+    },
+    InvoiceID = create_invoice(InvoiceParams1, Client),
+    [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
+    ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client),
+
+    RefundAllocationPrototype =
+        ?allocation_prototype([
+            ?allocation_trx_prototype(
+                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+                ?allocation_trx_prototype_body_amount(?cash(30, <<"RUB">>))
+            )
+        ]),
+    RefundParams0 = make_refund_params(
+        60,
+        <<"RUB">>,
+        undefined,
+        RefundAllocationPrototype
+    ),
+    RefundID = <<"1">>,
+    RefundParams1 = RefundParams0#payproc_InvoicePaymentRefundParams{
+        id = RefundID,
+        external_id = ExternalID
+    },
+    Refund0 =
+        ?refund_id(RefundID, ExternalID) =
+        hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
+
+    PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = await_refund_session_started(InvoiceID, PaymentID, RefundID, Client),
+    PaymentID = await_refund_payment_complete(InvoiceID, PaymentID, Client),
+    % check refund completed
+    Refund1 = Refund0#domain_InvoicePaymentRefund{status = ?refund_succeeded()},
+    Refund1 = hg_client_invoicing:get_payment_refund(InvoiceID, PaymentID, RefundID, Client),
+    #domain_InvoicePaymentRefund{
+        allocation = ?allocation([
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(10, <<"RUB">>)
+                )
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+                ?cash(25, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(5, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
+            )
+        ])
+    } = Refund1.
+
 %%
 
 -spec consistent_account_balances(config()) -> test_return().
@@ -5394,6 +5563,14 @@ make_refund_params(Amount, Currency, Cart) ->
         reason = <<"ZANOZED">>,
         cash = make_cash(Amount, Currency),
         cart = Cart
+    }.
+
+make_refund_params(Amount, Currency, Cart, Allocation) ->
+    #payproc_InvoicePaymentRefundParams{
+        reason = <<"ZANOZED">>,
+        cash = make_cash(Amount, Currency),
+        cart = Cart,
+        allocation = Allocation
     }.
 
 make_adjustment_params() ->

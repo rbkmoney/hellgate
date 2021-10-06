@@ -1004,7 +1004,8 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
-    Allocation = maybe_allocation(AllocationPrototype, CaptureCost, MerchantTerms, Opts),
+    #domain_Invoice{allocation = Allocation} = get_invoice(St),
+    Allocation = genlib:define(maybe_allocation(AllocationPrototype, CaptureCost, MerchantTerms, Opts), Allocation),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
             total_capture(St, Reason, Cart, Allocation);
@@ -1031,10 +1032,34 @@ maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Opts) ->
     of
         {ok, A} ->
             A;
-        {error, Error} ->
-            %% TODO Add real exceptions
-            throw(Error)
+        {error, unallocatable} ->
+            throw(#payproc_AllocationNotAllowed{});
+        {error, cost_mismatch} ->
+            throw(#payproc_AllocationExceededPaymentAmount{});
+        {error, {invalid_transaction, Transaction, Details}} ->
+            throw(#payproc_AllocationInvalidTransaction{
+                transaction = marshal_transaction(Transaction),
+                reason = marshal_allocation_details(Details)
+            })
     end.
+
+marshal_transaction(#domain_AllocationTransaction{} = T) ->
+    {transaction, T};
+marshal_transaction(#domain_AllocationTransactionPrototype{} = TP) ->
+    {transaction_prototype, TP}.
+
+marshal_allocation_details(negative_amount) ->
+    <<"Transaction amount is negative">>;
+marshal_allocation_details(zero_amount) ->
+    <<"Transaction amount is zero">>;
+marshal_allocation_details(target_conflict) ->
+    <<"Transaction with similar target">>;
+marshal_allocation_details(currency_mismatch) ->
+    <<"Transaction currency mismatch">>;
+marshal_allocation_details(payment_institutions_mismatch) ->
+    <<"Transaction target shop Payment Institution mismatch">>;
+marshal_allocation_details(not_aggregator_party) ->
+    <<"Transaction target party mismatch">>.
 
 total_capture(St, Reason, Cart, Allocation) ->
     Payment = get_payment(St),
@@ -1228,7 +1253,7 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         MerchantTerms,
         Opts
     ),
-    ok = validate_allocation(Allocation, Cash, St),
+    ok = validate_allocation_refund(Allocation, Cash, St),
     MerchantRefundTerms = get_merchant_refunds_terms(MerchantTerms),
     Refund = #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
@@ -1245,14 +1270,13 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     ok = validate_refund(MerchantRefundTerms, Refund, Payment),
     Refund.
 
-validate_allocation(undefined, _Cash, _St) ->
+validate_allocation_refund(undefined, _Cash, _St) ->
     ok;
-validate_allocation(SubAllocation, Cash, St) ->
+validate_allocation_refund(SubAllocation, Cash, St) ->
     Allocation =
         case get_allocation(St) of
             undefined ->
-                %% TODO add real exception
-                throw(no_allocation_to_refund);
+                throw(#payproc_AllocationNotFound{});
             A ->
                 A
         end,
@@ -1260,10 +1284,21 @@ validate_allocation(SubAllocation, Cash, St) ->
     case hg_allocation:sub(Allocation, SubAllocation, RemainingCash) of
         {ok, _} ->
             ok;
-        {error, Error} ->
-            %% TODO add error handling
-            throw(Error)
+        {error, cost_mismatch} ->
+            throw(#payproc_AllocationExceededPaymentAmount{});
+        {error, {invalid_transaction, Transaction, Details}} ->
+            throw(#payproc_AllocationInvalidTransaction{
+                transaction = marshal_transaction(Transaction),
+                reason = marshal_allocation_sub_details(Details)
+            })
     end.
+
+marshal_allocation_sub_details(negative_amount) ->
+    <<"Transaction amount is negative">>;
+marshal_allocation_sub_details(currency_mismatch) ->
+    <<"Transaction currency mismatch">>;
+marshal_allocation_sub_details(no_transaction_to_sub) ->
+    <<"No transaction to refund">>.
 
 make_refund_cashflow(Refund, Payment, Revision, St, Opts, MerchantTerms, VS, Timestamp) ->
     Route = get_route(St),
