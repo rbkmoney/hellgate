@@ -13,24 +13,19 @@
 -export([get_balance/1]).
 -export([get_balance/2]).
 
--export([create_account/1]).
-
 -export([collect_account_map/6]).
 -export([collect_merchant_account_map/2]).
 -export([collect_provider_account_map/3]).
 -export([collect_system_account_map/4]).
 -export([collect_external_account_map/4]).
 
--export([hold/3]).
 -export([hold/4]).
 
 -export([plan/3]).
 -export([plan/4]).
 
--export([commit/3]).
 -export([commit/4]).
 
--export([rollback/3]).
 -export([rollback/4]).
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
@@ -97,13 +92,6 @@ get_balance(AccountID, Clock) ->
             Error
     end.
 
--spec create_account(currency_code()) -> account_id().
-create_account(_CurrencyCode) ->
-    WoodyCtx = hg_context:get_woody_context(hg_context:load()),
-    % FIXME: placeholder, the sequence id should probably be passed externally
-    %        not sure about the minimum too
-    hg_utils:gen_sequence(<<"create_shumaich_account">>, WoodyCtx, #{minimum => 10000}).
-
 -spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
 collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
     hg_accounting:collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision).
@@ -143,21 +131,11 @@ plan(_PlanID, Batches, _Timestamp, _Clock) when not is_list(Batches) ->
 plan(PlanID, Batches, Timestamp, Clock) ->
     execute_plan(PlanID, Batches, Timestamp, Clock).
 
--spec hold(plan_id(), batch(), hg_datetime:timestamp()) ->
-    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
-hold(PlanID, Batch, Timestamp) ->
-    do('Hold', construct_plan_change(PlanID, Batch, Timestamp)).
-
 -spec hold(plan_id(), batch(), hg_datetime:timestamp(), clock() | undefined) ->
     {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 hold(PlanID, Batch, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('Hold', construct_plan_change(PlanID, Batch, Timestamp), AccounterClock).
-
--spec commit(plan_id(), [batch()], hg_datetime:timestamp()) ->
-    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
-commit(PlanID, Batches, Timestamp) ->
-    do('CommitPlan', construct_plan(PlanID, Batches, Timestamp)).
 
 -spec commit(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) ->
     {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
@@ -165,19 +143,11 @@ commit(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('CommitPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
 
--spec rollback(plan_id(), [batch()], hg_datetime:timestamp()) ->
-    {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
-rollback(PlanID, Batches, Timestamp) ->
-    do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp)).
-
 -spec rollback(plan_id(), [batch()], hg_datetime:timestamp(), clock() | undefined) ->
     {ok, clock()} | {error, not_ready | {invalid_posting_params, _}}.
 rollback(PlanID, Batches, Timestamp, Clock) ->
     AccounterClock = to_accounter_clock(Clock),
     do('RollbackPlan', construct_plan(PlanID, Batches, Timestamp), AccounterClock).
-
-do(Op, Plan) ->
-    do(Op, Plan, {latest, #shumaich_LatestClock{}}).
 
 do(Op, Plan, PreviousClock) ->
     case call_accounter(Op, {Plan, PreviousClock}) of
@@ -278,7 +248,7 @@ construct_balance(
 %%
 
 call_accounter(Function, Args) ->
-    hg_retry:call_with_retry(
+    hg_retry:apply(
         fun() ->
             case call_service(Function, Args) of
                 {ok, _} = Ok ->
