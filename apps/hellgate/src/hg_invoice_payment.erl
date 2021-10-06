@@ -1883,7 +1883,8 @@ process_cash_flow_building(Action, St) ->
     {ok, Clock} = hg_accounting_new:hold(
         construct_payment_plan_id(Invoice, Payment),
         {1, FinalCashflow},
-        Timestamp
+        Timestamp,
+        undefined
     ),
     Events = [?cash_flow_changed(FinalCashflow), ?payment_clock_update(Clock)],
     case hg_limiter:check_limits(TurnoverLimits, Invoice, Payment) of
