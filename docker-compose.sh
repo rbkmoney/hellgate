@@ -61,7 +61,6 @@ services:
   shumway:
     image: dr2.rbkmoney.com/rbkmoney/shumway:8ab8dae452106acfd33c855ca20c0930f4ce2f7c
     hostname: shumway
-    container_name: shumway
     ports:
       - "8022:8022"
     environment:
@@ -87,7 +86,6 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:5.0.1
     hostname: zookeeper
-    container_name: zookeeper
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -104,7 +102,6 @@ services:
   broker:
     image: confluentinc/cp-enterprise-kafka:5.0.1
     hostname: broker
-    container_name: broker
     depends_on:
       - zookeeper
     environment:
@@ -129,7 +126,6 @@ services:
   kafka-setup:
     image: confluentinc/cp-kafka:5.1.1
     hostname: kafka-setup
-    container_name: kafka-setup
     depends_on:
       - broker
     command: >
@@ -140,7 +136,6 @@ services:
   shumaich:
     image: dr2.rbkmoney.com/rbkmoney/shumaich:3be4048303d9a649027faa95d87a5ecd99af1e6b
     hostname: shumaich
-    container_name: shumaich
     restart: on-failure
     environment:
       SPRING_APPLICATION_JSON: '{
