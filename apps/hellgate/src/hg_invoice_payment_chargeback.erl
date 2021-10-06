@@ -18,7 +18,7 @@
 -export(
     [
         merge_change/2,
-        process_timeout/4
+        process_timeout/5
     ]
 ).
 
@@ -75,11 +75,15 @@
 -type opts() :: #{
     payment_state := payment_state(),
     party := party(),
-    invoice := invoice()
+    invoice := invoice(),
+    timestamp := hg_datetime:timestamp()
 }.
 
 -type payment_state() ::
     hg_invoice_payment:st().
+
+-type clock() ::
+    hg_accounting_new:clock().
 
 -type party() ::
     dmsl_domain_thrift:'Party'().
@@ -112,7 +116,7 @@
     dmsl_domain_thrift:'FinalCashFlow'().
 
 -type batch() ::
-    hg_accounting:batch().
+    hg_accounting_new:batch().
 
 -type create_params() ::
     dmsl_payment_processing_thrift:'InvoicePaymentChargebackParams'().
@@ -132,6 +136,9 @@
 -type result() ::
     {[change()], action()}.
 
+-type machine_result() ::
+    {next | done, result()}.
+
 -type change() ::
     dmsl_payment_processing_thrift:'InvoicePaymentChargebackChangePayload'().
 
@@ -140,8 +147,10 @@
 
 -type activity() ::
     preparing_initial_cash_flow
+    | holding_initial_cash_flow
     | updating_chargeback
     | updating_cash_flow
+    | holding_updated_cash_flow
     | finalising_accounter.
 
 -spec get(state()) -> chargeback().
@@ -263,16 +272,22 @@ merge_change(?chargeback_target_status_changed(Status), State) ->
     set_target_status(Status, State);
 merge_change(?chargeback_status_changed(Status), State) ->
     set_target_status(undefined, set_status(Status, State));
+merge_change(?chargeback_clock_update(_), State) ->
+    State;
 merge_change(?chargeback_cash_flow_changed(CashFlow), State) ->
     set_cash_flow(CashFlow, State).
 
--spec process_timeout(activity(), state(), action(), opts()) -> result().
-process_timeout(preparing_initial_cash_flow, State, _Action, Opts) ->
-    update_cash_flow(State, hg_machine_action:new(), Opts);
-process_timeout(updating_cash_flow, State, _Action, Opts) ->
+-spec process_timeout(activity(), state(), payment_state(), action(), opts()) -> machine_result().
+process_timeout(preparing_initial_cash_flow, State, _PaymentSt, _Action, Opts) ->
     update_cash_flow(State, hg_machine_action:instant(), Opts);
-process_timeout(finalising_accounter, State, Action, Opts) ->
-    finalise(State, Action, Opts).
+process_timeout(holding_initial_cash_flow, State, PaymentSt, _Action, Opts) ->
+    hold_cash_flow(State, PaymentSt, hg_machine_action:new(), Opts);
+process_timeout(updating_cash_flow, State, _PaymentSt, _Action, Opts) ->
+    update_cash_flow(State, hg_machine_action:instant(), Opts);
+process_timeout(holding_updated_cash_flow, State, PaymentSt, _Action, Opts) ->
+    hold_cash_flow(State, PaymentSt, hg_machine_action:instant(), Opts);
+process_timeout(finalising_accounter, State, PaymentSt, Action, Opts) ->
+    finalise(State, PaymentSt, Action, Opts).
 
 %% Private
 
@@ -337,23 +352,37 @@ do_reopen(State, PaymentState, ReopenParams = ?reopen_params(Levy, Body)) ->
 
 %%
 
--spec update_cash_flow(state(), action(), opts()) -> result() | no_return().
+-spec update_cash_flow(state(), action(), opts()) -> machine_result() | no_return().
 update_cash_flow(State, Action, Opts) ->
     FinalCashFlow = build_chargeback_cash_flow(State, Opts),
-    UpdatedPlan = build_updated_plan(FinalCashFlow, State),
-    _ = prepare_cash_flow(State, UpdatedPlan, Opts),
-    {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}.
+    {done, {[?chargeback_cash_flow_changed(FinalCashFlow)], Action}}.
 
--spec finalise(state(), action(), opts()) -> result() | no_return().
-finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, Action, _Opts) ->
-    {[?chargeback_status_changed(Status)], Action};
-finalise(State = #chargeback_st{target_status = Status}, Action, Opts) when
+-spec hold_cash_flow(state(), payment_state(), action(), opts()) -> machine_result() | no_return().
+hold_cash_flow(State, PaymentSt, Action, Opts) ->
+    CashFlowPlan = get_current_plan(State),
+    case prepare_cash_flow(get_clock(PaymentSt), State, CashFlowPlan, Opts) of
+        {ok, Clock} ->
+            {done, {[?chargeback_clock_update(Clock)], Action}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end.
+
+-spec finalise(state(), payment_state(), action(), opts()) -> machine_result() | no_return().
+finalise(#chargeback_st{target_status = Status = ?chargeback_status_pending()}, _PaymentSt, Action, _Opts) ->
+    {done, {[?chargeback_status_changed(Status)], Action}};
+finalise(State = #chargeback_st{target_status = Status}, PaymentSt, Action, Opts) when
     Status =:= ?chargeback_status_rejected();
     Status =:= ?chargeback_status_accepted();
     Status =:= ?chargeback_status_cancelled()
 ->
-    _ = commit_cash_flow(State, Opts),
-    {[?chargeback_status_changed(Status)], Action}.
+    case commit_cash_flow(get_clock(PaymentSt), State, Opts) of
+        {ok, Clock} ->
+            {done, {[?chargeback_clock_update(Clock), ?chargeback_status_changed(Status)], Action}};
+        {error, not_ready} ->
+            _ = logger:warning("Accounter was not ready, retrying"),
+            {next, {[], hg_machine_action:set_timeout(0, Action)}}
+    end.
 
 -spec build_chargeback(opts(), create_params(), revision(), timestamp()) -> chargeback() | no_return().
 build_chargeback(Opts, Params = ?chargeback_params(Levy, Body, Reason), Revision, CreatedAt) ->
@@ -430,7 +459,7 @@ build_chargeback_cash_flow(State, Opts) ->
     PaymentInstitutionRef = get_payment_institution_ref(get_contract(Party, Shop)),
     PaymentInst = hg_payment_institution:compute_payment_institution(PaymentInstitutionRef, VS, Revision),
     Provider = get_route_provider(Route, Revision),
-    AccountMap = hg_accounting:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
+    AccountMap = hg_accounting_new:collect_account_map(Payment, Shop, PaymentInst, Provider, VS, Revision),
     ServiceContext = build_service_cash_flow_context(State),
     ProviderContext = build_provider_cash_flow_context(State, ProviderFees),
     ServiceFinalCF = hg_cashflow:finalize(ServiceCashFlow, ServiceContext, AccountMap),
@@ -495,14 +524,16 @@ define_body(undefined, PaymentState) ->
 define_body(Cash, _PaymentState) ->
     Cash.
 
-prepare_cash_flow(State, CashFlowPlan, Opts) ->
+prepare_cash_flow(Clock, State, CashFlowPlan, Opts) ->
+    #{timestamp := Timestamp} = Opts,
     PlanID = construct_chargeback_plan_id(State, Opts),
-    hg_accounting:plan(PlanID, CashFlowPlan).
+    hg_accounting_new:plan(PlanID, CashFlowPlan, Timestamp, Clock).
 
-commit_cash_flow(State, Opts) ->
+commit_cash_flow(Clock, State, Opts) ->
+    #{timestamp := Timestamp} = Opts,
     CashFlowPlan = get_current_plan(State),
     PlanID = construct_chargeback_plan_id(State, Opts),
-    hg_accounting:commit(PlanID, CashFlowPlan).
+    hg_accounting_new:commit(PlanID, CashFlowPlan, Timestamp, Clock).
 
 construct_chargeback_plan_id(State, Opts) ->
     {Stage, _} = get_stage(State),
@@ -604,6 +635,10 @@ get_current_plan(#chargeback_st{cash_flow_plans = Plans} = State) ->
     Stage = get_stage(State),
     #{Stage := Plan} = Plans,
     Plan.
+
+-spec get_clock(payment_state()) -> clock().
+get_clock(PaymentSt) ->
+    hg_invoice_payment:get_clock(PaymentSt).
 
 -spec get_reverted_previous_stage(state()) -> [batch()].
 get_reverted_previous_stage(State) ->

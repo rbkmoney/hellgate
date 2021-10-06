@@ -36,6 +36,7 @@
 -export([get_adjustments/1]).
 -export([get_adjustment/2]).
 -export([get_trx/1]).
+-export([get_clock/1]).
 
 -export([get_final_cashflow/1]).
 -export([get_sessions/1]).
@@ -961,8 +962,7 @@ collect_cash_flow_context(
 get_available_amount(AccountID, Clock) ->
     #{
         min_available_amount := AvailableAmount
-    } =
-        hg_accounting:get_balance(AccountID, Clock),
+    } = hg_accounting:get_balance(AccountID, Clock),
     AvailableAmount.
 
 construct_payment_plan_id(St) ->
@@ -1907,13 +1907,31 @@ process_chargeback(Type = finalising_accounter, ID, Action0, St) ->
     ChargebackBody = hg_invoice_payment_chargeback:get_body(ChargebackState),
     ChargebackTarget = hg_invoice_payment_chargeback:get_target_status(ChargebackState),
     MaybeChargedback = maybe_set_charged_back_status(ChargebackTarget, ChargebackBody, St),
-    {Changes, Action1} = hg_invoice_payment_chargeback:process_timeout(Type, ChargebackState, Action0, ChargebackOpts),
-    {done, {[?chargeback_ev(ID, C) || C <- Changes] ++ MaybeChargedback, Action1}};
+    case
+        hg_invoice_payment_chargeback:process_timeout(
+            Type,
+            ChargebackState,
+            St,
+            Action0,
+            ChargebackOpts
+        )
+    of
+        {done, {Changes, Action1}} ->
+            {done, {[?chargeback_ev(ID, C) || C <- Changes] ++ MaybeChargedback, Action1}};
+        {next, {[], _Action}} = Result ->
+            Result
+    end;
 process_chargeback(Type, ID, Action0, St) ->
     ChargebackState = get_chargeback_state(ID, St),
     ChargebackOpts = get_chargeback_opts(St),
-    {Changes, Action1} = hg_invoice_payment_chargeback:process_timeout(Type, ChargebackState, Action0, ChargebackOpts),
-    {done, {[?chargeback_ev(ID, C) || C <- Changes], Action1}}.
+    {Result, {Changes, Action1}} = hg_invoice_payment_chargeback:process_timeout(
+        Type,
+        ChargebackState,
+        St,
+        Action0,
+        ChargebackOpts
+    ),
+    {Result, {[?chargeback_ev(ID, C) || C <- Changes], Action1}}.
 
 maybe_set_charged_back_status(?chargeback_status_accepted(), ChargebackBody, St) ->
     InterimPaymentAmount = get_remaining_payment_balance(St),
@@ -3025,13 +3043,37 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
                 _ = validate_transition([idle, {chargeback, ID, updating_chargeback}], Change, St, Opts),
                 St#st{activity = {chargeback, ID, updating_chargeback}};
             ?chargeback_cash_flow_changed(_) ->
-                Valid = [{chargeback, ID, Activity} || Activity <- [preparing_initial_cash_flow, updating_cash_flow]],
+                Valid = [
+                    {chargeback, ID, Activity}
+                    || Activity <- [
+                           preparing_initial_cash_flow,
+                           updating_cash_flow
+                       ]
+                ],
                 _ = validate_transition(Valid, Change, St, Opts),
                 case St of
                     #st{activity = {chargeback, ID, preparing_initial_cash_flow}} ->
-                        St#st{activity = idle};
+                        St#st{activity = {chargeback, ID, holding_initial_cash_flow}};
                     #st{activity = {chargeback, ID, updating_cash_flow}} ->
-                        St#st{activity = {chargeback, ID, finalising_accounter}}
+                        St#st{activity = {chargeback, ID, holding_updated_cash_flow}}
+                end;
+            ?chargeback_clock_update(_) ->
+                Valid = [
+                    {chargeback, ID, Activity}
+                    || Activity <- [
+                           finalising_accounter,
+                           holding_initial_cash_flow,
+                           holding_updated_cash_flow
+                       ]
+                ],
+                _ = validate_transition(Valid, Change, St, Opts),
+                case St of
+                    #st{activity = {chargeback, ID, holding_initial_cash_flow}} ->
+                        St#st{activity = idle};
+                    #st{activity = {chargeback, ID, holding_updated_cash_flow}} ->
+                        St#st{activity = {chargeback, ID, finalising_accounter}};
+                    #st{activity = {chargeback, ID, finalising_accounter}} ->
+                        St
                 end;
             ?chargeback_target_status_changed(?chargeback_status_accepted()) ->
                 _ = validate_transition([idle, {chargeback, ID, updating_chargeback}], Change, St, Opts),
@@ -3049,7 +3091,7 @@ merge_change(Change = ?chargeback_ev(ID, Event), St, Opts) ->
                 St#st{activity = idle}
         end,
     ChargebackSt = merge_chargeback_change(Event, try_get_chargeback_state(ID, St1)),
-    set_chargeback_state(ID, ChargebackSt, St1);
+    set_chargeback_clock(Event, set_chargeback_state(ID, ChargebackSt, St1));
 merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
     St1 =
         case Event of
@@ -3176,6 +3218,11 @@ save_retry_attempt(Target, #st{retry_attempts = Attempts} = St) ->
 merge_chargeback_change(Change, ChargebackState) ->
     hg_invoice_payment_chargeback:merge_change(Change, ChargebackState).
 
+set_chargeback_clock(?chargeback_clock_update(Clock), St = #st{}) ->
+    St#st{clock = Clock};
+set_chargeback_clock(_, St = #st{}) ->
+    St.
+
 merge_refund_change(?refund_created(Refund, Cashflow, TransactionInfo), undefined) ->
     #refund_st{refund = Refund, cash_flow = Cashflow, transaction_info = TransactionInfo};
 merge_refund_change(?refund_status_changed(Status), RefundSt) ->
@@ -3270,6 +3317,10 @@ get_trx(#st{trx = Trx}) ->
 
 set_trx(Trx, St = #st{}) ->
     St#st{trx = Trx}.
+
+-spec get_clock(st()) -> hg_accounting_new:clock().
+get_clock(#st{clock = Clock}) ->
+    Clock.
 
 try_get_refund_state(ID, #st{refunds = Rs}) ->
     case Rs of
