@@ -204,7 +204,8 @@ capture_payment(InvoiceID, PaymentID, Reason, Cash, Client) ->
 capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client) ->
     capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, undefined, Client).
 
--spec capture_payment(invoice_id(), payment_id(), binary(), cash(), cart(), allocation_prototype(), pid()) -> ok | woody_error:business_error().
+-spec capture_payment(invoice_id(), payment_id(), binary(), cash(), cart(), allocation_prototype(), pid()) ->
+    ok | woody_error:business_error().
 capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Allocation, Client) ->
     Call = {
         call,
