@@ -1004,7 +1004,7 @@ capture(St, Reason, Cost, Cart, AllocationPrototype, Opts) ->
     VS = collect_validation_varset(St, Opts),
     MerchantTerms = get_merchant_payments_terms(Opts, Revision, Timestamp, VS),
     CaptureCost = genlib:define(Cost, get_payment_cost(Payment)),
-    #domain_Invoice{allocation = Allocation} = get_invoice(St),
+    #domain_Invoice{allocation = Allocation} = get_invoice(Opts),
     Allocation = genlib:define(maybe_allocation(AllocationPrototype, CaptureCost, MerchantTerms, Opts), Allocation),
     case check_equal_capture_cost_amount(Cost, Payment) of
         true ->
@@ -3357,7 +3357,20 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
                 St#st{activity = {refund_accounter, ID}};
             ?refund_status_changed(?refund_succeeded()) ->
                 _ = validate_transition([{refund_accounter, ID}], Change, St, Opts),
-                St;
+                RefundSt0 = merge_refund_change(Event, try_get_refund_state(ID, St)),
+                Allocation = get_allocation(St),
+                FinalAllocation = hg_maybe:apply(
+                    fun(A) ->
+                        #domain_InvoicePaymentRefund{cash = RefundCash, allocation = RefundAllocation} = get_refund(
+                            RefundSt0
+                        ),
+                        RemainingCash = get_remaining_payment_amount(RefundCash, St),
+                        {ok, FA} = hg_allocation:sub(A, RefundAllocation, RemainingCash),
+                        FA
+                    end,
+                    Allocation
+                ),
+                St#st{allocation = FinalAllocation};
             ?refund_rollback_started(_) ->
                 _ = validate_transition([{refund_session, ID}, {refund_new, ID}], Change, St, Opts),
                 St#st{activity = {refund_failure, ID}};
@@ -3368,9 +3381,9 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
                 _ = validate_transition([{refund_session, ID}], Change, St, Opts),
                 St
         end,
-    RefundSt = merge_refund_change(Event, try_get_refund_state(ID, St1)),
-    St2 = set_refund_state(ID, RefundSt, St1),
-    case get_refund_status(get_refund(RefundSt)) of
+    RefundSt1 = merge_refund_change(Event, try_get_refund_state(ID, St1)),
+    St2 = set_refund_state(ID, RefundSt1, St1),
+    case get_refund_status(get_refund(RefundSt1)) of
         {S, _} when S == succeeded; S == failed ->
             St2#st{activity = idle};
         _ ->
@@ -3583,18 +3596,8 @@ try_get_chargeback_state(ID, #st{chargebacks = CBs}) ->
             undefined
     end.
 
-set_refund_state(ID, RefundSt, St) ->
-    #st{refunds = Rs} = St,
-    FinalAllocation = hg_maybe:apply(
-        fun(A) ->
-            #domain_InvoicePaymentRefund{cash = RefundCash, allocation = RefundAllocation} = get_refund(RefundSt),
-            RemainingCash = get_remaining_payment_amount(RefundCash, St),
-            {ok, FA} = hg_allocation:sub(A, RefundAllocation, RemainingCash),
-            FA
-        end,
-        get_allocation(St)
-    ),
-    St#st{refunds = Rs#{ID => RefundSt}, allocation = FinalAllocation}.
+set_refund_state(ID, RefundSt, St = #st{refunds = Rs}) ->
+    St#st{refunds = Rs#{ID => RefundSt}}.
 
 get_captured_cost(#domain_InvoicePaymentCaptured{cost = Cost}, _) when Cost /= undefined ->
     Cost;
