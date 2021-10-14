@@ -1032,9 +1032,9 @@ maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Opts) ->
     of
         {ok, A} ->
             A;
-        {error, unallocatable} ->
+        {error, allocation_not_allowed} ->
             throw(#payproc_AllocationNotAllowed{});
-        {error, cost_mismatch} ->
+        {error, amount_exceeded} ->
             throw(#payproc_AllocationExceededPaymentAmount{});
         {error, {invalid_transaction, Transaction, Details}} ->
             throw(#payproc_AllocationInvalidTransaction{
@@ -1057,9 +1057,7 @@ marshal_allocation_details(target_conflict) ->
 marshal_allocation_details(currency_mismatch) ->
     <<"Transaction currency mismatch">>;
 marshal_allocation_details(payment_institutions_mismatch) ->
-    <<"Transaction target shop Payment Institution mismatch">>;
-marshal_allocation_details(not_aggregator_party) ->
-    <<"Transaction target party mismatch">>.
+    <<"Transaction target shop Payment Institution mismatch">>.
 
 total_capture(St, Reason, Cart, Allocation) ->
     Payment = get_payment(St),
@@ -1253,7 +1251,7 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
         MerchantTerms,
         Opts
     ),
-    ok = validate_allocation_refund(Allocation, Cash, St),
+    ok = validate_allocation_refund(Allocation, St),
     MerchantRefundTerms = get_merchant_refunds_terms(MerchantTerms),
     Refund = #domain_InvoicePaymentRefund{
         id = Params#payproc_InvoicePaymentRefundParams.id,
@@ -1270,9 +1268,9 @@ make_refund(Params, Payment, Revision, CreatedAt, St, Opts) ->
     ok = validate_refund(MerchantRefundTerms, Refund, Payment),
     Refund.
 
-validate_allocation_refund(undefined, _Cash, _St) ->
+validate_allocation_refund(undefined, _St) ->
     ok;
-validate_allocation_refund(SubAllocation, Cash, St) ->
+validate_allocation_refund(SubAllocation, St) ->
     Allocation =
         case get_allocation(St) of
             undefined ->
@@ -1280,12 +1278,9 @@ validate_allocation_refund(SubAllocation, Cash, St) ->
             A ->
                 A
         end,
-    RemainingCash = get_remaining_payment_amount(Cash, St),
-    case hg_allocation:sub(Allocation, SubAllocation, RemainingCash) of
+    case hg_allocation:sub(Allocation, SubAllocation) of
         {ok, _} ->
             ok;
-        {error, cost_mismatch} ->
-            throw(#payproc_AllocationExceededPaymentAmount{});
         {error, {invalid_transaction, Transaction, Details}} ->
             throw(#payproc_AllocationInvalidTransaction{
                 transaction = marshal_transaction(Transaction),
@@ -3361,11 +3356,10 @@ merge_change(Change = ?refund_ev(ID, Event), St, Opts) ->
                 Allocation = get_allocation(St),
                 FinalAllocation = hg_maybe:apply(
                     fun(A) ->
-                        #domain_InvoicePaymentRefund{cash = RefundCash, allocation = RefundAllocation} = get_refund(
+                        #domain_InvoicePaymentRefund{allocation = RefundAllocation} = get_refund(
                             RefundSt0
                         ),
-                        RemainingCash = get_remaining_payment_amount(RefundCash, St),
-                        {ok, FA} = hg_allocation:sub(A, RefundAllocation, RemainingCash),
+                        {ok, FA} = hg_allocation:sub(A, RefundAllocation),
                         FA
                     end,
                     Allocation

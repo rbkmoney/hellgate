@@ -6,7 +6,7 @@
 
 %% API
 -export([calculate/5]).
--export([sub/3]).
+-export([sub/2]).
 -export([assert_allocatable/5]).
 
 -export_type([allocation_prototype/0]).
@@ -30,29 +30,26 @@
 }.
 
 -type sub_errors() ::
-    cost_mismatch
-    | {invalid_transaction, transaction(),
+    {invalid_transaction, transaction(),
         negative_amount
         | currency_mismatch
         | no_transaction_to_sub}.
 
 -type calculate_errors() ::
-    unallocatable
-    | cost_mismatch
+    allocation_not_allowed
+    | amount_exceeded
     | {invalid_transaction, transaction() | transaction_proto(),
         negative_amount
         | zero_amount
         | target_conflict
         | currency_mismatch
-        | payment_institutions_mismatch
-        | not_aggregator_party}.
+        | payment_institutions_mismatch}.
 
 -type allocatable_errors() ::
-    unallocatable
+    allocation_not_allowed
     | {invalid_transaction, transaction_proto(),
         payment_institutions_mismatch
-        | currency_mismatch
-        | not_aggregator_party}.
+        | currency_mismatch}.
 
 -spec calculate(allocation_prototype(), party(), shop(), cash(), allocation_terms()) ->
     {ok, allocation()} | {error, calculate_errors()}.
@@ -70,11 +67,11 @@ calculate(AllocationPrototype, Party, Shop, Cost, PaymentAllocationServiceTerms)
             {error, Error}
     end.
 
--spec sub(allocation(), allocation(), cash()) -> {ok, allocation()} | {error, sub_errors()}.
-sub(Allocation, SubAllocation, Cost) ->
+-spec sub(allocation(), allocation()) -> {ok, allocation()} | {error, sub_errors()}.
+sub(Allocation, SubAllocation) ->
     ?allocation(Transactions) = Allocation,
     ?allocation(SubTransactions) = SubAllocation,
-    try sub_trxs(Transactions, SubTransactions, Cost) of
+    try sub_trxs(Transactions, SubTransactions) of
         ResTransactions ->
             {ok, ?allocation(ResTransactions)}
     catch
@@ -96,13 +93,6 @@ assert_allocatable(
     try
         lists:foreach(
             fun(?allocation_trx_prototype(?allocation_trx_target_shop(PartyID, ShopID), _Body) = Proto) ->
-                ok =
-                    case Party#domain_Party.id of
-                        PartyID ->
-                            ok;
-                        _ ->
-                            throw({invalid_transaction, Proto, not_aggregator_party})
-                    end,
                 TargetParty = hg_party:get_party(PartyID),
                 TargetShop = hg_party:get_shop(ShopID, TargetParty),
                 TargetContract = hg_party:get_contract(TargetShop#domain_Shop.contract_id, TargetParty),
@@ -127,7 +117,7 @@ assert_allocatable(
             {error, Error}
     end;
 assert_allocatable(_Allocation, _PaymentAllocationServiceTerms, _Party, _Shop, _Cash) ->
-    {error, unallocatable}.
+    {error, allocation_not_allowed}.
 
 validate_currency(#domain_Cash{currency = Currency}, Shop) ->
     ShopCurrency = hg_invoice_utils:get_shop_currency(Shop),
@@ -154,33 +144,17 @@ calculate(AllocationPrototype, PartyID, ShopID, Cost) ->
 calculate(?allocation_prototype(Transactions), FeeTarget, Cost) ->
     ?allocation(calculate_trxs(Transactions, FeeTarget, Cost)).
 
-sub_trxs(Transactions, SubTransactions, Cost) ->
-    sub_trxs(Transactions, SubTransactions, Cost, []).
+sub_trxs(Transactions, SubTransactions) ->
+    sub_trxs(Transactions, SubTransactions, []).
 
-sub_trxs(Transactions0, [], CostLeft0, Acc0) ->
-    {CostLeft1, Transactions1} = lists:foldl(
-        fun(T, {AccCost0, Acc}) ->
-            case T of
-                #domain_AllocationTransaction{amount = Amount} = T ->
-                    {sub_amount(AccCost0, Amount, T), [T | Acc]}
-            end
-        end,
-        {CostLeft0, []},
-        Transactions0
-    ),
-    _ = validate_cost(CostLeft1),
-    Acc1 = Transactions1 ++ Acc0,
+sub_trxs(Transactions0, [], Acc0) ->
+    Acc1 = Transactions0 ++ Acc0,
     genlib_list:compact(Acc1);
-sub_trxs(Transactions0, [ST | SubTransactions], CostLeft, Acc0) ->
+sub_trxs(Transactions0, [ST | SubTransactions], Acc0) ->
     {Transaction, Transactions1} = take_trx(ST, Transactions0),
-    {ResAmount, ResTransaction} = sub_trx(Transaction, ST),
+    ResTransaction = sub_trx(Transaction, ST),
     Acc1 = maybe_push_trx(ResTransaction, Acc0),
-    sub_trxs(Transactions1, SubTransactions, sub_amount(CostLeft, ResAmount, ST), Acc1).
-
-validate_cost(?cash(CostLeft, _SymCode)) when CostLeft /= 0 ->
-    throw(cost_mismatch);
-validate_cost(CostLeft) ->
-    CostLeft.
+    sub_trxs(Transactions1, SubTransactions, Acc1).
 
 take_trx(Transaction0, Transactions) ->
     ?allocation_trx(_ID, Target, _Amount) = Transaction0,
@@ -205,7 +179,7 @@ sub_trx(Transaction, SubTransaction) ->
         %% and we don't prohibit subtracting transactions with different body types
         Body
     ),
-    {ResAmount, ResTransaction}.
+    ResTransaction.
 
 sub_amount(Amount, SubAmount, T) ->
     try hg_cash:sub(Amount, SubAmount) of
@@ -276,7 +250,7 @@ push_trx(?allocation_trx(_ID0, Target, _Amount0) = Transaction, Transactions) ->
     end.
 
 validate_fee_cost(?cash(CostLeft, SymCode), ?cash(FeeCost, SymCode)) when CostLeft /= FeeCost ->
-    throw(cost_mismatch);
+    throw(amount_exceeded);
 validate_fee_cost(_CostLeft, FeeCost) ->
     FeeCost.
 
@@ -345,12 +319,25 @@ generic_prototype() ->
 calculate_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = generic_prototype(),
+    ?allocation(AllocationTrxs) = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     ?assertMatch(
-        ?allocation([
+        [
             ?allocation_trx(
-                <<"4">>,
-                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                ?cash(15, <<"RUB">>)
+                <<"1">>,
+                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_details(Cart)
+            ),
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(10, <<"RUB">>)
+                )
             ),
             ?allocation_trx(
                 <<"3">>,
@@ -365,24 +352,12 @@ calculate_test() ->
                 )
             ),
             ?allocation_trx(
-                <<"2">>,
-                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
-                ?cash(20, <<"RUB">>),
-                ?allocation_trx_details(Cart),
-                ?allocation_trx_body_total(
-                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                    ?cash(30, <<"RUB">>),
-                    ?cash(10, <<"RUB">>)
-                )
-            ),
-            ?allocation_trx(
-                <<"1">>,
-                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
-                ?cash(30, <<"RUB">>),
-                ?allocation_trx_details(Cart)
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
             )
-        ]),
-        calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>))
+        ],
+        lists:sort(AllocationTrxs)
     ).
 
 -spec calculate_without_generating_agg_trx_test() -> _.
@@ -405,11 +380,12 @@ calculate_without_generating_agg_trx_test() ->
             ?allocation_trx_details(Cart)
         )
     ]),
+    ?allocation(AllocationTrxs) = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     ?assertMatch(
-        ?allocation([
+        [
             ?allocation_trx(
-                <<"3">>,
-                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+                <<"1">>,
+                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
                 ?cash(30, <<"RUB">>),
                 ?allocation_trx_details(Cart)
             ),
@@ -420,17 +396,17 @@ calculate_without_generating_agg_trx_test() ->
                 ?allocation_trx_details(Cart)
             ),
             ?allocation_trx(
-                <<"1">>,
-                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+                <<"3">>,
+                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
                 ?cash(30, <<"RUB">>),
                 ?allocation_trx_details(Cart)
             )
-        ]),
-        calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>))
+        ],
+        lists:sort(AllocationTrxs)
     ).
 
--spec calculate_cost_mismatch_error_1_test() -> _.
-calculate_cost_mismatch_error_1_test() ->
+-spec calculate_amount_exceeded_error_1_test() -> _.
+calculate_amount_exceeded_error_1_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -459,15 +435,15 @@ calculate_cost_mismatch_error_1_test() ->
         )
     ]),
     ?assertThrow(
-        cost_mismatch,
+        amount_exceeded,
         calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>))
     ).
 
--spec calculate_cost_mismatch_error_2_test() -> _.
-calculate_cost_mismatch_error_2_test() ->
+-spec calculate_amount_exceeded_error_2_test() -> _.
+calculate_amount_exceeded_error_2_test() ->
     AllocationPrototype = generic_prototype(),
     ?assertThrow(
-        cost_mismatch,
+        amount_exceeded,
         calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(100, <<"RUB">>))
     ).
 
@@ -483,39 +459,39 @@ subtract_one_transaction_1_test() ->
     ]),
     Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     RefundAllocation = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    {ok, ?allocation(SubbedAllocationTrxs)} = sub(Allocation, RefundAllocation),
     ?assertMatch(
-        {ok,
-            ?allocation([
-                ?allocation_trx(
-                    <<"2">>,
-                    ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
-                    ?cash(20, <<"RUB">>),
-                    ?allocation_trx_details(Cart),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(10, <<"RUB">>)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"3">>,
-                    ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
-                    ?cash(25, <<"RUB">>),
-                    ?allocation_trx_details(Cart),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(5, <<"RUB">>),
-                        ?allocation_trx_fee_share(15, 100)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"4">>,
+        [
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
                     ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                    ?cash(15, <<"RUB">>)
+                    ?cash(30, <<"RUB">>),
+                    ?cash(10, <<"RUB">>)
                 )
-            ])},
-        sub(Allocation, RefundAllocation, ?cash(60, <<"RUB">>))
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+                ?cash(25, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(5, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
+            )
+        ],
+        lists:sort(SubbedAllocationTrxs)
     ).
 
 -spec subtract_one_transaction_2_test() -> _.
@@ -534,34 +510,34 @@ subtract_one_transaction_2_test() ->
     ]),
     Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     RefundAllocation = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    {ok, ?allocation(SubbedAllocationTrxs)} = sub(Allocation, RefundAllocation),
     ?assertMatch(
-        {ok,
-            ?allocation([
-                ?allocation_trx(
-                    <<"1">>,
-                    ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
-                    ?cash(30, <<"RUB">>),
-                    ?allocation_trx_details(Cart)
-                ),
-                ?allocation_trx(
-                    <<"3">>,
-                    ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
-                    ?cash(25, <<"RUB">>),
-                    ?allocation_trx_details(Cart),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(5, <<"RUB">>),
-                        ?allocation_trx_fee_share(15, 100)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"4">>,
+        [
+            ?allocation_trx(
+                <<"1">>,
+                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_details(Cart)
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+                ?cash(25, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
                     ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                    ?cash(5, <<"RUB">>)
+                    ?cash(30, <<"RUB">>),
+                    ?cash(5, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
                 )
-            ])},
-        sub(Allocation, RefundAllocation, ?cash(60, <<"RUB">>))
+            ),
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(5, <<"RUB">>)
+            )
+        ],
+        lists:sort(SubbedAllocationTrxs)
     ).
 
 -spec subtract_one_transaction_3_test() -> _.
@@ -580,33 +556,33 @@ subtract_one_transaction_3_test() ->
     ]),
     Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     RefundAllocation = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    {ok, ?allocation(SubbedAllocationTrxs)} = sub(Allocation, RefundAllocation),
     ?assertMatch(
-        {ok,
-            ?allocation([
-                ?allocation_trx(
-                    <<"1">>,
-                    ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
-                    ?cash(30, <<"RUB">>),
-                    ?allocation_trx_details(Cart)
-                ),
-                ?allocation_trx(
-                    <<"2">>,
-                    ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
-                    ?cash(20, <<"RUB">>),
-                    ?allocation_trx_details(Cart),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(10, <<"RUB">>)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"4">>,
+        [
+            ?allocation_trx(
+                <<"1">>,
+                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+                ?cash(30, <<"RUB">>),
+                ?allocation_trx_details(Cart)
+            ),
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
                     ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
                     ?cash(10, <<"RUB">>)
                 )
-            ])},
-        sub(Allocation, RefundAllocation, ?cash(60, <<"RUB">>))
+            ),
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(10, <<"RUB">>)
+            )
+        ],
+        lists:sort(SubbedAllocationTrxs)
     ).
 
 -spec subtract_partial_transaction_test() -> _.
@@ -648,45 +624,45 @@ subtract_partial_transaction_test() ->
     ]),
     Allocation = calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
     RefundAllocation = calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(18, <<"RUB">>)),
+    {ok, ?allocation(SubbedAllocationTrxs)} = sub(Allocation, RefundAllocation),
     ?assertMatch(
-        {ok,
-            ?allocation([
-                ?allocation_trx(
-                    <<"2">>,
-                    ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
-                    ?cash(20, <<"RUB">>),
-                    ?allocation_trx_details(Cart0),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(10, <<"RUB">>)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"3">>,
-                    ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
-                    ?cash(25, <<"RUB">>),
-                    ?allocation_trx_details(Cart0),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(5, <<"RUB">>),
-                        ?allocation_trx_fee_share(15, 100)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"4">>,
+        [
+            ?allocation_trx(
+                <<"1">>,
+                ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
+                ?cash(12, <<"RUB">>),
+                ?allocation_trx_details(Cart1)
+            ),
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart0),
+                ?allocation_trx_body_total(
                     ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                    ?cash(15, <<"RUB">>)
-                ),
-                ?allocation_trx(
-                    <<"1">>,
-                    ?allocation_trx_target_shop(<<"PARTY1">>, <<"SHOP1">>),
-                    ?cash(12, <<"RUB">>),
-                    ?allocation_trx_details(Cart1)
+                    ?cash(30, <<"RUB">>),
+                    ?cash(10, <<"RUB">>)
                 )
-            ])},
-        sub(Allocation, RefundAllocation, ?cash(72, <<"RUB">>))
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+                ?cash(25, <<"RUB">>),
+                ?allocation_trx_details(Cart0),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(5, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
+            )
+        ],
+        lists:sort(SubbedAllocationTrxs)
     ).
 
 -spec consecutive_subtract_of_partial_transaction_test() -> _.
@@ -737,43 +713,42 @@ consecutive_subtract_of_partial_transaction_test() ->
     RefundAllocation0 = calculate(RefundAllocationPrototype0, <<"PARTY0">>, <<"SHOP0">>, ?cash(18, <<"RUB">>)),
     {ok, Allocation1} = sub(
         Allocation0,
-        RefundAllocation0,
-        ?cash(72, <<"RUB">>)
+        RefundAllocation0
     ),
     RefundAllocation1 = calculate(RefundAllocationPrototype1, <<"PARTY0">>, <<"SHOP0">>, ?cash(12, <<"RUB">>)),
+    {ok, ?allocation(SubbedAllocationTrxs)} = sub(Allocation1, RefundAllocation1),
     ?assertMatch(
-        {ok,
-            ?allocation([
-                ?allocation_trx(
-                    <<"4">>,
+        [
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
+                ?cash(20, <<"RUB">>),
+                ?allocation_trx_details(Cart0),
+                ?allocation_trx_body_total(
                     ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                    ?cash(15, <<"RUB">>)
-                ),
-                ?allocation_trx(
-                    <<"3">>,
-                    ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
-                    ?cash(25, <<"RUB">>),
-                    ?allocation_trx_details(Cart0),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(5, <<"RUB">>),
-                        ?allocation_trx_fee_share(15, 100)
-                    )
-                ),
-                ?allocation_trx(
-                    <<"2">>,
-                    ?allocation_trx_target_shop(<<"PARTY2">>, <<"SHOP2">>),
-                    ?cash(20, <<"RUB">>),
-                    ?allocation_trx_details(Cart0),
-                    ?allocation_trx_body_total(
-                        ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
-                        ?cash(30, <<"RUB">>),
-                        ?cash(10, <<"RUB">>)
-                    )
+                    ?cash(30, <<"RUB">>),
+                    ?cash(10, <<"RUB">>)
                 )
-            ])},
-        sub(Allocation1, RefundAllocation1, ?cash(60, <<"RUB">>))
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(<<"PARTY3">>, <<"SHOP3">>),
+                ?cash(25, <<"RUB">>),
+                ?allocation_trx_details(Cart0),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                    ?cash(30, <<"RUB">>),
+                    ?cash(5, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"4">>,
+                ?allocation_trx_target_shop(<<"PARTY0">>, <<"SHOP0">>),
+                ?cash(15, <<"RUB">>)
+            )
+        ],
+        lists:sort(SubbedAllocationTrxs)
     ).
 
 -endif.

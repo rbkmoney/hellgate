@@ -313,9 +313,9 @@ maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop) ->
     of
         {ok, A} ->
             A;
-        {error, unallocatable} ->
+        {error, allocation_not_allowed} ->
             throw(#payproc_AllocationNotAllowed{});
-        {error, cost_mismatch} ->
+        {error, amount_exceeded} ->
             throw(#payproc_AllocationExceededPaymentAmount{});
         {error, {invalid_transaction, Transaction, Details}} ->
             throw(#payproc_AllocationInvalidTransaction{
@@ -338,9 +338,7 @@ marshal_allocation_details(target_conflict) ->
 marshal_allocation_details(currency_mismatch) ->
     <<"Transaction currency mismatch">>;
 marshal_allocation_details(payment_institutions_mismatch) ->
-    <<"Transaction target shop Payment Institution mismatch">>;
-marshal_allocation_details(not_aggregator_party) ->
-    <<"Transaction target party mismatch">>.
+    <<"Transaction target shop Payment Institution mismatch">>.
 
 %%----------------- invoice asserts
 assert_invoice(Checks, #st{} = St) when is_list(Checks) ->
