@@ -5003,7 +5003,6 @@ allocation_create_invoice(C) ->
     ShopID2 = cfg(shop_id_2, C),
     ShopID3 = cfg(shop_id_3, C),
     InvoiceID = hg_utils:unique_id(),
-    ExternalID = <<"123">>,
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -5037,14 +5036,12 @@ allocation_create_invoice(C) ->
         AllocationPrototype
     ),
     InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
-        id = InvoiceID,
-        external_id = ExternalID
+        id = InvoiceID
     },
     Invoice1 = hg_client_invoicing:create(InvoiceParams1, Client),
     #payproc_Invoice{invoice = DomainInvoice} = Invoice1,
     #domain_Invoice{
         id = InvoiceID,
-        external_id = ExternalID,
         allocation = ?allocation(AllocationTrxs)
     } = DomainInvoice,
     [
@@ -5093,7 +5090,6 @@ allocation_capture_payment(C) ->
     ShopID2 = cfg(shop_id_2, C),
     ShopID3 = cfg(shop_id_3, C),
     InvoiceID = hg_utils:unique_id(),
-    ExternalID = <<"123">>,
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -5127,8 +5123,7 @@ allocation_capture_payment(C) ->
         AllocationPrototype
     ),
     InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
-        id = InvoiceID,
-        external_id = ExternalID
+        id = InvoiceID
     },
     InvoiceID = create_invoice(InvoiceParams1, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
@@ -5181,7 +5176,6 @@ allocation_refund_payment(C) ->
     ShopID2 = cfg(shop_id_2, C),
     ShopID3 = cfg(shop_id_3, C),
     InvoiceID = hg_utils:unique_id(),
-    ExternalID = <<"123">>,
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = ?allocation_prototype([
         ?allocation_trx_prototype(
@@ -5215,8 +5209,7 @@ allocation_refund_payment(C) ->
         AllocationPrototype
     ),
     InvoiceParams1 = InvoiceParams0#payproc_InvoiceParams{
-        id = InvoiceID,
-        external_id = ExternalID
+        id = InvoiceID
     },
     InvoiceID = create_invoice(InvoiceParams1, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
@@ -5275,11 +5268,10 @@ allocation_refund_payment(C) ->
     ),
     RefundID = <<"1">>,
     RefundParams1 = RefundParams0#payproc_InvoicePaymentRefundParams{
-        id = RefundID,
-        external_id = ExternalID
+        id = RefundID
     },
     Refund0 =
-        ?refund_id(RefundID, ExternalID) =
+        ?refund_id(RefundID) =
         hg_client_invoicing:refund_payment(InvoiceID, PaymentID, RefundParams1, Client),
 
     PaymentID = await_refund_created(InvoiceID, PaymentID, RefundID, Client),
