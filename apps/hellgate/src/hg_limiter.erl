@@ -34,7 +34,6 @@
 
 -spec get_turnover_limits(turnover_selector() | undefined) -> [turnover_limit()].
 get_turnover_limits(undefined) ->
-    logger:info("Operation limits haven't been set on provider terms."),
     [];
 get_turnover_limits({value, Limits}) ->
     Limits;
