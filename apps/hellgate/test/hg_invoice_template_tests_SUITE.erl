@@ -447,8 +447,6 @@ terms_retrieval(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID1) = create_invoice_tpl(C),
 
-    _ = timer:sleep(5000),
-
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{
@@ -457,8 +455,6 @@ terms_retrieval(C) ->
         }
     } = TermSet1,
     _ = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
-
-    _ = timer:sleep(5000),
 
     TermSet2 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{
@@ -471,8 +467,6 @@ terms_retrieval(C) ->
                 ]}
         }
     } = TermSet2,
-
-    _ = timer:sleep(5000),
 
     Lifetime = make_lifetime(0, 0, 2),
     Cost = make_cost(unlim, sale, "1%"),

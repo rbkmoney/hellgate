@@ -432,7 +432,6 @@ make_party_params() ->
 ) -> shop_id().
 create_battle_ready_shop(PartyID, Category, Currency, TemplateRef, PaymentInstRef, PartyPair) ->
     Fun = fun(_, Changeset, _, _) ->
-        %%_ = timer:sleep(5000),
         create_claim(PartyID, Changeset, PartyPair)
     end,
     create_shop_(PartyID, Category, Currency, TemplateRef, PaymentInstRef, PartyPair, Fun).
