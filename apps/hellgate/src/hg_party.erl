@@ -19,8 +19,8 @@
 -export([checkout/2]).
 
 -export([get_contract/2]).
-
 -export([get_shop/2]).
+-export([get_shop_contract/2]).
 
 -export_type([party/0]).
 -export_type([party_revision/0]).
@@ -36,6 +36,7 @@
 -type contract_id() :: dmsl_domain_thrift:'ContractID'().
 -type shop() :: dmsl_domain_thrift:'Shop'().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
+-type shop_contract() :: dmsl_payment_processing_thrift:'ShopContract'().
 
 %% Interface
 
@@ -61,6 +62,11 @@ get_contract(ID, #domain_Party{contracts = Contracts}) ->
 -spec get_shop(shop_id(), party()) -> shop() | undefined.
 get_shop(ID, #domain_Party{shops = Shops}) ->
     maps:get(ID, Shops, undefined).
+
+-spec get_shop_contract(party_id(), shop_id()) -> shop_contract() | no_return().
+get_shop_contract(PartyId, ShopId) ->
+    {Client, Context} = get_party_client(),
+    unwrap_party_result(party_client_thrift:get_shop_contract(PartyId, ShopId, Client, Context)).
 
 %% Internals
 

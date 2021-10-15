@@ -43,6 +43,7 @@
 -export([start_two_bindings_new/1]).
 -export([start_two_bindings_w_tds/1]).
 -export([start_two_bindings_w_tds_new/1]).
+-export([terms_retrieval/1]).
 
 -export([create_customer_not_permitted/1]).
 -export([start_binding_not_permitted/1]).
@@ -81,7 +82,6 @@ init_per_suite(C) ->
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
     PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
-    _ = timer:sleep(5000),
     ShopID = hg_ct_helper:create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     {ok, SupPid} = supervisor:start_link(?MODULE, []),
     _ = unlink(SupPid),
@@ -143,7 +143,8 @@ groups() ->
             start_two_bindings,
             start_two_bindings_new,
             start_two_bindings_w_tds_new,
-            start_two_bindings_w_tds
+            start_two_bindings_w_tds,
+            terms_retrieval
         ]},
         {not_permitted_methods, [sequence], [
             create_customer_not_permitted,
@@ -249,6 +250,7 @@ invalid_shop_status(C) ->
 -spec start_two_bindings_new(config()) -> test_case_result().
 -spec start_two_bindings_w_tds(config()) -> test_case_result().
 -spec start_two_bindings_w_tds_new(config()) -> test_case_result().
+-spec terms_retrieval(config()) -> test_case_result().
 
 create_customer(C) ->
     Client = cfg(client, C),
@@ -658,6 +660,27 @@ start_two_bindings_w_tds(C, PmtSys) ->
         ?customer_binding_changed(CustomerBindingID2, ?customer_binding_status_changed(?customer_binding_succeeded()))
     ] = next_event(CustomerID, Client).
 
+terms_retrieval(C) ->
+    Client = cfg(client, C),
+    PartyID = cfg(party_id, C),
+    ShopID = cfg(shop_id, C),
+    CustomerParams = hg_ct_helper:make_customer_params(PartyID, ShopID, cfg(test_case_name, C)),
+    #payproc_Customer{id = CustomerID} = hg_client_customer:create(CustomerParams, Client),
+
+    Revision = hg_domain:head(),
+    _ = hg_domain:update(construct_payment_methods_terms()),
+
+    Timestamp = hg_datetime:format_now(),
+    TermSet = hg_client_customer:compute_terms(CustomerID, {timestamp, Timestamp}, Client),
+
+    _ = hg_domain:reset(Revision),
+
+    #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods = {value, [?pmt(bank_card, ?bank_card(<<"visa-ref">>))]}
+        }
+    } = TermSet.
+
 %%
 
 -spec create_customer_not_permitted(config()) -> test_case_result().
@@ -869,6 +892,29 @@ construct_simple_term_set() ->
                 ]}
         }
     }.
+
+construct_payment_methods_terms() ->
+    TermSet = #domain_TermSet{
+        payments = #domain_PaymentsServiceTerms{
+            payment_methods =
+                {value,
+                    ordsets:from_list([
+                        ?pmt(bank_card, ?bank_card(<<"visa-ref">>))
+                    ])}
+        }
+    },
+    {term_set_hierarchy, #domain_TermSetHierarchyObject{
+        ref = ?trms(1),
+        data = #domain_TermSetHierarchy{
+            parent_terms = undefined,
+            term_sets = [
+                #domain_TimedTermSet{
+                    action_time = #'TimestampInterval'{},
+                    terms = TermSet
+                }
+            ]
+        }
+    }}.
 
 -spec construct_domain_fixture(term()) -> [hg_domain:object()].
 construct_domain_fixture(TermSet) ->

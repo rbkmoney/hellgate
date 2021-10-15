@@ -107,7 +107,6 @@ init_per_suite(C) ->
     {ok, _} = supervisor:start_child(SupPid, hg_dummy_fault_detector:child_spec()),
     FDConfig = genlib_app:env(hellgate, fault_detector),
     application:set_env(hellgate, fault_detector, FDConfig#{enabled => true}),
-    _ = timer:sleep(5000),
     _ = unlink(SupPid),
     [
         {apps, Apps},

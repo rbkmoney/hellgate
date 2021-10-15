@@ -17,6 +17,8 @@
 -export([pull_event/2]).
 -export([pull_event/3]).
 
+-export([compute_terms/3]).
+
 %% GenServer
 
 -behaviour(gen_server).
@@ -38,6 +40,9 @@
 -type customer_binding() :: dmsl_payment_processing_thrift:'CustomerBinding'().
 -type customer_binding_params() :: dmsl_payment_processing_thrift:'CustomerBindingParams'().
 -type event_range() :: dmsl_payment_processing_thrift:'EventRange'().
+-type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
+
+-type term_set() :: dmsl_domain_thrift:'TermSet'().
 
 %% API
 
@@ -90,6 +95,10 @@ pull_event(CustomerID, Client) ->
 pull_event(CustomerID, Timeout, Client) ->
     % FIXME: infinity sounds dangerous
     gen_server:call(Client, {pull_event, CustomerID, Timeout}, infinity).
+
+-spec compute_terms(id(), party_revision_param(), pid()) -> term_set().
+compute_terms(CustomerID, PartyRevision, Client) ->
+    map_result_error(gen_server:call(Client, {call, 'ComputeTerms', [CustomerID, PartyRevision]})).
 
 map_result_error({ok, Result}) ->
     Result;

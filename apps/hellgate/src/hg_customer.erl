@@ -96,6 +96,31 @@ handle_function_('GetEvents', {CustomerID, Range}, _Opts) ->
     ok = set_meta(CustomerID),
     ok = assert_customer_accessible(get_initial_state(CustomerID)),
     get_public_history(CustomerID, Range);
+handle_function_('ComputeTerms', {CustomerID, PartyRevision0}, _Opts) ->
+    ok = set_meta(CustomerID),
+    St = get_state(CustomerID),
+    ok = assert_customer_accessible(St),
+    ShopID = get_shop_id(St),
+    PartyID = get_party_id(St),
+    Timestamp = get_created_at(St),
+    PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
+    ShopContract = hg_party:get_shop_contract(PartyID, ShopID),
+    Shop = ShopContract#payproc_ShopContract.shop,
+    Contractor = ShopContract#payproc_ShopContract.contractor,
+    VS = hg_varset:prepare_varset(#{
+        party_id => PartyID,
+        shop_id => ShopID,
+        category => Shop#domain_Shop.category,
+        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+        identification_level => hg_invoice_utils:get_identification_level(Contractor)
+    }),
+    hg_invoice_utils:compute_shop_terms(
+        PartyID,
+        ShopID,
+        Timestamp,
+        PartyRevision1,
+        VS
+    );
 handle_function_(Fun, Args, _Opts) when
     Fun =:= 'Delete' orelse
         Fun =:= 'StartBinding'
@@ -551,6 +576,9 @@ get_party_id(#st{customer = #payproc_Customer{owner_id = PartyID}}) ->
 
 get_shop_id(#st{customer = #payproc_Customer{shop_id = ShopID}}) ->
     ShopID.
+
+get_created_at(#st{customer = #payproc_Customer{created_at = CreatedAt}}) ->
+    CreatedAt.
 
 get_customer(#st{customer = Customer}) ->
     Customer.
