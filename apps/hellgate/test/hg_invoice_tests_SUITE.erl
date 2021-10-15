@@ -4630,7 +4630,6 @@ payment_refund_success(C) ->
 
 -spec payment_refund_success_new(config()) -> _ | no_return().
 payment_refund_success_new(C) ->
-    _ = timer:sleep(500),
     payment_refund_success(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_success(C, PmtSys) ->
@@ -4684,7 +4683,6 @@ payment_refund_failure(C) ->
 
 -spec payment_refund_failure_new(config()) -> _ | no_return().
 payment_refund_failure_new(C) ->
-    _ = timer:sleep(500),
     payment_refund_failure(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_failure(C, PmtSys) ->
@@ -4800,7 +4798,6 @@ payment_manual_refund(C) ->
 
 -spec payment_manual_refund_new(config()) -> _ | no_return().
 payment_manual_refund_new(C) ->
-    _ = timer:sleep(500),
     payment_manual_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_manual_refund(C, PmtSys) ->
@@ -4872,7 +4869,6 @@ payment_partial_refunds_success(C) ->
 
 -spec payment_partial_refunds_success_new(config()) -> _ | no_return().
 payment_partial_refunds_success_new(C) ->
-    _ = timer:sleep(500),
     payment_partial_refunds_success(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_partial_refunds_success(C, PmtSys) ->
@@ -4989,7 +4985,6 @@ invalid_amount_payment_partial_refund(C) ->
 
 -spec invalid_amount_payment_partial_refund_new(config()) -> _ | no_return().
 invalid_amount_payment_partial_refund_new(C) ->
-    _ = timer:sleep(500),
     invalid_amount_payment_partial_refund(C, ?pmt_sys(<<"visa-ref">>)).
 
 invalid_amount_payment_partial_refund(C, PmtSys) ->
@@ -5180,7 +5175,6 @@ payment_refund_id_types(C) ->
 
 -spec payment_refund_id_types_new(config()) -> _ | no_return().
 payment_refund_id_types_new(C) ->
-    _ = timer:sleep(500),
     payment_refund_id_types(C, ?pmt_sys(<<"visa-ref">>)).
 
 payment_refund_id_types(C, PmtSys) ->
