@@ -494,7 +494,6 @@ map_history_error({error, notfound}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type party() :: dmsl_domain_thrift:'Party'().
--type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
 
 -type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
 
@@ -515,10 +514,7 @@ map_history_error({error, notfound}) ->
 namespace() ->
     ?NS.
 
--spec init(
-    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary()} | invoice(),
-    hg_machine:machine()
-) -> hg_machine:result().
+-spec init(invoice(), hg_machine:machine()) -> hg_machine:result().
 init(Invoice, _Machine) ->
     UnmarshalledInvoice = unmarshal_invoice(Invoice),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like

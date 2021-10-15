@@ -5129,43 +5129,49 @@ allocation_capture_payment(C) ->
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
-    Allocation = ?allocation([
-        ?allocation_trx(
-            <<"1">>,
-            ?allocation_trx_target_shop(PartyID, ShopID1),
-            ?cash(3000, <<"RUB">>),
-            ?allocation_trx_details(Cart)
-        ),
-        ?allocation_trx(
-            <<"2">>,
-            ?allocation_trx_target_shop(PartyID, ShopID2),
-            ?cash(2000, <<"RUB">>),
-            ?allocation_trx_details(Cart),
-            ?allocation_trx_body_total(
-                ?allocation_trx_target_shop(PartyID, ShopID0),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client),
+    #payproc_InvoicePayment{
+        allocation = ?allocation(FinalAllocationTrxs)
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    ?assertMatch(
+        [
+            ?allocation_trx(
+                <<"1">>,
+                ?allocation_trx_target_shop(PartyID, ShopID1),
                 ?cash(3000, <<"RUB">>),
-                ?cash(1000, <<"RUB">>)
-            )
-        ),
-        ?allocation_trx(
-            <<"3">>,
-            ?allocation_trx_target_shop(PartyID, ShopID3),
-            ?cash(2550, <<"RUB">>),
-            ?allocation_trx_details(Cart),
-            ?allocation_trx_body_total(
+                ?allocation_trx_details(Cart)
+            ),
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(PartyID, ShopID2),
+                ?cash(2000, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(PartyID, ShopID0),
+                    ?cash(3000, <<"RUB">>),
+                    ?cash(1000, <<"RUB">>)
+                )
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(PartyID, ShopID3),
+                ?cash(2550, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(PartyID, ShopID0),
+                    ?cash(3000, <<"RUB">>),
+                    ?cash(450, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"4">>,
                 ?allocation_trx_target_shop(PartyID, ShopID0),
-                ?cash(3000, <<"RUB">>),
-                ?cash(450, <<"RUB">>),
-                ?allocation_trx_fee_share(15, 100)
+                ?cash(1450, <<"RUB">>)
             )
-        ),
-        ?allocation_trx(
-            <<"4">>,
-            ?allocation_trx_target_shop(PartyID, ShopID0),
-            ?cash(1450, <<"RUB">>)
-        )
-    ]),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client, 0, Allocation).
+        ],
+        lists:sort(FinalAllocationTrxs)
+    ).
 
 -spec allocation_refund_payment(config()) -> _ | no_return().
 allocation_refund_payment(C) ->
@@ -5215,43 +5221,49 @@ allocation_refund_payment(C) ->
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
     PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
-    Allocation = ?allocation([
-        ?allocation_trx(
-            <<"1">>,
-            ?allocation_trx_target_shop(PartyID, ShopID1),
-            ?cash(3000, <<"RUB">>),
-            ?allocation_trx_details(Cart)
-        ),
-        ?allocation_trx(
-            <<"2">>,
-            ?allocation_trx_target_shop(PartyID, ShopID2),
-            ?cash(2000, <<"RUB">>),
-            ?allocation_trx_details(Cart),
-            ?allocation_trx_body_total(
-                ?allocation_trx_target_shop(PartyID, ShopID0),
+    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client),
+    #payproc_InvoicePayment{
+        allocation = ?allocation(CapturedAllocationTrxs)
+    } = hg_client_invoicing:get_payment(InvoiceID, PaymentID, Client),
+    ?assertMatch(
+        [
+            ?allocation_trx(
+                <<"1">>,
+                ?allocation_trx_target_shop(PartyID, ShopID1),
                 ?cash(3000, <<"RUB">>),
-                ?cash(1000, <<"RUB">>)
-            )
-        ),
-        ?allocation_trx(
-            <<"3">>,
-            ?allocation_trx_target_shop(PartyID, ShopID3),
-            ?cash(2550, <<"RUB">>),
-            ?allocation_trx_details(Cart),
-            ?allocation_trx_body_total(
+                ?allocation_trx_details(Cart)
+            ),
+            ?allocation_trx(
+                <<"2">>,
+                ?allocation_trx_target_shop(PartyID, ShopID2),
+                ?cash(2000, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(PartyID, ShopID0),
+                    ?cash(3000, <<"RUB">>),
+                    ?cash(1000, <<"RUB">>)
+                )
+            ),
+            ?allocation_trx(
+                <<"3">>,
+                ?allocation_trx_target_shop(PartyID, ShopID3),
+                ?cash(2550, <<"RUB">>),
+                ?allocation_trx_details(Cart),
+                ?allocation_trx_body_total(
+                    ?allocation_trx_target_shop(PartyID, ShopID0),
+                    ?cash(3000, <<"RUB">>),
+                    ?cash(450, <<"RUB">>),
+                    ?allocation_trx_fee_share(15, 100)
+                )
+            ),
+            ?allocation_trx(
+                <<"4">>,
                 ?allocation_trx_target_shop(PartyID, ShopID0),
-                ?cash(3000, <<"RUB">>),
-                ?cash(450, <<"RUB">>),
-                ?allocation_trx_fee_share(15, 100)
+                ?cash(1450, <<"RUB">>)
             )
-        ),
-        ?allocation_trx(
-            <<"4">>,
-            ?allocation_trx_target_shop(PartyID, ShopID0),
-            ?cash(1450, <<"RUB">>)
-        )
-    ]),
-    PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client, 0, Allocation),
+        ],
+        lists:sort(CapturedAllocationTrxs)
+    ),
 
     RefundAllocationPrototype =
         ?allocation_prototype([
@@ -5816,16 +5828,12 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
     await_payment_capture(InvoiceID, PaymentID, Reason, Client, 0).
 
 await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
-    await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts, undefined).
-
-await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts, ?allocation(AllocationTrxs) = Allocation) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _, ?allocation(UnsortedAllocationTrxs))),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _, _)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
-    AllocationTrxs = lists:sort(UnsortedAllocationTrxs),
-    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, undefined, Allocation).
+    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
 
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
     await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, 0).
@@ -5848,37 +5856,14 @@ await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cos
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, undefined).
 
 await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, Cart) ->
-    await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts, Cost, Cart, undefined).
-
-await_payment_capture_finish(
-    InvoiceID,
-    PaymentID,
-    Reason,
-    Client,
-    Restarts,
-    Cost,
-    Cart,
-    ?allocation(AllocationTrxs) = Allocation
-) ->
-    Target = ?captured(Reason, Cost, Cart, Allocation),
-    PaymentID = await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts),
+    PaymentID = await_sessions_restarts(PaymentID, ?captured(Reason, Cost, Cart), InvoiceID, Client, Restarts),
     [
-        ?payment_ev(
-            PaymentID,
-            ?session_ev(
-                ?captured(Reason, Cost, Cart, ?allocation(UnsortedAllocationTrxs)),
-                ?session_finished(?session_succeeded())
-            )
-        )
+        ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost, Cart, _), ?session_finished(?session_succeeded())))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(
-            PaymentID,
-            ?payment_status_changed(?captured(Reason, Cost, Cart, ?allocation(UnsortedAllocationTrxs)))
-        ),
+        ?payment_ev(PaymentID, ?payment_status_changed(?captured(Reason, Cost, Cart, _))),
         ?invoice_status_changed(?invoice_paid())
     ] = next_event(InvoiceID, Client),
-    AllocationTrxs = lists:sort(UnsortedAllocationTrxs),
     PaymentID.
 
 await_payment_cancel(InvoiceID, PaymentID, Reason, Client) ->
@@ -5986,7 +5971,7 @@ await_sessions_restarts(PaymentID, ?refunded() = Target, InvoiceID, Client, Rest
     await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts - 1);
 await_sessions_restarts(
     PaymentID,
-    ?captured(Reason, Cost, Cart, ?allocation(AllocationTrxs)) = Target,
+    ?captured(Reason, Cost, Cart, _) = Target,
     InvoiceID,
     Client,
     Restarts
@@ -5995,16 +5980,15 @@ await_sessions_restarts(
         ?payment_ev(
             PaymentID,
             ?session_ev(
-                ?captured(Reason, Cost, Cart, ?allocation(UnsortedAllocationTrxs)),
+                ?captured(Reason, Cost, Cart, _),
                 ?session_finished(?session_failed(_))
             )
         ),
         ?payment_ev(
             PaymentID,
-            ?session_ev(?captured(Reason, Cost, Cart, ?allocation(UnsortedAllocationTrxs)), ?session_started())
+            ?session_ev(?captured(Reason, Cost, Cart, _), ?session_started())
         )
     ] = next_event(InvoiceID, Client),
-    AllocationTrxs = lists:sort(UnsortedAllocationTrxs),
     await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts - 1);
 await_sessions_restarts(PaymentID, Target, InvoiceID, Client, Restarts) when Restarts > 0 ->
     [
