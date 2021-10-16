@@ -38,7 +38,12 @@ generic_prototype() ->
 calculate_test() ->
     Cart = ?invoice_cart([?invoice_line(<<"STRING">>, 1, ?cash(30, <<"RUB">>))]),
     AllocationPrototype = generic_prototype(),
-    ?allocation(AllocationTrxs) = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
+    ?allocation(AllocationTrxs) = hg_allocation:calculate(
+        AllocationPrototype,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(90, <<"RUB">>)
+    ),
     ?assertMatch(
         [
             ?allocation_trx(
@@ -99,7 +104,12 @@ calculate_without_generating_agg_trx_test() ->
             ?allocation_trx_details(Cart)
         )
     ]),
-    ?allocation(AllocationTrxs) = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
+    ?allocation(AllocationTrxs) = hg_allocation:calculate(
+        AllocationPrototype,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(90, <<"RUB">>)
+    ),
     ?assertMatch(
         [
             ?allocation_trx(
@@ -177,7 +187,12 @@ subtract_one_transaction_1_test() ->
         )
     ]),
     Allocation = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
-    RefundAllocation = hg_allocation:calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    RefundAllocation = hg_allocation:calculate(
+        RefundAllocationPrototype,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(30, <<"RUB">>)
+    ),
     {ok, ?allocation(SubbedAllocationTrxs)} = hg_allocation:sub(Allocation, RefundAllocation),
     ?assertMatch(
         [
@@ -228,7 +243,12 @@ subtract_one_transaction_2_test() ->
         )
     ]),
     Allocation = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
-    RefundAllocation = hg_allocation:calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    RefundAllocation = hg_allocation:calculate(
+        RefundAllocationPrototype,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(30, <<"RUB">>)
+    ),
     {ok, ?allocation(SubbedAllocationTrxs)} = hg_allocation:sub(Allocation, RefundAllocation),
     ?assertMatch(
         [
@@ -274,7 +294,12 @@ subtract_one_transaction_3_test() ->
         )
     ]),
     Allocation = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
-    RefundAllocation = hg_allocation:calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(30, <<"RUB">>)),
+    RefundAllocation = hg_allocation:calculate(
+        RefundAllocationPrototype,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(30, <<"RUB">>)
+    ),
     {ok, ?allocation(SubbedAllocationTrxs)} = hg_allocation:sub(Allocation, RefundAllocation),
     ?assertMatch(
         [
@@ -342,7 +367,12 @@ subtract_partial_transaction_test() ->
         )
     ]),
     Allocation = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
-    RefundAllocation = hg_allocation:calculate(RefundAllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(18, <<"RUB">>)),
+    RefundAllocation = hg_allocation:calculate(
+        RefundAllocationPrototype,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(18, <<"RUB">>)
+    ),
     {ok, ?allocation(SubbedAllocationTrxs)} = hg_allocation:sub(Allocation, RefundAllocation),
     ?assertMatch(
         [
@@ -429,12 +459,22 @@ consecutive_subtract_of_partial_transaction_test() ->
         )
     ]),
     Allocation0 = hg_allocation:calculate(AllocationPrototype, <<"PARTY0">>, <<"SHOP0">>, ?cash(90, <<"RUB">>)),
-    RefundAllocation0 = hg_allocation:calculate(RefundAllocationPrototype0, <<"PARTY0">>, <<"SHOP0">>, ?cash(18, <<"RUB">>)),
+    RefundAllocation0 = hg_allocation:calculate(
+        RefundAllocationPrototype0,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(18, <<"RUB">>)
+    ),
     {ok, Allocation1} = hg_allocation:sub(
         Allocation0,
         RefundAllocation0
     ),
-    RefundAllocation1 = hg_allocation:calculate(RefundAllocationPrototype1, <<"PARTY0">>, <<"SHOP0">>, ?cash(12, <<"RUB">>)),
+    RefundAllocation1 = hg_allocation:calculate(
+        RefundAllocationPrototype1,
+        <<"PARTY0">>,
+        <<"SHOP0">>,
+        ?cash(12, <<"RUB">>)
+    ),
     {ok, ?allocation(SubbedAllocationTrxs)} = hg_allocation:sub(Allocation1, RefundAllocation1),
     ?assertMatch(
         [
