@@ -514,7 +514,7 @@ map_history_error({error, notfound}) ->
 namespace() ->
     ?NS.
 
--spec init(invoice(), hg_machine:machine()) -> hg_machine:result().
+-spec init(binary(), hg_machine:machine()) -> hg_machine:result().
 init(Invoice, _Machine) ->
     UnmarshalledInvoice = unmarshal_invoice(Invoice),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
