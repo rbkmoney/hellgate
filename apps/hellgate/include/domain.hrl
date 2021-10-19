@@ -69,4 +69,17 @@
     payment_id = PaymentID
 }).
 
+-define(invoice_cart(Lines), #domain_InvoiceCart{
+    lines = Lines
+}).
+
+-define(invoice_line(ProductName, Quantity, Price), ?invoice_line(ProductName, Quantity, Price, #{})).
+
+-define(invoice_line(ProductName, Quantity, Price, Metadata), #domain_InvoiceLine{
+    product = ProductName,
+    quantity = Quantity,
+    price = Price,
+    metadata = Metadata
+}).
+
 -endif.

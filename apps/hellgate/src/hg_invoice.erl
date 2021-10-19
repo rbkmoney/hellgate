@@ -163,7 +163,10 @@ handle_function_('Create', {UserInfo, InvoiceParams}, _Opts) ->
     _ = assert_party_shop_operable(Shop, Party),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
     ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
-    ok = ensure_started(InvoiceID, {undefined, Party#domain_Party.revision, InvoiceParams}),
+    AllocationPrototype = InvoiceParams#payproc_InvoiceParams.allocation,
+    Cost = InvoiceParams#payproc_InvoiceParams.cost,
+    Allocation = maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop),
+    ok = ensure_started(InvoiceID, undefined, Party#domain_Party.revision, InvoiceParams, Allocation),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     DomainRevision = hg_domain:head(),
@@ -174,7 +177,10 @@ handle_function_('CreateWithTemplate', {UserInfo, Params}, _Opts) ->
     {Party, Shop, InvoiceParams} = make_invoice_params(Params),
     MerchantTerms = get_merchant_terms(Party, DomainRevision, Shop, hg_datetime:format_now(), InvoiceParams),
     ok = validate_invoice_params(InvoiceParams, Shop, MerchantTerms),
-    ok = ensure_started(InvoiceID, {TplID, Party#domain_Party.revision, InvoiceParams}),
+    AllocationPrototype = InvoiceParams#payproc_InvoiceParams.allocation,
+    Cost = InvoiceParams#payproc_InvoiceParams.cost,
+    Allocation = maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop),
+    ok = ensure_started(InvoiceID, TplID, Party#domain_Party.revision, InvoiceParams, Allocation),
     get_invoice_state(get_state(InvoiceID));
 handle_function_('CapturePaymentNew', Args, Opts) ->
     handle_function_('CapturePayment', Args, Opts);
@@ -291,6 +297,49 @@ handle_function_('RepairWithScenario', {UserInfo, InvoiceID, Scenario}, _Opts) -
     _ = assert_invoice(accessible, get_initial_state(InvoiceID)),
     repair(InvoiceID, {scenario, Scenario}).
 
+maybe_allocation(undefined, _Cost, _MerchantTerms, _Party, _Shop) ->
+    undefined;
+maybe_allocation(AllocationPrototype, Cost, MerchantTerms, Party, Shop) ->
+    PaymentTerms = MerchantTerms#domain_TermSet.payments,
+    AllocationSelector = PaymentTerms#domain_PaymentsServiceTerms.allocations,
+    case
+        hg_allocation:calculate(
+            AllocationPrototype,
+            Party,
+            Shop,
+            Cost,
+            AllocationSelector
+        )
+    of
+        {ok, A} ->
+            A;
+        {error, allocation_not_allowed} ->
+            throw(#payproc_AllocationNotAllowed{});
+        {error, amount_exceeded} ->
+            throw(#payproc_AllocationExceededPaymentAmount{});
+        {error, {invalid_transaction, Transaction, Details}} ->
+            throw(#payproc_AllocationInvalidTransaction{
+                transaction = marshal_transaction(Transaction),
+                reason = marshal_allocation_details(Details)
+            })
+    end.
+
+marshal_transaction(#domain_AllocationTransaction{} = T) ->
+    {transaction, T};
+marshal_transaction(#domain_AllocationTransactionPrototype{} = TP) ->
+    {transaction_prototype, TP}.
+
+marshal_allocation_details(negative_amount) ->
+    <<"Transaction amount is negative">>;
+marshal_allocation_details(zero_amount) ->
+    <<"Transaction amount is zero">>;
+marshal_allocation_details(target_conflict) ->
+    <<"Transaction with similar target">>;
+marshal_allocation_details(currency_mismatch) ->
+    <<"Transaction currency mismatch">>;
+marshal_allocation_details(payment_institutions_mismatch) ->
+    <<"Transaction target shop Payment Institution mismatch">>.
+
 %%----------------- invoice asserts
 assert_invoice(Checks, #st{} = St) when is_list(Checks) ->
     lists:foldl(fun assert_invoice/2, St, Checks);
@@ -340,7 +389,8 @@ get_payment_state(PaymentSession) ->
         legacy_refunds = LegacyRefunds,
         refunds = Refunds,
         sessions = hg_invoice_payment:get_sessions(PaymentSession),
-        last_transaction_info = hg_invoice_payment:get_trx(PaymentSession)
+        last_transaction_info = hg_invoice_payment:get_trx(PaymentSession),
+        allocation = hg_invoice_payment:get_allocation(PaymentSession)
     }.
 
 set_invoicing_meta(InvoiceID) ->
@@ -410,9 +460,9 @@ publish_invoice_event(InvoiceID, {ID, Dt, Event}) ->
         payload = ?invoice_ev(Event)
     }.
 
-ensure_started(ID, {TemplateID, PartyRevision, Params}) ->
-    SerializedArgs = {TemplateID, PartyRevision, marshal_invoice_params(Params)},
-    case hg_machine:start(?NS, ID, SerializedArgs) of
+ensure_started(ID, TemplateID, PartyRevision, Params, Allocation) ->
+    Invoice = create_invoice(ID, TemplateID, PartyRevision, Params, Allocation),
+    case hg_machine:start(?NS, ID, marshal_invoice(Invoice)) of
         {ok, _} -> ok;
         {error, exists} -> ok;
         {error, Reason} -> erlang:error(Reason)
@@ -444,8 +494,6 @@ map_history_error({error, notfound}) ->
 
 -type invoice() :: dmsl_domain_thrift:'Invoice'().
 -type party() :: dmsl_domain_thrift:'Party'().
--type invoice_tpl_id() :: dmsl_domain_thrift:'InvoiceTemplateID'().
--type invoice_params() :: dmsl_payment_processing_thrift:'InvoiceParams'().
 
 -type adjustment() :: dmsl_payment_processing_thrift:'InvoiceAdjustment'().
 
@@ -466,17 +514,13 @@ map_history_error({error, notfound}) ->
 namespace() ->
     ?NS.
 
--spec init(
-    {invoice_tpl_id() | undefined, hg_party:party_revision() | undefined, binary()},
-    hg_machine:machine()
-) -> hg_machine:result().
-init({InvoiceTplID, PartyRevision, EncodedInvoiceParams}, #{id := ID}) ->
-    InvoiceParams = unmarshal_invoice_params(EncodedInvoiceParams),
-    Invoice = create_invoice(ID, InvoiceTplID, PartyRevision, InvoiceParams),
+-spec init(binary(), hg_machine:machine()) -> hg_machine:result().
+init(Invoice, _Machine) ->
+    UnmarshalledInvoice = unmarshal_invoice(Invoice),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
     handle_result(#{
-        changes => [?invoice_created(Invoice)],
-        action => set_invoice_timer(hg_machine_action:new(), #st{invoice = Invoice}),
+        changes => [?invoice_created(UnmarshalledInvoice)],
+        action => set_invoice_timer(hg_machine_action:new(), #st{invoice = UnmarshalledInvoice}),
         state => #st{}
     }).
 
@@ -593,11 +637,12 @@ handle_call({{'Invoicing', 'CapturePayment'}, {_UserInfo, _InvoiceID, PaymentID,
     #payproc_InvoicePaymentCaptureParams{
         reason = Reason,
         cash = Cash,
-        cart = Cart
+        cart = Cart,
+        allocation = AllocationPrototype
     } = Params,
     PaymentSession = get_payment_session(PaymentID, St),
     Opts = #{timestamp := OccurredAt} = get_payment_opts(St),
-    {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, Opts),
+    {ok, {Changes, Action}} = capture_payment(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts),
     #{
         response => ok,
         changes => wrap_payment_changes(PaymentID, Changes, OccurredAt),
@@ -763,11 +808,11 @@ set_invoice_timer(?invoice_unpaid(), Action, #st{invoice = #domain_Invoice{due =
 set_invoice_timer(_Status, Action, _St) ->
     Action.
 
-capture_payment(PaymentSession, Reason, undefined, Cart, Opts) when Cart =/= undefined ->
+capture_payment(PaymentSession, Reason, undefined, Cart, AllocationPrototype, Opts) when Cart =/= undefined ->
     Cash = hg_invoice_utils:get_cart_amount(Cart),
-    capture_payment(PaymentSession, Reason, Cash, Cart, Opts);
-capture_payment(PaymentSession, Reason, Cash, Cart, Opts) ->
-    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, Opts).
+    capture_payment(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts);
+capture_payment(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts) ->
+    hg_invoice_payment:capture(PaymentSession, Reason, Cash, Cart, AllocationPrototype, Opts).
 
 %%
 
@@ -1023,21 +1068,25 @@ get_chargeback_state(ID, PaymentState) ->
 
 %%
 
-create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}) ->
+create_invoice(ID, InvoiceTplID, PartyRevision, V = #payproc_InvoiceParams{}, Allocation) ->
+    OwnerID = V#payproc_InvoiceParams.party_id,
+    ShopID = V#payproc_InvoiceParams.shop_id,
+    Cost = V#payproc_InvoiceParams.cost,
     #domain_Invoice{
         id = ID,
-        shop_id = V#payproc_InvoiceParams.shop_id,
-        owner_id = V#payproc_InvoiceParams.party_id,
+        shop_id = ShopID,
+        owner_id = OwnerID,
         party_revision = PartyRevision,
         created_at = hg_datetime:format_now(),
         status = ?invoice_unpaid(),
-        cost = V#payproc_InvoiceParams.cost,
+        cost = Cost,
         due = V#payproc_InvoiceParams.due,
         details = V#payproc_InvoiceParams.details,
         context = V#payproc_InvoiceParams.context,
         template_id = InvoiceTplID,
         external_id = V#payproc_InvoiceParams.external_id,
-        client_info = V#payproc_InvoiceParams.client_info
+        client_info = V#payproc_InvoiceParams.client_info,
+        allocation = Allocation
     }.
 
 create_payment_id(#st{payments = Payments}) ->
@@ -1281,7 +1330,8 @@ make_invoice_params(Params) ->
     {Party, Shop, InvoiceParams}.
 
 validate_invoice_params(#payproc_InvoiceParams{cost = Cost}, Shop, MerchantTerms) ->
-    validate_invoice_cost(Cost, Shop, MerchantTerms).
+    ok = validate_invoice_cost(Cost, Shop, MerchantTerms),
+    ok.
 
 validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     _ = hg_invoice_utils:validate_cost(Cost, Shop),
@@ -1463,10 +1513,10 @@ get_message(invoice_status_changed) ->
 marshal_event_payload(Changes) when is_list(Changes) ->
     wrap_event_payload({invoice_changes, Changes}).
 
--spec marshal_invoice_params(invoice_params()) -> binary().
-marshal_invoice_params(Params) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
-    hg_proto_utils:serialize(Type, Params).
+-spec marshal_invoice(invoice()) -> binary().
+marshal_invoice(Invoice) ->
+    Type = {struct, struct, {dmsl_domain_thrift, 'Invoice'}},
+    hg_proto_utils:serialize(Type, Invoice).
 
 %% Unmarshalling
 
@@ -1486,9 +1536,9 @@ unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, changes}, Changes).
 
--spec unmarshal_invoice_params(binary()) -> invoice_params().
-unmarshal_invoice_params(Bin) ->
-    Type = {struct, struct, {dmsl_payment_processing_thrift, 'InvoiceParams'}},
+-spec unmarshal_invoice(binary()) -> invoice().
+unmarshal_invoice(Bin) ->
+    Type = {struct, struct, {dmsl_domain_thrift, 'Invoice'}},
     hg_proto_utils:deserialize(Type, Bin).
 
 %% Legacy formats unmarshal

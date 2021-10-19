@@ -932,7 +932,7 @@ await_payment_capture(InvoiceID, PaymentID, Reason, Client) ->
 await_payment_capture(InvoiceID, PaymentID, Reason, Client, Restarts) ->
     Cost = get_payment_cost(InvoiceID, PaymentID, Client),
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cost, _, _Allocation)),
         ?payment_ev(PaymentID, ?session_ev(?captured(Reason, Cost), ?session_started()))
     ] = next_event(InvoiceID, Client),
     await_payment_capture_finish(InvoiceID, PaymentID, Reason, Client, Restarts).
@@ -942,7 +942,7 @@ await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client) ->
 
 await_payment_partial_capture(InvoiceID, PaymentID, Reason, Cash, Client, Restarts) ->
     [
-        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _)),
+        ?payment_ev(PaymentID, ?payment_capture_started(Reason, Cash, _, _Allocation)),
         ?payment_ev(PaymentID, ?cash_flow_changed(_))
     ] = next_event(InvoiceID, Client),
     [

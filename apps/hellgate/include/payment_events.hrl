@@ -49,18 +49,19 @@
     {invoice_payment_rec_token_acquired, #payproc_InvoicePaymentRecTokenAcquired{token = Token}}
 ).
 
--define(payment_capture_started(Params),
+-define(payment_capture_started(Data),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        params = Params
+        data = Data
     }}
 ).
 
--define(payment_capture_started(Reason, Cost, Cart),
+-define(payment_capture_started(Reason, Cost, Cart, Allocation),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        params = #payproc_InvoicePaymentCaptureParams{
+        data = #payproc_InvoicePaymentCaptureData{
             reason = Reason,
             cash = Cost,
-            cart = Cart
+            cart = Cart,
+            allocation = Allocation
         }
     }}
 ).
@@ -103,6 +104,10 @@
 
 -define(captured(Reason, Cost, Cart),
     {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart}}
+).
+
+-define(captured(Reason, Cost, Cart, Allocation),
+    {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart, allocation = Allocation}}
 ).
 
 -define(cancelled_with_reason(Reason),

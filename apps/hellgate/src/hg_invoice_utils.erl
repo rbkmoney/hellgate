@@ -15,6 +15,7 @@
 -export([assert_shop_operable/1]).
 -export([assert_cost_payable/2]).
 -export([compute_shop_terms/5]).
+-export([get_shop_currency/1]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
 -export([get_identification_level/2]).
@@ -126,6 +127,7 @@ validate_currency_(Currency, Currency) ->
 validate_currency_(_, _) ->
     throw(#'InvalidRequest'{errors = [<<"Invalid currency">>]}).
 
+-spec get_shop_currency(shop()) -> currency().
 get_shop_currency(#domain_Shop{account = #domain_ShopAccount{currency = Currency}}) ->
     Currency.
 
