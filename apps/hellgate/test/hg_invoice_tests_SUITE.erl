@@ -685,7 +685,6 @@ groups() ->
             repair_fulfill_session_on_pre_processing_failed_new,
             repair_fulfill_session_with_trx_succeeded_new,
             repair_fulfill_session_with_trx_succeeded
-            repair_complex_succeeded_second
         ]},
         {allocation, [parallel], [
             allocation_create_invoice,
@@ -719,9 +718,9 @@ init_per_suite(C) ->
 
     RootUrl = maps:get(hellgate_root_url, Ret),
 
-    PartyID0 = hg_utils:unique_id(),
+    PartyID = hg_utils:unique_id(),
     PartyClient = {party_client:create_client(), party_client:create_context(user_info())},
-    CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID0)),
+    CustomerClient = hg_client_customer:start(hg_ct_helper:create_client(RootUrl, PartyID)),
 
     Party2ID = hg_utils:unique_id(),
     PartyClient2 = {party_client:create_client(), party_client:create_context(user_info())},
@@ -740,7 +739,7 @@ init_per_suite(C) ->
     _ = unlink(SupPid),
     ok = start_kv_store(SupPid),
     NewC = [
-        {party_id, PartyID0},
+        {party_id, PartyID},
         {party_client, PartyClient},
         {party_id_big_merch, Party3ID},
         {shop_id, ShopID},
@@ -2003,7 +2002,11 @@ payment_w_crypto_currency(C, Currency, success) ->
     InvoiceID = start_invoice(<<"cryptoduck">>, make_due_date(10), PayCash, C),
     {PaymentTool, Session} = hg_dummy_provider:make_payment_tool(crypto_currency, Currency),
     PaymentParams = make_payment_params(PaymentTool, Session, instant),
-    ?payment_state(?payment(PaymentID)) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
+    ?payment_state(#domain_InvoicePayment{
+        id = PaymentID,
+        owner_id = PartyID,
+        shop_id = ShopID
+    }) = hg_client_invoicing:start_payment(InvoiceID, PaymentParams, Client),
     [
         ?payment_ev(PaymentID, ?payment_started(?payment_w_status(?pending())))
     ] = next_event(InvoiceID, Client),
@@ -3000,15 +3003,15 @@ get_deprecated_cashflow_account_id(Type, CF, CFContext) ->
     Account = convert_transaction_account(Type, CFContext),
     [ID] = [
         V
-        || #domain_FinalCashFlowPosting{
-               destination = #domain_FinalCashFlowAccount{
-                   account_id = V,
-                   account_type = T,
-                   transaction_account = A
-               }
-           } <- CF,
-           T == Type,
-           A == Account
+     || #domain_FinalCashFlowPosting{
+            destination = #domain_FinalCashFlowAccount{
+                account_id = V,
+                account_type = T,
+                transaction_account = A
+            }
+        } <- CF,
+        T == Type,
+        A == Account
     ],
     ID.
 
@@ -5625,21 +5628,21 @@ get_cashflow_volume(Source, Destination, CF, CFContext) ->
     TAD = convert_transaction_account(Destination, CFContext),
     [Volume] = [
         V
-        || #domain_FinalCashFlowPosting{
-               source = #domain_FinalCashFlowAccount{
-                   account_type = ST,
-                   transaction_account = SA
-               },
-               destination = #domain_FinalCashFlowAccount{
-                   account_type = DT,
-                   transaction_account = DA
-               },
-               volume = V
-           } <- CF,
-           ST == Source,
-           DT == Destination,
-           SA == TAS,
-           DA == TAD
+     || #domain_FinalCashFlowPosting{
+            source = #domain_FinalCashFlowAccount{
+                account_type = ST,
+                transaction_account = SA
+            },
+            destination = #domain_FinalCashFlowAccount{
+                account_type = DT,
+                transaction_account = DA
+            },
+            volume = V
+        } <- CF,
+        ST == Source,
+        DT == Destination,
+        SA == TAS,
+        DA == TAD
     ],
     Volume.
 
@@ -6259,9 +6262,9 @@ repair_fulfill_session_with_trx_succeeded(C, PmtSys) ->
 init_allocation_group(C) ->
     PartyID = cfg(party_id, C),
     PartyClient = cfg(party_client, C),
-    ShopID1 = create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    ShopID2 = create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
-    ShopID3 = create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID1 = hg_ct_helper:create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID2 = hg_ct_helper:create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
+    ShopID3 = hg_ct_helper:create_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), PartyClient),
     [
         {shop_id_1, ShopID1},
         {shop_id_2, ShopID2},
@@ -6402,7 +6405,7 @@ allocation_capture_payment(C) ->
     },
     InvoiceID = create_invoice(InvoiceParams1, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
-    PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(visa, {hold, cancel}), Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client),
     #payproc_InvoicePayment{
@@ -6494,7 +6497,7 @@ allocation_refund_payment(C) ->
     },
     InvoiceID = create_invoice(InvoiceParams1, Client),
     [?invoice_created(?invoice_w_status(?invoice_unpaid()))] = next_event(InvoiceID, Client),
-    PaymentID = process_payment(InvoiceID, make_payment_params({hold, cancel}), Client),
+    PaymentID = process_payment(InvoiceID, make_payment_params(visa, {hold, cancel}), Client),
     ok = hg_client_invoicing:capture_payment(InvoiceID, PaymentID, <<"ok">>, Client),
     PaymentID = await_payment_capture(InvoiceID, PaymentID, <<"ok">>, Client),
     #payproc_InvoicePayment{
@@ -7030,7 +7033,7 @@ await_payment_cash_flow(InvoiceID, PaymentID, Client) ->
         ?payment_ev(PaymentID, ?risk_score_changed(_))
     ] = next_event(InvoiceID, Client),
     [
-        ?payment_ev(PaymentID, ?route_changed(_))
+        ?payment_ev(PaymentID, ?route_changed(Route))
     ] = next_event(InvoiceID, Client),
     [
         ?payment_ev(PaymentID, ?cash_flow_changed(CashFlow))
