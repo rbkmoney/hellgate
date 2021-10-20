@@ -239,12 +239,13 @@ handle_function_('ComputeTerms', {UserInfo, InvoiceID, PartyRevision0}, _Opts) -
     Party = hg_party:get_party(PartyID),
     Shop = hg_party:get_shop(ShopID, Party),
     Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
+    ShopAccount = Shop#domain_Shop.account,
     Cash = get_cost(St),
     VS = hg_varset:prepare_varset(#{
         party_id => PartyID,
         shop_id => ShopID,
         category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+        currency => ShopAccount#domain_ShopAccount.currency,
         identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
         cost => Cash
     }),

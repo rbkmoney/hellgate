@@ -107,11 +107,12 @@ handle_function_('ComputeTerms', {CustomerID, PartyRevision0}, _Opts) ->
     ShopContract = hg_party:get_shop_contract(PartyID, ShopID),
     Shop = ShopContract#payproc_ShopContract.shop,
     Contractor = ShopContract#payproc_ShopContract.contractor,
+    ShopAccount = Shop#domain_Shop.account,
     VS = hg_varset:prepare_varset(#{
         party_id => PartyID,
         shop_id => ShopID,
         category => Shop#domain_Shop.category,
-        currency => (Shop#domain_Shop.account)#domain_ShopAccount.currency,
+        currency => ShopAccount#domain_ShopAccount.currency,
         identification_level => hg_invoice_utils:get_identification_level(Contractor)
     }),
     hg_invoice_utils:compute_shop_terms(
