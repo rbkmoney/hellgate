@@ -367,7 +367,7 @@ get_invoice_state(#st{invoice = Invoice, payments = Payments}) ->
         invoice = Invoice,
         payments = [
             get_payment_state(PaymentSession)
-            || {_PaymentID, PaymentSession} <- Payments
+         || {_PaymentID, PaymentSession} <- Payments
         ]
     }.
 
@@ -515,6 +515,14 @@ namespace() ->
     ?NS.
 
 -spec init(binary(), hg_machine:machine()) -> hg_machine:result().
+init(Invoice, _Machine) ->
+    UnmarshalledInvoice = unmarshal_invoice(Invoice),
+    % TODO ugly, better to roll state and events simultaneously, hg_party-like
+    handle_result(#{
+        changes => [?invoice_created(UnmarshalledInvoice)],
+        action => set_invoice_timer(hg_machine_action:new(), #st{invoice = UnmarshalledInvoice}),
+        state => #st{}
+    });
 init(Invoice, _Machine) ->
     UnmarshalledInvoice = unmarshal_invoice(Invoice),
     % TODO ugly, better to roll state and events simultaneously, hg_party-like
@@ -1535,6 +1543,11 @@ unmarshal_event_payload(#{format_version := 1, data := {bin, Changes}}) ->
     Buf;
 unmarshal_event_payload(#{format_version := undefined, data := Changes}) ->
     unmarshal({list, changes}, Changes).
+
+-spec unmarshal_invoice(binary()) -> invoice().
+unmarshal_invoice(Bin) ->
+    Type = {struct, struct, {dmsl_domain_thrift, 'Invoice'}},
+    hg_proto_utils:deserialize(Type, Bin).
 
 -spec unmarshal_invoice(binary()) -> invoice().
 unmarshal_invoice(Bin) ->

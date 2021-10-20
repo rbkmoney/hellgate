@@ -31,6 +31,11 @@
 -export([construct_routing_delegate/2]).
 -export([construct_routing_candidate/2]).
 -export([construct_bank_card_category/4]).
+-export([construct_payment_system/2]).
+-export([construct_mobile_operator/2]).
+-export([construct_payment_service/2]).
+-export([construct_crypto_currency/2]).
+-export([construct_tokenized_service/2]).
 
 %%
 
@@ -44,6 +49,11 @@
 -type terms() :: dmsl_domain_thrift:'TermSetHierarchyRef'().
 -type lifetime() :: dmsl_domain_thrift:'Lifetime'() | undefined.
 -type payment_routing_ruleset() :: dmsl_domain_thrift:'RoutingRulesetRef'().
+-type payment_system() :: dmsl_domain_thrift:'PaymentSystemRef'().
+-type mobile_operator() :: dmsl_domain_thrift:'MobileOperatorRef'().
+-type payment_service() :: dmsl_domain_thrift:'PaymentServiceRef'().
+-type crypto_currency() :: dmsl_domain_thrift:'CryptoCurrencyRef'().
+-type tokenized_service() :: dmsl_domain_thrift:'BankCardTokenServiceRef'().
 
 -type system_account_set() :: dmsl_domain_thrift:'SystemAccountSetRef'().
 -type external_account_set() :: dmsl_domain_thrift:'ExternalAccountSetRef'().
@@ -91,6 +101,16 @@ construct_category(Ref, Name, Type) ->
 
 -spec construct_payment_method(dmsl_domain_thrift:'PaymentMethodRef'()) ->
     {payment_method, dmsl_domain_thrift:'PaymentMethodObject'()}.
+construct_payment_method(?pmt(mobile, ?mob(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(_, ?pmt_srv(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(crypto_currency, ?crypta(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(bank_card, ?token_bank_card(Name, _)) = Ref) ->
+    construct_payment_method(Name, Ref);
+construct_payment_method(?pmt(bank_card, ?bank_card(Name)) = Ref) ->
+    construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(_Type, ?tkz_bank_card(Name, _)) = Ref) when is_atom(Name) ->
     construct_payment_method(Name, Ref);
 construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
@@ -98,13 +118,14 @@ construct_payment_method(?pmt(_Type, Name) = Ref) when is_atom(Name) ->
 construct_payment_method(?pmt(_Type, #domain_BankCardPaymentMethod{} = PM) = Ref) ->
     construct_payment_method(PM#domain_BankCardPaymentMethod.payment_system, Ref).
 
-construct_payment_method(Name, Ref) ->
-    Def = erlang:atom_to_binary(Name, unicode),
+construct_payment_method(Name, Ref) when is_atom(Name) ->
+    construct_payment_method(atom_to_binary(Name, unicode), Ref);
+construct_payment_method(Name, Ref) when is_binary(Name) ->
     {payment_method, #domain_PaymentMethodObject{
         ref = Ref,
         data = #domain_PaymentMethodDefinition{
-            name = Def,
-            description = Def
+            name = Name,
+            description = Name
         }
     }}.
 
@@ -299,5 +320,55 @@ construct_bank_card_category(Ref, Name, Description, Patterns) ->
             name = Name,
             description = Description,
             category_patterns = Patterns
+        }
+    }}.
+
+-spec construct_payment_system(payment_system(), name()) ->
+    {payment_system, dmsl_domain_thrift:'PaymentSystemObject'()}.
+construct_payment_system(Ref, Name) ->
+    {payment_system, #domain_PaymentSystemObject{
+        ref = Ref,
+        data = #domain_PaymentSystem{
+            name = Name
+        }
+    }}.
+
+-spec construct_mobile_operator(mobile_operator(), name()) ->
+    {mobile_operator, dmsl_domain_thrift:'MobileOperatorObject'()}.
+construct_mobile_operator(Ref, Name) ->
+    {mobile_operator, #domain_MobileOperatorObject{
+        ref = Ref,
+        data = #domain_MobileOperator{
+            name = Name
+        }
+    }}.
+
+-spec construct_payment_service(payment_service(), name()) ->
+    {payment_service, dmsl_domain_thrift:'PaymentServiceObject'()}.
+construct_payment_service(Ref, Name) ->
+    {payment_service, #domain_PaymentServiceObject{
+        ref = Ref,
+        data = #domain_PaymentService{
+            name = Name
+        }
+    }}.
+
+-spec construct_crypto_currency(crypto_currency(), name()) ->
+    {crypto_currency, dmsl_domain_thrift:'CryptoCurrencyObject'()}.
+construct_crypto_currency(Ref, Name) ->
+    {crypto_currency, #domain_CryptoCurrencyObject{
+        ref = Ref,
+        data = #domain_CryptoCurrency{
+            name = Name
+        }
+    }}.
+
+-spec construct_tokenized_service(tokenized_service(), name()) ->
+    {payment_token, dmsl_domain_thrift:'BankCardTokenServiceObject'()}.
+construct_tokenized_service(Ref, Name) ->
+    {payment_token, #domain_BankCardTokenServiceObject{
+        ref = Ref,
+        data = #domain_BankCardTokenService{
+            name = Name
         }
     }}.

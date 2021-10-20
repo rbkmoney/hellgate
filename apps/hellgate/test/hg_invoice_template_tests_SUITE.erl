@@ -6,9 +6,6 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 -include_lib("hellgate/include/domain.hrl").
 
-%% TODO: remove later
--include_lib("hellgate/include/party_events.hrl").
-
 -export([all/0]).
 -export([init_per_suite/1]).
 -export([end_per_suite/1]).
@@ -84,17 +81,15 @@ all() ->
 init_per_suite(C) ->
     % _ = dbg:tracer(),
     % _ = dbg:p(all, c),
-    % _ = dbg:tpl({'hg_client_party', '_', '_'}, x),
+    % _ = dbg:tpl({'woody_client', '_', '_'}, x),
     {Apps, Ret} = hg_ct_helper:start_apps(
         [woody, scoper, dmt_client, party_client, hellgate, snowflake]
     ),
-    ok = hg_domain:insert(construct_domain_fixture()),
+    _ = hg_domain:insert(construct_domain_fixture()),
     RootUrl = maps:get(hellgate_root_url, Ret),
     PartyID = hg_utils:unique_id(),
-
     Client = {party_client:create_client(), party_client:create_context(user_info())},
-
-    ShopID = create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), Client),
+    ShopID = hg_ct_helper:create_party_and_shop(PartyID, ?cat(1), <<"RUB">>, ?tmpl(1), ?pinst(1), Client),
     [
         {party_id, PartyID},
         {party_client, Client},
@@ -107,67 +102,9 @@ init_per_suite(C) ->
 user_info() ->
     #{user_info => #{id => <<"test">>, realm => <<"service">>}}.
 
-create_party_and_shop(PartyID, Category, Currency, TemplateRef, PaymentInstitutionRef, {Client, Context}) ->
-    %% ... party
-    ok = party_client_thrift:create(PartyID, make_party_params(), Client, Context),
-    {ok, #domain_Party{id = PartyID}} = party_client_thrift:get(PartyID, Client, Context),
-
-    %% ... and shop
-    ShopID = hg_utils:unique_id(),
-    ContractID = hg_utils:unique_id(),
-    PayoutToolID = hg_utils:unique_id(),
-
-    ShopParams = make_shop_params(Category, ContractID, PayoutToolID),
-    ShopAccountParams = #payproc_ShopAccountParams{currency = ?cur(Currency)},
-
-    ContractParams = hg_ct_helper:make_contract_params(TemplateRef, PaymentInstitutionRef),
-    PayoutToolParams = hg_ct_helper:make_payout_tool_params(),
-
-    _ = timer:sleep(5000),
-
-    Changeset = [
-        {contract_modification, #payproc_ContractModificationUnit{
-            id = ContractID,
-            modification = {creation, ContractParams}
-        }},
-        {contract_modification, #payproc_ContractModificationUnit{
-            id = ContractID,
-            modification =
-                {payout_tool_modification, #payproc_PayoutToolModificationUnit{
-                    payout_tool_id = PayoutToolID,
-                    modification = {creation, PayoutToolParams}
-                }}
-        }},
-        ?shop_modification(ShopID, {creation, ShopParams}),
-        ?shop_modification(ShopID, {shop_account_creation, ShopAccountParams})
-    ],
-
-    {ok, _Claim} = party_client_thrift:create_claim(PartyID, Changeset, Client, Context),
-    %#payproc_Claim{id = ClaimID, revision = ClaimRev} = Claim,
-    %ok = party_client_thrift:accept_claim(PartyID, ClaimID, ClaimRev, Client, Context),
-
-    {ok, #domain_Shop{id = ShopID}} = party_client_thrift:get_shop(PartyID, ShopID, Client, Context),
-    ShopID.
-
-make_shop_params(Category, ContractID, PayoutToolID) ->
-    #payproc_ShopParams{
-        category = Category,
-        location = {url, <<>>},
-        details = #domain_ShopDetails{name = <<"Battle Ready Shop">>},
-        contract_id = ContractID,
-        payout_tool_id = PayoutToolID
-    }.
-
-make_party_params() ->
-    #payproc_PartyParams{
-        contact_info = #domain_PartyContactInfo{
-            email = <<?MODULE_STRING>>
-        }
-    }.
-
 -spec end_per_suite(config()) -> _.
 end_per_suite(C) ->
-    ok = hg_domain:cleanup(),
+    _ = hg_domain:cleanup(),
     [application:stop(App) || App <- cfg(apps, C)].
 
 %% tests
@@ -519,7 +456,7 @@ terms_retrieval(C) ->
             payment_methods = undefined
         }
     } = TermSet1,
-    ok = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
+    _ = hg_domain:update(construct_term_set_for_cost(5000, 11000)),
 
     _ = timer:sleep(5000),
 

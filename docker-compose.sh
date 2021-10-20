@@ -25,7 +25,7 @@ services:
         condition: service_healthy
 
   machinegun:
-    image: dr2.rbkmoney.com/rbkmoney/machinegun:c35e8a08500fbc2f0f0fa376a145a7324d18a062
+    image: dr2.rbkmoney.com/rbkmoney/machinegun:627130675ad6e7ee2127126740fe369542905b4b
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
@@ -37,7 +37,7 @@ services:
       retries: 20
 
   limiter:
-    image: dr2.rbkmoney.com/rbkmoney/limiter:c5572a9a22b3fea68213f32276b5272605aebec8
+    image: dr2.rbkmoney.com/rbkmoney/limiter:c7e96068a56da444e78cc7739a902da8e268dc63
     command: /opt/limiter/bin/limiter foreground
     depends_on:
       machinegun:

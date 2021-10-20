@@ -235,7 +235,9 @@ create_invoice_template(ID, P) ->
         shop_id = P#payproc_InvoiceTemplateCreateParams.shop_id,
         invoice_lifetime = P#payproc_InvoiceTemplateCreateParams.invoice_lifetime,
         product = P#payproc_InvoiceTemplateCreateParams.product,
+        name = P#payproc_InvoiceTemplateCreateParams.name,
         description = P#payproc_InvoiceTemplateCreateParams.description,
+        created_at = hg_datetime:format_now(),
         details = P#payproc_InvoiceTemplateCreateParams.details,
         context = P#payproc_InvoiceTemplateCreateParams.context
     }.
@@ -281,6 +283,7 @@ merge_changes([?tpl_created(Tpl)], _) ->
 merge_changes(
     [
         ?tpl_updated(#payproc_InvoiceTemplateUpdateParams{
+            name = Name,
             invoice_lifetime = InvoiceLifetime,
             product = Product,
             description = Description,
@@ -291,6 +294,7 @@ merge_changes(
     Tpl
 ) ->
     Diff = [
+        {name, Name},
         {invoice_lifetime, InvoiceLifetime},
         {product, Product},
         {description, Description},
@@ -305,6 +309,8 @@ update_field({invoice_lifetime, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{invoice_lifetime = V};
 update_field({product, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{product = V};
+update_field({name, V}, Tpl) ->
+    Tpl#domain_InvoiceTemplate{name = V};
 update_field({description, V}, Tpl) ->
     Tpl#domain_InvoiceTemplate{description = V};
 update_field({details, V}, Tpl) ->

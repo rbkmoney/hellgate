@@ -9,6 +9,8 @@
 -define(glob(), #domain_GlobalsRef{}).
 -define(cur(ID), #domain_CurrencyRef{symbolic_code = ID}).
 -define(pmt(C, T), #domain_PaymentMethodRef{id = {C, T}}).
+-define(pmt_sys(ID), #domain_PaymentSystemRef{id = ID}).
+-define(pmt_srv(ID), #domain_PaymentServiceRef{id = ID}).
 -define(pomt(M), #domain_PayoutMethodRef{id = M}).
 -define(cat(ID), #domain_CategoryRef{id = ID}).
 -define(prx(ID), #domain_ProxyRef{id = ID}).
@@ -25,6 +27,17 @@
 -define(bussched(ID), #domain_BusinessScheduleRef{id = ID}).
 -define(ruleset(ID), #domain_RoutingRulesetRef{id = ID}).
 -define(bc_cat(ID), #domain_BankCardCategoryRef{id = ID}).
+-define(mob(ID), #domain_MobileOperatorRef{id = ID}).
+-define(crypta(ID), #domain_CryptoCurrencyRef{id = ID}).
+-define(token_srv(ID), #domain_BankCardTokenServiceRef{id = ID}).
+-define(bank_card(ID), #domain_BankCardPaymentMethod{payment_system = ?pmt_sys(ID)}).
+-define(bank_card_no_cvv(ID), #domain_BankCardPaymentMethod{payment_system = ?pmt_sys(ID), is_cvv_empty = true}).
+-define(token_bank_card(ID, Prv), ?token_bank_card(ID, Prv, dpan)).
+-define(token_bank_card(ID, Prv, Method), #domain_BankCardPaymentMethod{
+    payment_system = ?pmt_sys(ID),
+    payment_token = ?token_srv(Prv),
+    tokenization_method = Method
+}).
 
 -define(cashrng(Lower, Upper), #domain_CashRange{lower = Lower, upper = Upper}).
 
@@ -68,7 +81,7 @@
     phone_number = Phone
 }).
 
--define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, dpan)).
+-define(tkz_bank_card(PaymentSystem, TokenProvider), ?tkz_bank_card(PaymentSystem, TokenProvider, undefined)).
 
 -define(tkz_bank_card(PaymentSystem, TokenProvider, TokenizationMethod), #domain_TokenizedBankCard{
     payment_system_deprecated = PaymentSystem,

@@ -3,16 +3,6 @@
 
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
--define(party_ev(PartyChanges), {party_changes, PartyChanges}).
-
--define(party_created(PartyID, ContactInfo, Timestamp),
-    {party_created, #payproc_PartyCreated{
-        id = PartyID,
-        contact_info = ContactInfo,
-        created_at = Timestamp
-    }}
-).
-
 -define(shop_modification(ID, Modification),
     {shop_modification, #payproc_ShopModificationUnit{id = ID, modification = Modification}}
 ).
