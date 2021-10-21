@@ -66,10 +66,8 @@ services:
       retries: 20
 
   party-management:
-    image: dr2.rbkmoney.com/rbkmoney/party-management:4d4e678627764b856f77ef61757be6cc9d078b30
+    image: dr2.rbkmoney.com/rbkmoney/party-management:ecb208bd13fe50429b56ea92be5baa9714273262
     command: /opt/party-management/bin/party-management foreground
-    volumes:
-      - ./test/party-management/sys.config:/opt/party-management/releases/0.1/sys.config
     depends_on:
       - machinegun
       - dominant
