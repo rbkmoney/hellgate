@@ -17,8 +17,7 @@
     flow => instant | {hold, dmsl_domain_thrift:'HoldLifetime'()},
     payout_method => dmsl_domain_thrift:'PayoutMethodRef'(),
     wallet_id => dmsl_domain_thrift:'WalletID'(),
-    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'(),
-    p2p_tool => dmsl_domain_thrift:'P2PTool'()
+    identification_level => dmsl_domain_thrift:'ContractorIdentificationLevel'()
 }.
 
 -spec prepare_varset(varset()) -> dmsl_payment_processing_thrift:'Varset'().
@@ -29,7 +28,6 @@ prepare_varset(Varset) ->
         amount = genlib_map:get(cost, Varset),
         payout_method = genlib_map:get(payout_method, Varset),
         wallet_id = genlib_map:get(wallet_id, Varset),
-        p2p_tool = genlib_map:get(p2p_tool, Varset),
         payment_tool = genlib_map:get(payment_tool, Varset),
         identification_level = genlib_map:get(identification_level, Varset),
         party_id = genlib_map:get(party_id, Varset),
