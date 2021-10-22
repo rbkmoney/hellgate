@@ -12,9 +12,9 @@
 -export([get_balance/2]).
 -export([create_account/1]).
 -export([create_account/2]).
--export([collect_account_map/6]).
--export([collect_merchant_account_map/2]).
--export([collect_provider_account_map/3]).
+-export([collect_account_map/8]).
+-export([collect_merchant_account_map/3]).
+-export([collect_provider_account_map/4]).
 -export([collect_system_account_map/4]).
 -export([collect_external_account_map/4]).
 
@@ -37,7 +37,9 @@
 -type clock() :: shumpune_shumpune_thrift:'Clock'().
 
 -type payment() :: dmsl_domain_thrift:'InvoicePayment'().
+-type party() :: dmsl_domain_thrift:'Party'().
 -type shop() :: dmsl_domain_thrift:'Shop'().
+-type route() :: dmsl_domain_thrift:'PaymentRoute'().
 -type payment_institution() :: dmsl_domain_thrift:'PaymentInstitution'().
 -type provider() :: dmsl_domain_thrift:'Provider'().
 -type varset() :: hg_varset:varset().
@@ -93,25 +95,36 @@ create_account(CurrencyCode, Description) ->
             error({accounting, Exception})
     end.
 
--spec collect_account_map(payment(), shop(), payment_institution(), provider(), varset(), revision()) -> map().
-collect_account_map(Payment, Shop, PaymentInstitution, Provider, VS, Revision) ->
-    Map0 = collect_merchant_account_map(Shop, #{}),
-    Map1 = collect_provider_account_map(Payment, Provider, Map0),
+-spec collect_account_map(
+    payment(),
+    party(),
+    shop(),
+    route(),
+    payment_institution(),
+    provider(),
+    varset(),
+    revision()
+) -> map().
+collect_account_map(Payment, Party, Shop, Route, PaymentInstitution, Provider, VS, Revision) ->
+    Map0 = collect_merchant_account_map(Party, Shop, #{}),
+    Map1 = collect_provider_account_map(Payment, Provider, Route, Map0),
     Map2 = collect_system_account_map(Payment, PaymentInstitution, Revision, Map1),
     collect_external_account_map(Payment, VS, Revision, Map2).
 
--spec collect_merchant_account_map(shop(), map()) -> map().
-collect_merchant_account_map(#domain_Shop{account = MerchantAccount}, Acc) ->
+-spec collect_merchant_account_map(party(), shop(), map()) -> map().
+collect_merchant_account_map(#domain_Party{id = PartyID}, #domain_Shop{id = ShopID, account = MerchantAccount}, Acc) ->
     Acc#{
+        merchant => {PartyID, ShopID},
         {merchant, settlement} => MerchantAccount#domain_ShopAccount.settlement,
         {merchant, guarantee} => MerchantAccount#domain_ShopAccount.guarantee
     }.
 
--spec collect_provider_account_map(payment(), provider(), map()) -> map().
-collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccounts}, Acc) ->
+-spec collect_provider_account_map(payment(), provider(), route(), map()) -> map().
+collect_provider_account_map(Payment, #domain_Provider{accounts = ProviderAccounts}, Route, Acc) ->
     Currency = get_currency(get_payment_cost(Payment)),
     ProviderAccount = hg_payment_institution:choose_provider_account(Currency, ProviderAccounts),
     Acc#{
+        provider => Route,
         {provider, settlement} => ProviderAccount#domain_ProviderAccount.settlement
     }.
 

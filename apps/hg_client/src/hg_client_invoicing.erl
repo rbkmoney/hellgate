@@ -27,6 +27,7 @@
 -export([capture_payment/4]).
 -export([capture_payment/5]).
 -export([capture_payment/6]).
+-export([capture_payment/7]).
 
 -export([refund_payment/4]).
 -export([refund_payment_manual/4]).
@@ -95,6 +96,7 @@
 -type term_set() :: dmsl_domain_thrift:'TermSet'().
 -type cash() :: undefined | dmsl_domain_thrift:'Cash'().
 -type cart() :: undefined | dmsl_domain_thrift:'InvoiceCart'().
+-type allocation_prototype() :: undefined | dmsl_domain_thrift:'AllocationPrototype'().
 -type event_range() :: dmsl_payment_processing_thrift:'EventRange'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
 
@@ -200,6 +202,11 @@ capture_payment(InvoiceID, PaymentID, Reason, Cash, Client) ->
 
 -spec capture_payment(invoice_id(), payment_id(), binary(), cash(), cart(), pid()) -> ok | woody_error:business_error().
 capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client) ->
+    capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, undefined, Client).
+
+-spec capture_payment(invoice_id(), payment_id(), binary(), cash(), cart(), allocation_prototype(), pid()) ->
+    ok | woody_error:business_error().
+capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Allocation, Client) ->
     Call = {
         call,
         'CapturePayment',
@@ -209,7 +216,8 @@ capture_payment(InvoiceID, PaymentID, Reason, Cash, Cart, Client) ->
             #payproc_InvoicePaymentCaptureParams{
                 reason = Reason,
                 cash = Cash,
-                cart = Cart
+                cart = Cart,
+                allocation = Allocation
             }
         ]
     },
