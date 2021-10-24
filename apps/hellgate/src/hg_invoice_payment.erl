@@ -793,7 +793,6 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
             _ = log_rejected_routes(unknown, RejectedRoutes, VS),
             throw({no_route_found, unknown});
         {ok, {Routes, RejectedRoutes}} ->
-            _ = log_rejected_routes(unknown, RejectedRoutes, VS),
             Routes;
         {error, {misconfiguration, _Reason} = Error} ->
             _ = log_misconfigurations(Error),
