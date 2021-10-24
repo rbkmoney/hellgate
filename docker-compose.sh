@@ -66,7 +66,7 @@ services:
       retries: 20
 
   party-management:
-    image: dr2.rbkmoney.com/rbkmoney/party-management:63c7b92c75b14de758d94db7a7b14825339d2560
+    image: dr2.rbkmoney.com/rbkmoney/party-management:f4afbcc8cf7c2fe1efe0c0d5cc70c803fb583ec3
     command: /opt/party-management/bin/party-management foreground
     depends_on:
       - machinegun
