@@ -18,14 +18,14 @@ services:
     mem_limit: 512M
 
   dominant:
-    image: dr2.rbkmoney.com/rbkmoney/dominant:2f02d79d15db352c14359024dfcf082a51a1b17a
+    image: dr2.rbkmoney.com/rbkmoney/dominant:ea1a6680e3a68db92b485102e5c1c9525c9d874f
     command: /opt/dominant/bin/dominant foreground
     depends_on:
       machinegun:
         condition: service_healthy
 
   machinegun:
-    image: dr2.rbkmoney.com/rbkmoney/machinegun:627130675ad6e7ee2127126740fe369542905b4b
+    image: dr2.rbkmoney.com/rbkmoney/machinegun:9c3248a68fe530d23a8266057a40a1a339a161b8
     command: /opt/machinegun/bin/machinegun foreground
     volumes:
       - ./test/machinegun/config.yaml:/opt/machinegun/etc/config.yaml
@@ -66,7 +66,7 @@ services:
       retries: 20
 
   party-management:
-    image: dr2.rbkmoney.com/rbkmoney/party-management:2066fff761c63a6c54a1c4825b31de81ff79e815
+    image: dr2.rbkmoney.com/rbkmoney/party-management:f4afbcc8cf7c2fe1efe0c0d5cc70c803fb583ec3
     command: /opt/party-management/bin/party-management foreground
     depends_on:
       - machinegun
