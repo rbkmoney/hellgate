@@ -790,9 +790,11 @@ gather_routes(PaymentInstitution, VS, Revision, St) ->
         )
     of
         {ok, {[], RejectedRoutes}} ->
-            _ = log_rejected_routes(unknown, RejectedRoutes, VS),
+            _ = log_rejected_routes(no_route_found, RejectedRoutes, VS),
             throw({no_route_found, unknown});
-        {ok, {Routes, _RejectedRoutes}} ->
+        {ok, {Routes, RejectedRoutes}} ->
+            erlang:length(RejectedRoutes) > 0 andalso
+                log_rejected_routes(rejected_route_found, RejectedRoutes, VS),
             Routes;
         {error, {misconfiguration, _Reason} = Error} ->
             _ = log_misconfigurations(Error),
@@ -821,20 +823,31 @@ log_misconfigurations({misconfiguration, _} = Error) ->
     _ = logger:warning(Format, Details),
     ok.
 
-log_rejected_routes(RejectReason, RejectedRoutes, Varset) ->
-    log_rejected_routes(warning, RejectReason, RejectedRoutes, Varset).
-
-log_rejected_routes(Level, RejectReason, RejectedRoutes, Varset) ->
+log_rejected_routes(no_route_found, RejectedRoutes, Varset) ->
     _ = logger:log(
-        Level,
-        "No route found, reason = ~p, varset: ~p",
-        [RejectReason, Varset],
+        warning,
+        "No route found for varset: ~p",
+        [Varset],
         logger:get_process_metadata()
     ),
     _ = logger:log(
-        Level,
-        "No route found, reason = ~p, rejected routes: ~p",
-        [RejectReason, RejectedRoutes],
+        warning,
+        "No route found, rejected routes: ~p",
+        [RejectedRoutes],
+        logger:get_process_metadata()
+    ),
+    ok;
+log_rejected_routes(rejected_route_found, RejectedRoutes, Varset) ->
+    _ = logger:log(
+        info,
+        "Rejected routes found for varset: ~p",
+        [Varset],
+        logger:get_process_metadata()
+    ),
+    _ = logger:log(
+        info,
+        "Rejected routes found, rejected routes: ~p",
+        [RejectedRoutes],
         logger:get_process_metadata()
     ),
     ok.
