@@ -1,6 +1,8 @@
 -ifndef(__hellgate_domain__).
 -define(__hellgate_domain__, 42).
 
+-include_lib("damsel/include/dmsl_domain_thrift.hrl").
+
 -define(currency(SymCode), #domain_CurrencyRef{symbolic_code = SymCode}).
 
 -define(cash(Amount, SymCode), #domain_Cash{amount = Amount, currency = ?currency(SymCode)}).
@@ -65,6 +67,19 @@
 -define(recurrent_parent(InvoiceID, PaymentID), #domain_RecurrentParentPayment{
     invoice_id = InvoiceID,
     payment_id = PaymentID
+}).
+
+-define(invoice_cart(Lines), #domain_InvoiceCart{
+    lines = Lines
+}).
+
+-define(invoice_line(ProductName, Quantity, Price), ?invoice_line(ProductName, Quantity, Price, #{})).
+
+-define(invoice_line(ProductName, Quantity, Price, Metadata), #domain_InvoiceLine{
+    product = ProductName,
+    quantity = Quantity,
+    price = Price,
+    metadata = Metadata
 }).
 
 -endif.

@@ -446,6 +446,7 @@ delete_invoice_template(C) ->
 terms_retrieval(C) ->
     Client = cfg(client, C),
     ?invoice_tpl(TplID1) = create_invoice_tpl(C),
+
     Timestamp = hg_datetime:format_now(),
     TermSet1 = hg_client_invoice_templating:compute_terms(TplID1, Timestamp, {timestamp, Timestamp}, Client),
     #domain_TermSet{

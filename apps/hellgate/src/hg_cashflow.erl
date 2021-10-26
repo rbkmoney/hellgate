@@ -12,13 +12,21 @@
 
 -type account() :: dmsl_domain_thrift:'CashFlowAccount'().
 -type account_id() :: dmsl_domain_thrift:'AccountID'().
--type account_map() :: #{account() => account_id()}.
+-type account_map() :: #{
+    account() => account_id(),
+    merchant := {party_id(), shop_id()},
+    provider := route()
+}.
 -type context() :: dmsl_domain_thrift:'CashFlowContext'().
 -type cash_flow() :: dmsl_domain_thrift:'CashFlow'().
 -type final_cash_flow() :: dmsl_domain_thrift:'FinalCashFlow'().
 -type cash() :: dmsl_domain_thrift:'Cash'().
 -type cash_volume() :: dmsl_domain_thrift:'CashVolume'().
 -type final_cash_flow_account() :: dmsl_domain_thrift:'FinalCashFlowAccount'().
+
+-type shop_id() :: dmsl_domain_thrift:'ShopID'().
+-type party_id() :: dmsl_domain_thrift:'PartyID'().
+-type route() :: dmsl_domain_thrift:'PaymentRoute'().
 
 %%
 
@@ -68,8 +76,40 @@ compute_postings(CF, Context, AccountMap) ->
 construct_final_account(AccountType, AccountMap) ->
     #domain_FinalCashFlowAccount{
         account_type = AccountType,
-        account_id = resolve_account(AccountType, AccountMap)
+        account_id = resolve_account(AccountType, AccountMap),
+        transaction_account = construct_transaction_account(AccountType, AccountMap)
     }.
+
+construct_transaction_account({merchant, MerchantFlowAccount}, #{merchant := {PartyID, ShopID}}) ->
+    AccountOwner = #domain_MerchantTransactionAccountOwner{
+        party_id = PartyID,
+        shop_id = ShopID
+    },
+    {merchant, #domain_MerchantTransactionAccount{
+        type = MerchantFlowAccount,
+        owner = AccountOwner
+    }};
+construct_transaction_account({provider, ProviderFlowAccount}, #{provider := Route}) ->
+    #domain_PaymentRoute{
+        provider = ProviderRef,
+        terminal = TerminalRef
+    } = Route,
+    AccountOwner = #domain_ProviderTransactionAccountOwner{
+        provider_ref = ProviderRef,
+        terminal_ref = TerminalRef
+    },
+    {provider, #domain_ProviderTransactionAccount{
+        type = ProviderFlowAccount,
+        owner = AccountOwner
+    }};
+construct_transaction_account({system, SystemFlowAccount}, _) ->
+    {system, #domain_SystemTransactionAccount{
+        type = SystemFlowAccount
+    }};
+construct_transaction_account({external, ExternalFlowAccount}, _) ->
+    {external, #domain_ExternalTransactionAccount{
+        type = ExternalFlowAccount
+    }}.
 
 -spec resolve_account(account(), account_map()) -> account_id() | no_return().
 resolve_account(AccountType, AccountMap) ->
@@ -270,7 +310,7 @@ unmarshal(
     };
 unmarshal(
     final_cash_flow_posting,
-    ?legacy_final_cash_flow_posting(Code, Source, Destination, Volume, Details)
+    ?legacy_final_cash_flow_posting(Source, Destination, Volume, Details)
 ) ->
     #domain_FinalCashFlowPosting{
         source = unmarshal(final_cash_flow_account, Source),

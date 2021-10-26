@@ -1,6 +1,8 @@
 -ifndef(__hellgate_payment_events__).
 -define(__hellgate_payment_events__, 42).
 
+-include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
+
 %% Payments
 
 -define(payment_started(Payment),
@@ -37,7 +39,9 @@
 ).
 
 -define(cash_flow_changed(CashFlow),
-    {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{cash_flow = CashFlow}}
+    {invoice_payment_cash_flow_changed, #payproc_InvoicePaymentCashFlowChanged{
+        cash_flow = CashFlow
+    }}
 ).
 
 -define(payment_status_changed(Status),
@@ -52,18 +56,19 @@
     {invoice_payment_rec_token_acquired, #payproc_InvoicePaymentRecTokenAcquired{token = Token}}
 ).
 
--define(payment_capture_started(Params),
+-define(payment_capture_started(Data),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        params = Params
+        data = Data
     }}
 ).
 
--define(payment_capture_started(Reason, Cost, Cart),
+-define(payment_capture_started(Reason, Cost, Cart, Allocation),
     {invoice_payment_capture_started, #payproc_InvoicePaymentCaptureStarted{
-        params = #payproc_InvoicePaymentCaptureParams{
+        data = #payproc_InvoicePaymentCaptureData{
             reason = Reason,
             cash = Cost,
-            cart = Cart
+            cart = Cart,
+            allocation = Allocation
         }
     }}
 ).
@@ -106,6 +111,10 @@
 
 -define(captured(Reason, Cost, Cart),
     {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart}}
+).
+
+-define(captured(Reason, Cost, Cart, Allocation),
+    {captured, #domain_InvoicePaymentCaptured{reason = Reason, cost = Cost, cart = Cart, allocation = Allocation}}
 ).
 
 -define(cancelled_with_reason(Reason),
@@ -256,13 +265,6 @@
 -define(chargeback_created(Chargeback),
     {invoice_payment_chargeback_created, #payproc_InvoicePaymentChargebackCreated{
         chargeback = Chargeback
-    }}
-).
-
--define(chargeback_created(Chargeback, OccurredAt),
-    {invoice_payment_chargeback_created, #payproc_InvoicePaymentChargebackCreated{
-        chargeback = Chargeback,
-        occurred_at = OccurredAt
     }}
 ).
 
