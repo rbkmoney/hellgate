@@ -68,8 +68,6 @@ services:
   party-management:
     image: dr2.rbkmoney.com/rbkmoney/party-management:f4afbcc8cf7c2fe1efe0c0d5cc70c803fb583ec3
     command: /opt/party-management/bin/party-management foreground
-    volumes:
-      - ./test/party-management/sys.config:/opt/party-management/releases/0.1/sys.config
     depends_on:
       - machinegun
       - dominant
