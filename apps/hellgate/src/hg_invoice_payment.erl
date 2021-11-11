@@ -460,7 +460,7 @@ get_merchant_terms(Party, Shop, DomainRevision, Timestamp, VS) ->
     ContractID = Shop#domain_Shop.contract_id,
     Contract = hg_party:get_contract(ContractID, Party),
     ok = assert_contract_active(Contract),
-    PreparedVS = hg_varset:prepare_varset(VS),
+    PreparedVS = hg_varset:prepare_contract_terms_varset(VS),
     {Client, Context} = get_party_client(),
     {ok, Terms} = party_client_thrift:compute_contract_terms(
         Party#domain_Party.id,

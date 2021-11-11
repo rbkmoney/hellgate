@@ -3,6 +3,8 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([prepare_varset/1]).
+-export([prepare_contract_terms_varset/1]).
+-export([prepare_shop_terms_varset/1]).
 
 -export_type([varset/0]).
 
@@ -32,4 +34,23 @@ prepare_varset(Varset) ->
         identification_level = genlib_map:get(identification_level, Varset),
         party_id = genlib_map:get(party_id, Varset),
         shop_id = genlib_map:get(shop_id, Varset)
+    }.
+
+-spec prepare_contract_terms_varset(varset()) -> dmsl_payment_processing_thrift:'ComputeContractTermsVarset'().
+prepare_contract_terms_varset(Varset) ->
+    #payproc_ComputeContractTermsVarset{
+        amount = genlib_map:get(cost, Varset),
+        shop_id = genlib_map:get(shop_id, Varset),
+        payout_method = genlib_map:get(payout_method, Varset),
+        payment_tool = genlib_map:get(payment_tool, Varset),
+        wallet_id = genlib_map:get(wallet_id, Varset),
+        bin_data = genlib_map:get(bin_data, Varset)
+    }.
+
+-spec prepare_shop_terms_varset(varset()) -> dmsl_payment_processing_thrift:'ComputeShopTermsVarset'().
+prepare_shop_terms_varset(Varset) ->
+    #payproc_ComputeShopTermsVarset{
+        amount = genlib_map:get(cost, Varset),
+        payout_method = genlib_map:get(payout_method, Varset),
+        payment_tool = genlib_map:get(payment_tool, Varset)
     }.

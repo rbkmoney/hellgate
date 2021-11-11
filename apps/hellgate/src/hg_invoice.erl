@@ -238,28 +238,15 @@ handle_function_('ComputeTerms', {UserInfo, InvoiceID, PartyRevision0}, _Opts) -
     _ = set_invoicing_meta(InvoiceID),
     St = get_state(InvoiceID),
     _ = assert_invoice(accessible, St),
-    ShopID = get_shop_id(St),
-    PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
-    PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
-    Party = hg_party:get_party(PartyID),
-    Shop = hg_party:get_shop(ShopID, Party),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    ShopAccount = Shop#domain_Shop.account,
-    Cash = get_cost(St),
-    VS = hg_varset:prepare_varset(#{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Shop#domain_Shop.category,
-        currency => ShopAccount#domain_ShopAccount.currency,
-        identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
-        cost => Cash
+    VS = hg_varset:prepare_shop_terms_varset(#{
+        cost => get_cost(St)
     }),
     hg_invoice_utils:compute_shop_terms(
-        PartyID,
-        ShopID,
+        get_party_id(St),
+        get_shop_id(St),
         Timestamp,
-        PartyRevision1,
+        hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
         VS
     );
 handle_function_(Fun, Args, _Opts) when
@@ -1340,7 +1327,10 @@ validate_invoice_cost(Cost, Shop, #domain_TermSet{payments = PaymentTerms}) ->
     ok.
 
 get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revision, Shop, Timestamp, Params) ->
-    VS = collect_varset(Params#payproc_InvoiceParams.cost, PartyId, Shop),
+    VS = #{
+        cost => Params#payproc_InvoiceParams.cost,
+        shop_id => Shop#domain_Shop.id
+    },
     {Client, Context} = get_party_client(),
     {ok, TermSet} = party_client_thrift:compute_contract_terms(
         PartyId,
@@ -1348,25 +1338,11 @@ get_merchant_terms(#domain_Party{id = PartyId, revision = PartyRevision}, Revisi
         Timestamp,
         {revision, PartyRevision},
         Revision,
-        hg_varset:prepare_varset(VS),
+        hg_varset:prepare_contract_terms_varset(VS),
         Client,
         Context
     ),
     TermSet.
-
-collect_varset(Cost, PartyID, Shop) ->
-    #domain_Shop{
-        id = ShopID,
-        category = Category,
-        account = #domain_ShopAccount{currency = Currency}
-    } = Shop,
-    #{
-        cost => Cost,
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Category,
-        currency => Currency
-    }.
 
 make_invoice_cart(_, {cart, Cart}, _Shop) ->
     Cart;

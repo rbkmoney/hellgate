@@ -6,7 +6,6 @@
 -include_lib("damsel/include/dmsl_payment_processing_thrift.hrl").
 
 -export([validate_cost/2]).
--export([validate_amount/1]).
 -export([validate_currency/2]).
 -export([validate_cash_range/1]).
 -export([assert_party_accessible/1]).
@@ -18,8 +17,6 @@
 -export([get_shop_currency/1]).
 -export([get_cart_amount/1]).
 -export([check_deadline/1]).
--export([get_identification_level/1]).
--export([get_identification_level/2]).
 
 -type amount() :: dmsl_domain_thrift:'Amount'().
 -type currency() :: dmsl_domain_thrift:'CurrencyRef'().
@@ -28,16 +25,13 @@
 -type cash_range() :: dmsl_domain_thrift:'CashRange'().
 -type party() :: dmsl_domain_thrift:'Party'().
 -type shop() :: dmsl_domain_thrift:'Shop'().
--type contract() :: dmsl_domain_thrift:'Contract'().
 -type party_id() :: dmsl_domain_thrift:'PartyID'().
 -type shop_id() :: dmsl_domain_thrift:'ShopID'().
 -type term_set() :: dmsl_domain_thrift:'TermSet'().
 -type payment_service_terms() :: dmsl_domain_thrift:'PaymentsServiceTerms'().
 -type timestamp() :: dmsl_base_thrift:'Timestamp'().
 -type party_revision_param() :: dmsl_payment_processing_thrift:'PartyRevisionParam'().
--type identification_level() :: dmsl_domain_thrift:'ContractorIdentificationLevel'().
--type varset() :: dmsl_payment_processing_thrift:'Varset'().
--type party_contractor() :: dmsl_domain_thrift:'PartyContractor'().
+-type varset() :: dmsl_payment_processing_thrift:'ComputeShopTermsVarset'().
 
 -spec validate_cost(cash(), shop()) -> ok.
 validate_cost(#domain_Cash{currency = Currency, amount = Amount}, Shop) ->
@@ -177,21 +171,3 @@ get_party_client() ->
     Client = hg_context:get_party_client(HgContext),
     Context = hg_context:get_party_client_context(HgContext),
     {Client, Context}.
-
--spec get_identification_level(party_contractor() | undefined) -> identification_level().
-get_identification_level(#domain_PartyContractor{status = Status}) ->
-    Status;
-get_identification_level(undefined) ->
-    none.
-
--spec get_identification_level(contract(), party()) -> identification_level().
-get_identification_level(#domain_Contract{contractor_id = undefined, contractor = Contractor}, _) ->
-    %% TODO legacy, remove after migration
-    case Contractor of
-        {legal_entity, _} ->
-            full;
-        _ ->
-            none
-    end;
-get_identification_level(#domain_Contract{contractor_id = ID}, #domain_Party{contractors = Contractors}) ->
-    get_identification_level(maps:get(ID, Contractors)).

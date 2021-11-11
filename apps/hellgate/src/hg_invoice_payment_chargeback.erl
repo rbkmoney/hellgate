@@ -478,7 +478,7 @@ get_merchant_chargeback_terms(#domain_Party{id = PartyId, revision = PartyRevisi
         Timestamp,
         {revision, PartyRevision},
         Revision,
-        hg_varset:prepare_varset(VS),
+        hg_varset:prepare_contract_terms_varset(VS),
         Client,
         Context
     ),

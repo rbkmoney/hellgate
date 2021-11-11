@@ -310,7 +310,7 @@ get_merchant_recurrent_paytools_terms(#domain_Shop{contract_id = ContractID}, Pa
         Timestamp,
         {revision, PartyRevision},
         Revision,
-        #payproc_Varset{},
+        #payproc_ComputeContractTermsVarset{},
         hg_context:get_party_client(Ctx),
         hg_context:get_party_client_context(Ctx)
     ),

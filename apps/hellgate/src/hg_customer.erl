@@ -100,27 +100,13 @@ handle_function_('ComputeTerms', {CustomerID, PartyRevision0}, _Opts) ->
     ok = set_meta(CustomerID),
     St = get_state(CustomerID),
     ok = assert_customer_accessible(St),
-    ShopID = get_shop_id(St),
-    PartyID = get_party_id(St),
     Timestamp = get_created_at(St),
-    PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
-    ShopContract = hg_party:get_shop_contract(PartyID, ShopID),
-    Shop = ShopContract#payproc_ShopContract.shop,
-    Contractor = ShopContract#payproc_ShopContract.contractor,
-    ShopAccount = Shop#domain_Shop.account,
-    VS = hg_varset:prepare_varset(#{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Shop#domain_Shop.category,
-        currency => ShopAccount#domain_ShopAccount.currency,
-        identification_level => hg_invoice_utils:get_identification_level(Contractor)
-    }),
     hg_invoice_utils:compute_shop_terms(
-        PartyID,
-        ShopID,
+        get_party_id(St),
+        get_shop_id(St),
         Timestamp,
-        PartyRevision1,
-        VS
+        hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
+        #payproc_ComputeShopTermsVarset{}
     );
 handle_function_(Fun, Args, _Opts) when
     Fun =:= 'Delete' orelse

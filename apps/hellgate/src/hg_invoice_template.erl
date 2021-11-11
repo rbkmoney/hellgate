@@ -87,13 +87,6 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
     ok = assume_user_identity(UserInfo),
     _ = set_meta(TplID),
     Tpl = get_invoice_template(TplID),
-    ShopID = Tpl#domain_InvoiceTemplate.shop_id,
-    PartyID = Tpl#domain_InvoiceTemplate.owner_id,
-    PartyRevision1 = hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
-    Party = hg_party:get_party(PartyID),
-    Shop = hg_party:get_shop(ShopID, Party),
-    Contract = hg_party:get_contract(Shop#domain_Shop.contract_id, Party),
-    ShopAccount = Shop#domain_Shop.account,
     Cost =
         case Tpl#domain_InvoiceTemplate.details of
             {product, #domain_InvoiceTemplateProduct{price = {fixed, Cash}}} ->
@@ -102,15 +95,16 @@ handle_function_('ComputeTerms', {UserInfo, TplID, Timestamp, PartyRevision0}, _
                 undefined
         end,
     VS0 = #{
-        party_id => PartyID,
-        shop_id => ShopID,
-        category => Shop#domain_Shop.category,
-        currency => ShopAccount#domain_ShopAccount.currency,
-        identification_level => hg_invoice_utils:get_identification_level(Contract, Party),
         cost => Cost
     },
-    VS = hg_varset:prepare_varset(genlib_map:compact(VS0)),
-    hg_invoice_utils:compute_shop_terms(PartyID, ShopID, Timestamp, PartyRevision1, VS).
+    VS = hg_varset:prepare_shop_terms_varset(VS0),
+    hg_invoice_utils:compute_shop_terms(
+        Tpl#domain_InvoiceTemplate.owner_id,
+        Tpl#domain_InvoiceTemplate.shop_id,
+        Timestamp,
+        hg_maybe:get_defined(PartyRevision0, {timestamp, Timestamp}),
+        VS
+    ).
 
 assume_user_identity(UserInfo) ->
     hg_woody_handler_utils:assume_user_identity(UserInfo).
