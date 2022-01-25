@@ -1,11 +1,7 @@
 #!/bin/bash
 cat <<EOF
 FROM $BASE_IMAGE
-MAINTAINER Andrey Mayorov <a.mayorov@rbkmoney.com>
 COPY ./_build/prod/rel/hellgate /opt/hellgate
-WORKDIR /opt/hellgate
-CMD /opt/hellgate/bin/hellgate foreground
-EXPOSE 8022
 LABEL com.rbkmoney.$SERVICE_NAME.parent=$BASE_IMAGE_NAME \
       com.rbkmoney.$SERVICE_NAME.parent_tag=$BASE_IMAGE_TAG \
       com.rbkmoney.$SERVICE_NAME.build_img=build \
@@ -20,4 +16,8 @@ LABEL com.rbkmoney.$SERVICE_NAME.parent=$BASE_IMAGE_NAME \
         else \
           echo $(git name-rev --name-only HEAD); \
         fi)
+
+EXPOSE 8022
+WORKDIR /opt/hellgate
+CMD /opt/hellgate/bin/hellgate foreground
 EOF
